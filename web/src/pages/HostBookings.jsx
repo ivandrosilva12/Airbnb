@@ -2,12 +2,45 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../api/client';
 
+function GuestReviewForm({ bookingId, onDone, onError }) {
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await api.createGuestReview({ bookingId, rating: Number(rating), comment });
+      onDone();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="inline-review" onSubmit={submit}>
+      <select value={rating} onChange={(e) => setRating(e.target.value)}>
+        {[5, 4, 3, 2, 1].map((n) => (
+          <option key={n} value={n}>{'★'.repeat(n)}</option>
+        ))}
+      </select>
+      <input placeholder="How was the guest?" value={comment} onChange={(e) => setComment(e.target.value)} />
+      <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? '…' : 'Submit'}</button>
+    </form>
+  );
+}
+
 export default function HostBookings() {
   const { id } = useParams();
   const [property, setProperty] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [reviewing, setReviewing] = useState(null);
+  const [reviewed, setReviewed] = useState({});
 
   async function load() {
     setLoading(true);
@@ -67,6 +100,17 @@ export default function HostBookings() {
                   )}
                   {(b.status === 'pending' || b.status === 'confirmed') && (
                     <button className="btn btn-ghost" onClick={() => act(api.cancelBooking, b.id)}>Cancel</button>
+                  )}
+                  {b.status === 'completed' && !reviewed[b.id] && reviewing !== b.id && (
+                    <button className="btn btn-ghost" onClick={() => { setError(null); setReviewing(b.id); }}>Review guest</button>
+                  )}
+                  {reviewed[b.id] && <span className="success">Guest reviewed ✓</span>}
+                  {reviewing === b.id && (
+                    <GuestReviewForm
+                      bookingId={b.id}
+                      onDone={() => { setReviewing(null); setReviewed((r) => ({ ...r, [b.id]: true })); }}
+                      onError={setError}
+                    />
                   )}
                 </td>
               </tr>

@@ -35,6 +35,7 @@ function ReviewForm({ bookingId, onDone, onError }) {
 export default function MyTrips() {
   const [bookings, setBookings] = useState([]);
   const [payments, setPayments] = useState({});
+  const [guestRating, setGuestRating] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState(null);
@@ -43,11 +44,16 @@ export default function MyTrips() {
   async function load() {
     setLoading(true);
     try {
-      const [bookingsRes, paymentsRes] = await Promise.all([api.myBookings(), api.listPayments()]);
+      const [bookingsRes, paymentsRes, guestReviews] = await Promise.all([
+        api.myBookings(),
+        api.listPayments(),
+        api.myGuestReviews(),
+      ]);
       setBookings(bookingsRes.items || []);
       const byBooking = {};
       for (const p of paymentsRes.items || []) byBooking[p.bookingId] = p.status;
       setPayments(byBooking);
+      setGuestRating(guestReviews?.summary || null);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -71,6 +77,9 @@ export default function MyTrips() {
   return (
     <div className="container">
       <h1>My trips</h1>
+      {guestRating && guestRating.count > 0 && (
+        <p className="card-meta">As a guest you’re rated ★ {guestRating.averageRating.toFixed(1)} ({guestRating.count} review{guestRating.count > 1 ? 's' : ''} from hosts)</p>
+      )}
       {error && <p className="error">{error}</p>}
       {loading ? (
         <p>Loading…</p>

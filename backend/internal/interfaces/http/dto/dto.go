@@ -180,7 +180,9 @@ func FromBookedRanges(ranges []bookingapp.BookedRange) []BookedRangeView {
 // ReviewView is the public representation of a review.
 type ReviewView struct {
 	ID         uuid.UUID `json:"id"`
+	Kind       string    `json:"kind"`
 	PropertyID uuid.UUID `json:"propertyId"`
+	AuthorID   uuid.UUID `json:"authorId"`
 	GuestID    uuid.UUID `json:"guestId"`
 	Rating     int       `json:"rating"`
 	Comment    string    `json:"comment"`
@@ -191,7 +193,9 @@ type ReviewView struct {
 func FromReview(r *review.Review) ReviewView {
 	return ReviewView{
 		ID:         r.ID,
+		Kind:       string(r.Kind),
 		PropertyID: r.PropertyID,
+		AuthorID:   r.AuthorID,
 		GuestID:    r.GuestID,
 		Rating:     r.Rating,
 		Comment:    r.Comment,
@@ -199,16 +203,16 @@ func FromReview(r *review.Review) ReviewView {
 	}
 }
 
-// ReviewSummaryView renders aggregate rating stats.
+// ReviewSummaryView renders aggregate rating stats about a subject.
 type ReviewSummaryView struct {
-	PropertyID    uuid.UUID `json:"propertyId"`
+	SubjectID     uuid.UUID `json:"subjectId"`
 	AverageRating float64   `json:"averageRating"`
 	Count         int64     `json:"count"`
 }
 
 // FromReviewSummary maps a review summary to its view.
 func FromReviewSummary(s review.Summary) ReviewSummaryView {
-	return ReviewSummaryView{PropertyID: s.PropertyID, AverageRating: s.AverageRating, Count: s.Count}
+	return ReviewSummaryView{SubjectID: s.SubjectID, AverageRating: s.AverageRating, Count: s.Count}
 }
 
 // ConversationView is the public representation of a message thread.

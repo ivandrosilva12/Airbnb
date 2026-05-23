@@ -65,7 +65,8 @@ Key domain rules enforced in code:
   total is `subtotal (pricePerNight × nights) + cleaning fee + platform service
   fee`, where the service fee rate is configurable (`SERVICE_FEE_RATE`, default 12%).
 - Money is stored as integer minor units (cents) with an ISO currency.
-- A review requires a *completed* booking owned by the guest, and only one review
+- Reviews are bidirectional and tied to a *completed* booking: the guest reviews
+  the property and the host reviews the guest — at most one review per direction
   per booking.
 - A payment follows the booking: it is *authorized* when the booking is requested,
   *captured* when the host confirms, and *refunded* if the booking is cancelled.
@@ -161,7 +162,7 @@ Public:
 Authenticated (Bearer token):
 - `GET /me` · `PATCH /me` · `POST /me/become-host`
 - `POST /bookings` · `GET /bookings/me` · `GET /bookings/:id` · `POST /bookings/:id/cancel`
-- `POST /reviews`
+- `POST /reviews` (guest → property) · `POST /reviews/guest` (host → guest) · `GET /me/guest-reviews`
 - `GET /conversations` (each with the viewer's `unreadCount`) · `POST /conversations` (start/get a thread)
 - `GET /conversations/unread-count` (total unread, for the badge) · `POST /conversations/:id/read`
 - `GET /conversations/:id/messages` · `POST /conversations/:id/messages`
@@ -201,6 +202,7 @@ docker-compose.yml
 | Favorites / wishlist | Complete | Domain→app→infra→HTTP + web heart toggle; covered by the e2e test |
 | Date-aware search | Complete | `searchapp` query service; covered by the e2e test |
 | Geo radius search | Complete | Haversine distance filter (pg + memory); web "Near me" geolocation; covered by unit + e2e tests |
+| Bidirectional reviews | Complete | Host reviews guest (kind-discriminated, one per direction); guest sees their rating; covered by unit tests |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |

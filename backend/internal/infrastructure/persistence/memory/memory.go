@@ -329,8 +329,9 @@ func NewReviewRepository() *ReviewRepository {
 func (r *ReviewRepository) Create(_ context.Context, rv *review.Review) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// At most one review per booking per direction (matches the DB unique index).
 	for _, existing := range r.m {
-		if existing.BookingID == rv.BookingID {
+		if existing.BookingID == rv.BookingID && existing.Kind == rv.Kind {
 			return shared.ErrConflict
 		}
 	}
@@ -338,11 +339,11 @@ func (r *ReviewRepository) Create(_ context.Context, rv *review.Review) error {
 	return nil
 }
 
-func (r *ReviewRepository) ExistsForBooking(_ context.Context, bookingID uuid.UUID) (bool, error) {
+func (r *ReviewRepository) ExistsForBookingKind(_ context.Context, bookingID uuid.UUID, kind review.Kind) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, rv := range r.m {
-		if rv.BookingID == bookingID {
+		if rv.BookingID == bookingID && rv.Kind == kind {
 			return true, nil
 		}
 	}
@@ -350,11 +351,23 @@ func (r *ReviewRepository) ExistsForBooking(_ context.Context, bookingID uuid.UU
 }
 
 func (r *ReviewRepository) ListByProperty(_ context.Context, propertyID uuid.UUID, page shared.Page) (shared.PageResult[*review.Review], error) {
+	return r.list(func(rv review.Review) bool {
+		return rv.PropertyID == propertyID && rv.Kind == review.KindGuestToProperty
+	}, page)
+}
+
+func (r *ReviewRepository) ListAboutGuest(_ context.Context, guestID uuid.UUID, page shared.Page) (shared.PageResult[*review.Review], error) {
+	return r.list(func(rv review.Review) bool {
+		return rv.GuestID == guestID && rv.Kind == review.KindHostToGuest
+	}, page)
+}
+
+func (r *ReviewRepository) list(pred func(review.Review) bool, page shared.Page) (shared.PageResult[*review.Review], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var all []*review.Review
 	for _, rv := range r.m {
-		if rv.PropertyID == propertyID {
+		if pred(rv) {
 			c := rv
 			all = append(all, &c)
 		}
@@ -364,20 +377,32 @@ func (r *ReviewRepository) ListByProperty(_ context.Context, propertyID uuid.UUI
 }
 
 func (r *ReviewRepository) SummaryForProperty(_ context.Context, propertyID uuid.UUID) (review.Summary, error) {
+	return r.summary(propertyID, func(rv review.Review) bool {
+		return rv.PropertyID == propertyID && rv.Kind == review.KindGuestToProperty
+	}), nil
+}
+
+func (r *ReviewRepository) SummaryForGuest(_ context.Context, guestID uuid.UUID) (review.Summary, error) {
+	return r.summary(guestID, func(rv review.Review) bool {
+		return rv.GuestID == guestID && rv.Kind == review.KindHostToGuest
+	}), nil
+}
+
+func (r *ReviewRepository) summary(subjectID uuid.UUID, pred func(review.Review) bool) review.Summary {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var sum, count int64
 	for _, rv := range r.m {
-		if rv.PropertyID == propertyID {
+		if pred(rv) {
 			sum += int64(rv.Rating)
 			count++
 		}
 	}
-	s := review.Summary{PropertyID: propertyID, Count: count}
+	s := review.Summary{SubjectID: subjectID, Count: count}
 	if count > 0 {
 		s.AverageRating = float64(sum) / float64(count)
 	}
-	return s, nil
+	return s
 }
 
 // --- Messaging ---------------------------------------------------------------
