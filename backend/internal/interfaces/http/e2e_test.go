@@ -22,6 +22,7 @@ import (
 	messageapp "github.com/airhost/backend/internal/application/message"
 	notificationapp "github.com/airhost/backend/internal/application/notification"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
+	payoutapp "github.com/airhost/backend/internal/application/payout"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	searchapp "github.com/airhost/backend/internal/application/search"
@@ -72,6 +73,7 @@ func newHarness(t *testing.T) *harness {
 	favoriteRepo := memory.NewFavoriteRepository()
 	notificationRepo := memory.NewNotificationRepository()
 	paymentRepo := memory.NewPaymentRepository()
+	payoutRepo := memory.NewPayoutRepository()
 	blockRepo := memory.NewBlockRepository()
 
 	dispatcher := event.NewDispatcher()
@@ -89,9 +91,11 @@ func newHarness(t *testing.T) *harness {
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
+	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
 	dispatcher.Subscribe(notificationSvc.EventHandler())
 	dispatcher.Subscribe(paymentSvc.EventHandler())
 	dispatcher.Subscribe(emailSvc.EventHandler())
+	dispatcher.Subscribe(payoutSvc.EventHandler())
 
 	registry := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(registry)
@@ -129,6 +133,7 @@ func newHarness(t *testing.T) *harness {
 			Payment:      handler.NewPaymentHandler(paymentSvc),
 			Analytics:    handler.NewAnalyticsHandler(analyticsSvc),
 			Block:        handler.NewBlockHandler(blockSvc),
+			Payout:       handler.NewPayoutHandler(payoutSvc),
 		},
 	})
 
@@ -556,6 +561,38 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	// A non-host (plain guest) cannot read host metrics.
 	if r := h.do(http.MethodGet, "/api/v1/host/metrics", guestTok, nil); r.Code != http.StatusForbidden {
 		t.Fatalf("guest host metrics: status = %d, want 403", r.Code)
+	}
+
+	// 19. Host earnings: confirming the booking credited the host with the net
+	// payout (total 429.00 minus the 39.00 service fee = 390.00), recorded as one
+	// earning ledger entry.
+	rec = h.do(http.MethodGet, "/api/v1/host/earnings", hostTok, nil)
+	mustStatus(t, rec, http.StatusOK, "host earnings")
+	balances := h.decode(rec)["balances"].([]any)
+	if len(balances) != 1 {
+		t.Fatalf("earnings balances = %d, want 1", len(balances))
+	}
+	bal := balances[0].(map[string]any)
+	if net := bal["net"].(map[string]any)["amountCents"].(float64); net != 39000 {
+		t.Fatalf("host net earnings = %v, want 39000", net)
+	}
+	if cur := bal["net"].(map[string]any)["currency"].(string); cur != "EUR" {
+		t.Fatalf("host earnings currency = %q, want EUR", cur)
+	}
+
+	rec = h.do(http.MethodGet, "/api/v1/host/earnings/entries", hostTok, nil)
+	mustStatus(t, rec, http.StatusOK, "host earnings entries")
+	entries := h.decode(rec)
+	if total := entries["total"].(float64); total != 1 {
+		t.Fatalf("earnings entries total = %v, want 1", total)
+	}
+	if kind := entries["items"].([]any)[0].(map[string]any)["kind"].(string); kind != "earning" {
+		t.Fatalf("earnings entry kind = %q, want earning", kind)
+	}
+
+	// A plain guest cannot read host earnings.
+	if r := h.do(http.MethodGet, "/api/v1/host/earnings", guestTok, nil); r.Code != http.StatusForbidden {
+		t.Fatalf("guest host earnings: status = %d, want 403", r.Code)
 	}
 }
 

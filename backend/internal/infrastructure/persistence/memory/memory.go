@@ -17,6 +17,7 @@ import (
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/payment"
+	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -34,6 +35,7 @@ var (
 	_ favorite.Repository     = (*FavoriteRepository)(nil)
 	_ notification.Repository = (*NotificationRepository)(nil)
 	_ payment.Repository      = (*PaymentRepository)(nil)
+	_ payout.Repository       = (*PayoutRepository)(nil)
 	_ block.Repository        = (*BlockRepository)(nil)
 )
 
@@ -783,6 +785,79 @@ func (r *PaymentRepository) ListByGuest(_ context.Context, guestID uuid.UUID, pa
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
 	return paginate(all, page), nil
+}
+
+// --- Payouts -----------------------------------------------------------------
+
+// PayoutRepository is an in-memory payout.Repository.
+type PayoutRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]payout.Entry
+}
+
+// NewPayoutRepository builds an empty in-memory payout repository.
+func NewPayoutRepository() *PayoutRepository {
+	return &PayoutRepository{m: map[uuid.UUID]payout.Entry{}}
+}
+
+func (r *PayoutRepository) Create(_ context.Context, e *payout.Entry) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.m[e.ID] = *e
+	return nil
+}
+
+func (r *PayoutRepository) ListByHost(_ context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*payout.Entry], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*payout.Entry
+	for _, e := range r.m {
+		if e.HostID == hostID {
+			c := e
+			all = append(all, &c)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
+	return paginate(all, page), nil
+}
+
+func (r *PayoutRepository) HasEarningForBooking(_ context.Context, bookingID uuid.UUID) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, e := range r.m {
+		if e.BookingID == bookingID && e.Kind == payout.KindEarning {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *PayoutRepository) BalancesByHost(_ context.Context, hostID uuid.UUID) ([]payout.Balance, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	byCurrency := map[string]*payout.Balance{}
+	for _, e := range r.m {
+		if e.HostID != hostID {
+			continue
+		}
+		cur := e.Amount.Currency()
+		b, ok := byCurrency[cur]
+		if !ok {
+			b = &payout.Balance{Currency: cur}
+			byCurrency[cur] = b
+		}
+		if e.Kind == payout.KindRefund {
+			b.RefundedCents += e.Amount.AmountCents()
+		} else {
+			b.EarnedCents += e.Amount.AmountCents()
+		}
+	}
+	out := make([]payout.Balance, 0, len(byCurrency))
+	for _, b := range byCurrency {
+		out = append(out, *b)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Currency < out[j].Currency })
+	return out, nil
 }
 
 // --- Blocks ------------------------------------------------------------------

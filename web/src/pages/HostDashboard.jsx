@@ -9,15 +9,17 @@ export default function HostDashboard() {
   const { isHost, becomeHost, refreshProfile } = useAuth();
   const [properties, setProperties] = useState([]);
   const [metrics, setMetrics] = useState(null);
+  const [earnings, setEarnings] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
     setLoading(true);
     try {
-      const [props, m] = await Promise.all([api.myProperties(), api.hostMetrics()]);
+      const [props, m, e] = await Promise.all([api.myProperties(), api.hostMetrics(), api.hostEarnings()]);
       setProperties(props.items || []);
       setMetrics(m);
+      setEarnings((e.balances || [])[0] || null);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -77,6 +79,7 @@ export default function HostDashboard() {
       </div>
       {metrics && (
         <div className="metrics-grid">
+          {earnings && <div className="metric"><div className="metric-value">{earnings.net.display}</div><div className="metric-label">{t('host.metric.earnings')}</div></div>}
           <div className="metric"><div className="metric-value">{metrics.capturedRevenue.display}</div><div className="metric-label">{t('host.metric.revenue')}</div></div>
           <div className="metric"><div className="metric-value">{metrics.pendingRevenue.display}</div><div className="metric-label">{t('host.metric.pending')}</div></div>
           <div className="metric"><div className="metric-value">{metrics.bookings}</div><div className="metric-label">{t('host.metric.bookings', { confirmed: metrics.confirmed })}</div></div>

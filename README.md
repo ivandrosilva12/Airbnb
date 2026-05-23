@@ -47,8 +47,9 @@ ones:
 
 Bounded contexts: **user**, **property**, **booking**, **review**, **message**
 (host↔guest threads), **favorite** (wishlists), **notification** (in-app),
-**payment**, **block** (host calendar blocks). The **email** application service
-turns the same domain events into transactional email. Read-model query services compose
+**payment**, **block** (host calendar blocks), **payout** (host earnings ledger).
+The **email** application service turns the same domain events into transactional
+email. Read-model query services compose
 multiple contexts without owning data: `searchapp` (property + booking + block,
 for date-aware search) and `analyticsapp` (property + booking + payment, for the
 host dashboard).
@@ -57,8 +58,9 @@ Cross-context reactions go through a small synchronous **domain-events** dispatc
 (`application/event`): booking/message use cases publish events (e.g.
 `booking.requested`, `booking.confirmed`, `message.sent`) and subscribers react —
 the notification context creates in-app notifications, the email service sends the
-matching transactional email via a `Mailer` port, and the payment context authorizes,
-captures or refunds via a `PaymentGateway` port (a fake in-memory gateway by default).
+matching transactional email via a `Mailer` port, the payment context authorizes,
+captures or refunds via a `PaymentGateway` port (a fake in-memory gateway by default),
+and the payout context credits/debits the host's earnings ledger.
 Dispatch is best-effort, so a failing subscriber never breaks the publishing use case.
 
 Key domain rules enforced in code:
@@ -191,6 +193,7 @@ Host only:
 - `GET /properties/:id/blocks` · `POST /properties/:id/blocks` · `DELETE /blocks/:id` (calendar blocks)
 
 - `GET /host/metrics` — dashboard analytics (revenue, bookings by status, upcoming check-ins, rating)
+- `GET /host/earnings` — earnings balance per currency (net of the platform fee) · `GET /host/earnings/entries` — the earnings ledger
 
 Admin only:
 - `POST /admin/properties/:id/suspend` · `POST /admin/properties/:id/unsuspend`
@@ -234,6 +237,7 @@ docker-compose.yml
 | Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |
 | Email notifications | Complete | Transactional HTML email (multipart/alternative with text fallback) via a `Mailer` port reacting to booking/message events; templated with `html/template` (auto-escaped); SMTP in prod, log mailer when unconfigured, MailHog locally; covered by unit + e2e tests |
 | Payments | Complete | Authorize/capture/refund driven by booking events via a gateway port (fake by default); web shows payment status; covered by unit + e2e tests |
+| Host payouts | Complete | New `payout` context: an earnings ledger credited on confirmation (total minus the platform fee) and debited on refund; `GET /host/earnings` balance + ledger; dashboard card; covered by unit + e2e tests |
 | Message read-receipts | Complete | Per-participant read markers, per-conversation + total unread counts, navbar/inbox badges; covered by the e2e test |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |
 | E2E HTTP test | Complete | Drives the real router (host→publish→book→confirm→message) |

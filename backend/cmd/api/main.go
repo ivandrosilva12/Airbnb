@@ -23,6 +23,7 @@ import (
 	messageapp "github.com/airhost/backend/internal/application/message"
 	notificationapp "github.com/airhost/backend/internal/application/notification"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
+	payoutapp "github.com/airhost/backend/internal/application/payout"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	searchapp "github.com/airhost/backend/internal/application/search"
@@ -96,6 +97,7 @@ func run() error {
 	favoriteRepo := postgres.NewFavoriteRepository(pool)
 	notificationRepo := postgres.NewNotificationRepository(pool)
 	paymentRepo := postgres.NewPaymentRepository(pool)
+	payoutRepo := postgres.NewPayoutRepository(pool)
 	blockRepo := postgres.NewBlockRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
@@ -115,11 +117,14 @@ func run() error {
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
+	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
 
-	// Notifications, payments and emails are produced by reacting to domain events.
+	// Notifications, payments, emails and host payouts are produced by reacting
+	// to domain events.
 	dispatcher.Subscribe(notificationSvc.EventHandler())
 	dispatcher.Subscribe(paymentSvc.EventHandler())
 	dispatcher.Subscribe(emailSvc.EventHandler())
+	dispatcher.Subscribe(payoutSvc.EventHandler())
 
 	// --- Observability -----------------------------------------------------
 	registry := prometheus.NewRegistry()
@@ -154,6 +159,7 @@ func run() error {
 			Payment:      handler.NewPaymentHandler(paymentSvc),
 			Analytics:    handler.NewAnalyticsHandler(analyticsSvc),
 			Block:        handler.NewBlockHandler(blockSvc),
+			Payout:       handler.NewPayoutHandler(payoutSvc),
 		},
 	})
 

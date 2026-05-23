@@ -12,6 +12,7 @@ import (
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/payment"
+	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -363,6 +364,58 @@ func FromHostMetrics(m analyticsapp.HostMetrics) HostMetricsView {
 		AverageRating:    m.AverageRating,
 		ReviewCount:      m.ReviewCount,
 	}
+}
+
+// PayoutEntryView is the public representation of a host-earnings ledger line.
+type PayoutEntryView struct {
+	ID         uuid.UUID `json:"id"`
+	BookingID  uuid.UUID `json:"bookingId"`
+	PropertyID uuid.UUID `json:"propertyId"`
+	Kind       string    `json:"kind"`
+	Amount     MoneyView `json:"amount"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+// FromPayoutEntry maps a ledger entry to its view.
+func FromPayoutEntry(e *payout.Entry) PayoutEntryView {
+	return PayoutEntryView{
+		ID:         e.ID,
+		BookingID:  e.BookingID,
+		PropertyID: e.PropertyID,
+		Kind:       string(e.Kind),
+		Amount:     fromMoney(e.Amount),
+		CreatedAt:  e.CreatedAt,
+	}
+}
+
+// EarningsBalanceView renders a host's balance within a single currency.
+type EarningsBalanceView struct {
+	Currency string    `json:"currency"`
+	Earned   MoneyView `json:"earned"`
+	Refunded MoneyView `json:"refunded"`
+	Net      MoneyView `json:"net"`
+}
+
+// EarningsSummaryView is the host earnings summary response.
+type EarningsSummaryView struct {
+	Balances []EarningsBalanceView `json:"balances"`
+}
+
+// FromBalances maps the payout balances read-model to its view.
+func FromBalances(balances []payout.Balance) EarningsSummaryView {
+	out := make([]EarningsBalanceView, 0, len(balances))
+	for _, b := range balances {
+		earned, _ := shared.NewMoney(b.EarnedCents, b.Currency)
+		refunded, _ := shared.NewMoney(b.RefundedCents, b.Currency)
+		net, _ := shared.NewMoney(b.NetCents(), b.Currency)
+		out = append(out, EarningsBalanceView{
+			Currency: b.Currency,
+			Earned:   fromMoney(earned),
+			Refunded: fromMoney(refunded),
+			Net:      fromMoney(net),
+		})
+	}
+	return EarningsSummaryView{Balances: out}
 }
 
 // BlockView is the public representation of a host calendar block.
