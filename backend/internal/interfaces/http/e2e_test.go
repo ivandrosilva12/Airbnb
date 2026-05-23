@@ -246,6 +246,17 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 		t.Fatalf("search total = %v, want >= 1", total)
 	}
 
+	// 4a. Free-text search matches the listing title; an unrelated term does not.
+	rec = h.do(http.MethodGet, "/api/v1/properties?q=sea+view", "", nil)
+	mustStatus(t, rec, http.StatusOK, "keyword search")
+	if total := h.decode(rec)["total"].(float64); total != 1 {
+		t.Fatalf("keyword search total = %v, want 1", total)
+	}
+	rec = h.do(http.MethodGet, "/api/v1/properties?q=treehouse", "", nil)
+	if total := h.decode(rec)["total"].(float64); total != 0 {
+		t.Fatalf("keyword search (no match) total = %v, want 0", total)
+	}
+
 	// 4b. Geo radius search: near Lisbon finds it; a tight radius around Porto
 	// (~270 km away) does not.
 	rec = h.do(http.MethodGet, "/api/v1/properties?lat=38.72&lng=-9.14&radiusKm=50", "", nil)

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	propertyapp "github.com/airhost/backend/internal/application/property"
@@ -95,6 +96,7 @@ func (h *PropertyHandler) Search(c *gin.Context) {
 	maxPrice, _ := strconv.ParseInt(c.Query("maxPrice"), 10, 64)
 	minGuests, _ := strconv.Atoi(c.Query("minGuests"))
 	criteria := property.SearchCriteria{
+		Query:     strings.TrimSpace(c.Query("q")),
 		City:      c.Query("city"),
 		Country:   c.Query("country"),
 		Type:      property.PropertyType(c.Query("type")),

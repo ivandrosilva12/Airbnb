@@ -169,6 +169,7 @@ Public:
   when `lat`/`lng`/`radiusKm` are supplied, results are limited to that radius (haversine distance);
   `sort` is one of `newest` (default), `price_asc`, `price_desc`, `rating`.
 - `GET /properties/:id`
+- `GET /properties?q=...` — free-text search across listing title, description and city
 - `GET /amenities` — canonical amenity codes (shared by the create form and search filter)
 - `GET /properties/:id/availability` — booked date ranges (`?from=YYYY-MM-DD&to=YYYY-MM-DD`)
 - `GET /properties/:id/reviews` · `GET /properties/:id/reviews/summary`
@@ -220,6 +221,7 @@ docker-compose.yml
 | Messaging | Complete | Domain→app→infra→HTTP; covered by the e2e test |
 | Favorites / wishlist | Complete | Domain→app→infra→HTTP + web heart toggle; covered by the e2e test |
 | Date-aware search | Complete | `searchapp` query service; covered by the e2e test |
+| Keyword search | Complete | Free-text `?q=` matched against title/description/city (pg ILIKE + memory substring); web keyword box; covered by unit + e2e tests |
 | Geo radius search | Complete | Haversine distance filter (pg + memory); web "Near me" geolocation; covered by unit + e2e tests |
 | Bidirectional reviews | Complete | Host reviews guest (kind-discriminated, one per direction); guest sees their rating; covered by unit tests |
 | Listing ratings | Complete | Denormalised avg rating/count refreshed on review (migration 0009); shown on cards; covered by unit test |

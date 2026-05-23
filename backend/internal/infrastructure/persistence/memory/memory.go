@@ -180,6 +180,14 @@ func (r *PropertyRepository) Search(_ context.Context, c property.SearchCriteria
 		if _, skip := excluded[p.ID]; skip {
 			continue
 		}
+		if c.Query != "" {
+			q := strings.ToLower(c.Query)
+			if !strings.Contains(strings.ToLower(p.Title), q) &&
+				!strings.Contains(strings.ToLower(p.Description), q) &&
+				!strings.Contains(strings.ToLower(p.Address.City), q) {
+				continue
+			}
+		}
 		if c.City != "" && !strings.Contains(strings.ToLower(p.Address.City), strings.ToLower(c.City)) {
 			continue
 		}

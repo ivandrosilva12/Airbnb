@@ -68,6 +68,32 @@ func TestSearch_SortByPriceAndRating(t *testing.T) {
 	}
 }
 
+func TestSearch_KeywordQuery(t *testing.T) {
+	ctx := context.Background()
+	props := memory.NewPropertyRepository()
+	svc := searchapp.NewService(props, memory.NewBookingRepository(), memory.NewBlockRepository())
+
+	publish(t, props, "Seaside Villa", 38.7, -9.1)
+	publish(t, props, "Mountain Cabin", 40.0, -8.0)
+
+	page := shared.NewPage(20, 0)
+
+	// Case-insensitive title match keeps only the villa.
+	res, err := svc.Search(ctx, property.SearchCriteria{Page: page, Query: "villa"}, nil)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if res.Total != 1 || res.Items[0].Title != "Seaside Villa" {
+		t.Fatalf("query 'villa' = %d items, want 1 (Seaside Villa)", res.Total)
+	}
+
+	// A term that matches nothing returns no listings.
+	none, _ := svc.Search(ctx, property.SearchCriteria{Page: page, Query: "treehouse"}, nil)
+	if none.Total != 0 {
+		t.Fatalf("query 'treehouse' = %d, want 0", none.Total)
+	}
+}
+
 func TestSearch_GeoRadiusFilters(t *testing.T) {
 	ctx := context.Background()
 	props := memory.NewPropertyRepository()

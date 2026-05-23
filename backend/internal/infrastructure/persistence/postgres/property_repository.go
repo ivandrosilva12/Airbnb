@@ -151,6 +151,13 @@ func (r *PropertyRepository) Search(ctx context.Context, c property.SearchCriter
 		args = append(args, val)
 		conds = append(conds, fmt.Sprintf(cond, len(args)))
 	}
+	if c.Query != "" {
+		args = append(args, c.Query)
+		n := len(args)
+		conds = append(conds, fmt.Sprintf(
+			"(title ILIKE '%%' || $%d || '%%' OR description ILIKE '%%' || $%d || '%%' OR city ILIKE '%%' || $%d || '%%')",
+			n, n, n))
+	}
 	if c.City != "" {
 		add("city ILIKE '%%' || $%d || '%%'", c.City)
 	}

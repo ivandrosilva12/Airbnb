@@ -26,6 +26,9 @@ const (
 
 // SearchCriteria expresses the filters available when searching listings.
 type SearchCriteria struct {
+	// Query is a free-text term matched (case-insensitively) against the
+	// listing title, description and city. Empty means no text filter.
+	Query     string
 	City      string
 	Country   string
 	Type      PropertyType

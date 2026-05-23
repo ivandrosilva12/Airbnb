@@ -7,7 +7,7 @@ import { AMENITY_CODES } from '../amenities';
 export default function Home() {
   const { t } = useT();
   const [amenityOptions, setAmenityOptions] = useState(AMENITY_CODES);
-  const [filters, setFilters] = useState({ city: '', type: '', minGuests: '', checkIn: '', checkOut: '', sort: '', amenities: [] });
+  const [filters, setFilters] = useState({ q: '', city: '', type: '', minGuests: '', checkIn: '', checkOut: '', sort: '', amenities: [] });
   const [geo, setGeo] = useState(null); // { lat, lng, radiusKm } | null
   const [results, setResults] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
@@ -80,6 +80,11 @@ export default function Home() {
       <section className="hero">
         <h1>{t('home.title')}</h1>
         <form className="search-bar" onSubmit={onSearch}>
+          <input
+            placeholder={t('home.keyword')}
+            value={filters.q}
+            onChange={(e) => setFilters({ ...filters, q: e.target.value })}
+          />
           <input
             placeholder={t('home.city')}
             value={filters.city}

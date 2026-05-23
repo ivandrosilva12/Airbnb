@@ -30,6 +30,7 @@ export const translations = {
     'type.cabin': 'Cabin',
 
     'home.title': 'Find your next stay',
+    'home.keyword': 'Search by keyword',
     'home.city': 'City',
     'home.search': 'Search',
     'home.sort.newest': 'Newest',
@@ -203,6 +204,7 @@ export const translations = {
     'type.cabin': 'Cabana',
 
     'home.title': 'Encontre a sua próxima estadia',
+    'home.keyword': 'Pesquisar por palavra-chave',
     'home.city': 'Cidade',
     'home.search': 'Pesquisar',
     'home.sort.newest': 'Mais recentes',
