@@ -41,10 +41,10 @@ func (h *MessageHandler) Start(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	response.Created(c, dto.FromConversation(conv))
+	response.Created(c, dto.FromConversation(conv, 0))
 }
 
-// ListMine returns the actor's conversations.
+// ListMine returns the actor's conversations, each with their unread count.
 func (h *MessageHandler) ListMine(c *gin.Context) {
 	actorID, ok := requireUser(c)
 	if !ok {
@@ -55,11 +55,47 @@ func (h *MessageHandler) ListMine(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	unread, err := h.svc.UnreadByConversation(c.Request.Context(), actorID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
 	items := make([]dto.ConversationView, 0, len(res.Items))
 	for _, conv := range res.Items {
-		items = append(items, dto.FromConversation(conv))
+		items = append(items, dto.FromConversation(conv, unread[conv.ID]))
 	}
 	response.OK(c, dto.PageView[dto.ConversationView]{Items: items, Total: res.Total})
+}
+
+// UnreadCount returns the actor's total unread message count.
+func (h *MessageHandler) UnreadCount(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	total, err := h.svc.TotalUnread(c.Request.Context(), actorID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"unread": total})
+}
+
+// MarkRead marks a conversation read for the actor.
+func (h *MessageHandler) MarkRead(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.svc.MarkRead(c.Request.Context(), actorID, id); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.NoContent(c)
 }
 
 // ListMessages returns the messages of a conversation the actor takes part in.

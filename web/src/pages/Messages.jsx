@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useMessages } from '../context/MessagesContext';
 
 export default function Messages() {
   const { profile } = useAuth();
+  const { markRead } = useMessages();
   const [searchParams, setSearchParams] = useSearchParams();
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(searchParams.get('conversation'));
@@ -40,8 +42,12 @@ export default function Messages() {
   }, []);
 
   useEffect(() => {
+    if (!activeId) return;
     loadMessages(activeId);
-    if (activeId) setSearchParams({ conversation: activeId }, { replace: true });
+    setSearchParams({ conversation: activeId }, { replace: true });
+    // Opening a thread clears its unread count locally and on the server.
+    setConversations((prev) => prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)));
+    markRead(activeId);
   }, [activeId]);
 
   useEffect(() => {
@@ -78,7 +84,10 @@ export default function Messages() {
                   className={`conv-item${c.id === activeId ? ' active' : ''}`}
                   onClick={() => setActiveId(c.id)}
                 >
-                  <div>{role}</div>
+                  <div className="conv-row">
+                    <span>{role}</span>
+                    {c.unreadCount > 0 && <span className="count-badge">{c.unreadCount}</span>}
+                  </div>
                   <small>{new Date(c.lastMessageAt).toLocaleString()}</small>
                 </div>
               );

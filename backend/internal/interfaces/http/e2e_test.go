@@ -305,14 +305,37 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	rec = h.do(http.MethodPost, "/api/v1/conversations/"+convID+"/messages", guestTok, map[string]any{"body": "Is early check-in possible?"})
 	mustStatus(t, rec, http.StatusCreated, "send message")
 
-	// 12. Host sees the conversation and the message.
+	// 12. Host sees the conversation, with one unread message.
 	rec = h.do(http.MethodGet, "/api/v1/conversations", hostTok, nil)
-	if total := h.decode(rec)["total"].(float64); total != 1 {
+	hostConvs := h.decode(rec)
+	if total := hostConvs["total"].(float64); total != 1 {
 		t.Fatalf("host conversations total = %v, want 1", total)
+	}
+	if unread := hostConvs["items"].([]any)[0].(map[string]any)["unreadCount"].(float64); unread != 1 {
+		t.Fatalf("conversation unreadCount = %v, want 1", unread)
 	}
 	rec = h.do(http.MethodGet, "/api/v1/conversations/"+convID+"/messages", hostTok, nil)
 	if total := h.decode(rec)["total"].(float64); total != 1 {
 		t.Fatalf("messages total = %v, want 1", total)
+	}
+
+	// 12b. Total unread for the host is 1; the sender (guest) has 0.
+	rec = h.do(http.MethodGet, "/api/v1/conversations/unread-count", hostTok, nil)
+	if u := h.decode(rec)["unread"].(float64); u != 1 {
+		t.Fatalf("host total unread = %v, want 1", u)
+	}
+	rec = h.do(http.MethodGet, "/api/v1/conversations/unread-count", guestTok, nil)
+	if u := h.decode(rec)["unread"].(float64); u != 0 {
+		t.Fatalf("guest total unread = %v, want 0 (own message)", u)
+	}
+
+	// 12c. After the host opens the thread, unread drops to 0.
+	if r := h.do(http.MethodPost, "/api/v1/conversations/"+convID+"/read", hostTok, nil); r.Code != http.StatusNoContent {
+		t.Fatalf("mark conversation read: status = %d, want 204", r.Code)
+	}
+	rec = h.do(http.MethodGet, "/api/v1/conversations/unread-count", hostTok, nil)
+	if u := h.decode(rec)["unread"].(float64); u != 0 {
+		t.Fatalf("host total unread after read = %v, want 0", u)
 	}
 
 	// 13. A non-participant cannot read the thread.

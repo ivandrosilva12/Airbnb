@@ -161,7 +161,8 @@ Authenticated (Bearer token):
 - `GET /me` · `PATCH /me` · `POST /me/become-host`
 - `POST /bookings` · `GET /bookings/me` · `GET /bookings/:id` · `POST /bookings/:id/cancel`
 - `POST /reviews`
-- `GET /conversations` · `POST /conversations` (start/get a thread about a property)
+- `GET /conversations` (each with the viewer's `unreadCount`) · `POST /conversations` (start/get a thread)
+- `GET /conversations/unread-count` (total unread, for the badge) · `POST /conversations/:id/read`
 - `GET /conversations/:id/messages` · `POST /conversations/:id/messages`
 - `GET /favorites` · `POST /favorites` · `DELETE /favorites/:propertyId` (wishlist)
 - `GET /notifications` (with unread count) · `POST /notifications/:id/read` · `POST /notifications/read-all`
@@ -203,6 +204,7 @@ docker-compose.yml
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |
 | Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |
 | Payments | Complete | Authorize/capture/refund driven by booking events via a gateway port (fake by default); web shows payment status; covered by unit + e2e tests |
+| Message read-receipts | Complete | Per-participant read markers, per-conversation + total unread counts, navbar/inbox badges; covered by the e2e test |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |
 | E2E HTTP test | Complete | Drives the real router (host→publish→book→confirm→message) |
 | CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build |

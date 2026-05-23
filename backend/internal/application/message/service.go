@@ -93,6 +93,28 @@ func (s *Service) ListConversations(ctx context.Context, actorID uuid.UUID, page
 	return s.messages.ListConversationsForUser(ctx, actorID, page)
 }
 
+// UnreadByConversation returns the actor's unread count keyed by conversation.
+func (s *Service) UnreadByConversation(ctx context.Context, actorID uuid.UUID) (map[uuid.UUID]int64, error) {
+	return s.messages.ConversationUnreadCounts(ctx, actorID)
+}
+
+// TotalUnread returns the actor's total unread message count.
+func (s *Service) TotalUnread(ctx context.Context, actorID uuid.UUID) (int64, error) {
+	return s.messages.TotalUnread(ctx, actorID)
+}
+
+// MarkRead marks a conversation read up to now for the actor (a participant).
+func (s *Service) MarkRead(ctx context.Context, actorID, conversationID uuid.UUID) error {
+	conv, err := s.messages.FindConversationByID(ctx, conversationID)
+	if err != nil {
+		return err
+	}
+	if err := conv.MarkReadBy(actorID); err != nil {
+		return err
+	}
+	return s.messages.UpdateConversation(ctx, conv)
+}
+
 // ListMessages returns the messages of a conversation the actor participates in.
 func (s *Service) ListMessages(ctx context.Context, actorID, conversationID uuid.UUID, page shared.Page) (shared.PageResult[*message.Message], error) {
 	conv, err := s.messages.FindConversationByID(ctx, conversationID)

@@ -87,8 +87,10 @@ func NewRouter(d Deps) *gin.Engine {
 		// the authenticated group rather than the host-only group.
 		auth.GET("/conversations", h.Message.ListMine)
 		auth.POST("/conversations", h.Message.Start)
+		auth.GET("/conversations/unread-count", h.Message.UnreadCount)
 		auth.GET("/conversations/:id/messages", h.Message.ListMessages)
 		auth.POST("/conversations/:id/messages", h.Message.Send)
+		auth.POST("/conversations/:id/read", h.Message.MarkRead)
 
 		// Favorites (wishlist).
 		auth.GET("/favorites", h.Favorite.List)

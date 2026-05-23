@@ -471,6 +471,32 @@ func (r *MessageRepository) ListMessages(_ context.Context, conversationID uuid.
 	return paginate(all, page), nil
 }
 
+func (r *MessageRepository) ConversationUnreadCounts(_ context.Context, userID uuid.UUID) (map[uuid.UUID]int64, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[uuid.UUID]int64)
+	for _, m := range r.messages {
+		conv, ok := r.conversations[m.ConversationID]
+		if !ok || !conv.HasParticipant(userID) || m.SenderID == userID {
+			continue
+		}
+		if last := conv.LastReadFor(userID); last != nil && !m.CreatedAt.After(*last) {
+			continue
+		}
+		out[m.ConversationID]++
+	}
+	return out, nil
+}
+
+func (r *MessageRepository) TotalUnread(ctx context.Context, userID uuid.UUID) (int64, error) {
+	counts, _ := r.ConversationUnreadCounts(ctx, userID)
+	var total int64
+	for _, c := range counts {
+		total += c
+	}
+	return total, nil
+}
+
 // --- Favorites ---------------------------------------------------------------
 
 // FavoriteRepository is an in-memory favorite.Repository.

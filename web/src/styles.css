@@ -108,6 +108,9 @@ a { color: inherit; text-decoration: none; }
 .conv-item:hover { background: #fafafa; }
 .conv-item.active { background: #fff0f3; }
 .conv-item small { color: var(--muted); }
+.conv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.count-badge { background: var(--primary); color: #fff; font-size: .68rem; font-weight: 700; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; }
+.nav-with-badge { display: inline-flex; align-items: center; gap: 5px; }
 .thread { border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; background: #fff; }
 .thread-messages { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 55vh; }
 .bubble { max-width: 70%; padding: 9px 12px; border-radius: 12px; font-size: .92rem; }

@@ -12,14 +12,17 @@ import (
 )
 
 // Conversation is the aggregate root for a message thread between a guest and a
-// host about a specific property.
+// host about a specific property. Each participant has a "last read" timestamp
+// used to derive unread counts.
 type Conversation struct {
-	ID            uuid.UUID
-	PropertyID    uuid.UUID
-	HostID        uuid.UUID
-	GuestID       uuid.UUID
-	CreatedAt     time.Time
-	LastMessageAt time.Time
+	ID              uuid.UUID
+	PropertyID      uuid.UUID
+	HostID          uuid.UUID
+	GuestID         uuid.UUID
+	CreatedAt       time.Time
+	LastMessageAt   time.Time
+	HostLastReadAt  *time.Time
+	GuestLastReadAt *time.Time
 }
 
 // NewConversation creates a conversation, enforcing that host and guest differ.
@@ -41,6 +44,32 @@ func NewConversation(propertyID, hostID, guestID uuid.UUID) (*Conversation, erro
 // HasParticipant reports whether the user takes part in the conversation.
 func (c *Conversation) HasParticipant(userID uuid.UUID) bool {
 	return c.HostID == userID || c.GuestID == userID
+}
+
+// MarkReadBy advances the given participant's read marker to now, so messages
+// up to this point are no longer counted as unread for them.
+func (c *Conversation) MarkReadBy(userID uuid.UUID) error {
+	now := time.Now().UTC()
+	switch userID {
+	case c.HostID:
+		c.HostLastReadAt = &now
+	case c.GuestID:
+		c.GuestLastReadAt = &now
+	default:
+		return shared.ErrForbidden
+	}
+	return nil
+}
+
+// LastReadFor returns the participant's read marker (nil if never read).
+func (c *Conversation) LastReadFor(userID uuid.UUID) *time.Time {
+	if userID == c.HostID {
+		return c.HostLastReadAt
+	}
+	if userID == c.GuestID {
+		return c.GuestLastReadAt
+	}
+	return nil
 }
 
 // Message is an entity belonging to a Conversation.

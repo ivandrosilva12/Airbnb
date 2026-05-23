@@ -219,10 +219,12 @@ type ConversationView struct {
 	GuestID       uuid.UUID `json:"guestId"`
 	CreatedAt     time.Time `json:"createdAt"`
 	LastMessageAt time.Time `json:"lastMessageAt"`
+	UnreadCount   int64     `json:"unreadCount"`
 }
 
-// FromConversation maps a conversation aggregate to its view.
-func FromConversation(c *message.Conversation) ConversationView {
+// FromConversation maps a conversation aggregate to its view, with the viewer's
+// unread count.
+func FromConversation(c *message.Conversation, unread int64) ConversationView {
 	return ConversationView{
 		ID:            c.ID,
 		PropertyID:    c.PropertyID,
@@ -230,6 +232,7 @@ func FromConversation(c *message.Conversation) ConversationView {
 		GuestID:       c.GuestID,
 		CreatedAt:     c.CreatedAt,
 		LastMessageAt: c.LastMessageAt,
+		UnreadCount:   unread,
 	}
 }
 

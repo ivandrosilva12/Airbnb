@@ -84,6 +84,8 @@ export const api = {
   listConversations: () => request('GET', '/conversations', { auth: true }),
   listMessages: (id) => request('GET', `/conversations/${id}/messages`, { auth: true }),
   sendMessage: (id, body) => request('POST', `/conversations/${id}/messages`, { body: { body }, auth: true }),
+  markConversationRead: (id) => request('POST', `/conversations/${id}/read`, { auth: true }),
+  messagesUnreadCount: () => request('GET', '/conversations/unread-count', { auth: true }),
 
   // Favorites
   listFavorites: () => request('GET', '/favorites', { auth: true }),

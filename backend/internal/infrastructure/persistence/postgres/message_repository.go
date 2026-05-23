@@ -19,20 +19,23 @@ func NewMessageRepository(pool *pgxpool.Pool) *MessageRepository {
 	return &MessageRepository{pool: pool}
 }
 
-const conversationColumns = `id, property_id, host_id, guest_id, created_at, last_message_at`
+const conversationColumns = `id, property_id, host_id, guest_id, created_at, last_message_at,
+	host_last_read_at, guest_last_read_at`
 
 func (r *MessageRepository) CreateConversation(ctx context.Context, c *message.Conversation) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO conversations (`+conversationColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
 		c.ID, c.PropertyID, c.HostID, c.GuestID, c.CreatedAt, c.LastMessageAt,
+		c.HostLastReadAt, c.GuestLastReadAt,
 	)
 	return mapError(err)
 }
 
 func (r *MessageRepository) UpdateConversation(ctx context.Context, c *message.Conversation) error {
 	_, err := r.pool.Exec(ctx,
-		`UPDATE conversations SET last_message_at=$2 WHERE id=$1`, c.ID, c.LastMessageAt)
+		`UPDATE conversations SET last_message_at=$2, host_last_read_at=$3, guest_last_read_at=$4 WHERE id=$1`,
+		c.ID, c.LastMessageAt, c.HostLastReadAt, c.GuestLastReadAt)
 	return mapError(err)
 }
 
@@ -117,9 +120,50 @@ func (r *MessageRepository) ListMessages(ctx context.Context, conversationID uui
 
 func scanConversation(row rowScanner) (*message.Conversation, error) {
 	var c message.Conversation
-	err := row.Scan(&c.ID, &c.PropertyID, &c.HostID, &c.GuestID, &c.CreatedAt, &c.LastMessageAt)
+	err := row.Scan(&c.ID, &c.PropertyID, &c.HostID, &c.GuestID, &c.CreatedAt, &c.LastMessageAt,
+		&c.HostLastReadAt, &c.GuestLastReadAt)
 	if err != nil {
 		return nil, mapError(err)
 	}
 	return &c, nil
+}
+
+// unreadFilter is the WHERE clause counting messages newer than the user's
+// per-conversation read marker, sent by the other party.
+const unreadFilter = `
+	JOIN conversations c ON c.id = m.conversation_id
+	WHERE (c.host_id = $1 OR c.guest_id = $1)
+	  AND m.sender_id <> $1
+	  AND m.created_at > COALESCE(
+	        CASE WHEN c.host_id = $1 THEN c.host_last_read_at ELSE c.guest_last_read_at END,
+	        '-infinity'::timestamptz)`
+
+func (r *MessageRepository) ConversationUnreadCounts(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]int64, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT m.conversation_id, count(*) FROM messages m`+unreadFilter+` GROUP BY m.conversation_id`,
+		userID)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+
+	out := make(map[uuid.UUID]int64)
+	for rows.Next() {
+		var (
+			id  uuid.UUID
+			cnt int64
+		)
+		if err := rows.Scan(&id, &cnt); err != nil {
+			return nil, mapError(err)
+		}
+		out[id] = cnt
+	}
+	return out, mapError(rows.Err())
+}
+
+func (r *MessageRepository) TotalUnread(ctx context.Context, userID uuid.UUID) (int64, error) {
+	var count int64
+	err := r.pool.QueryRow(ctx,
+		`SELECT count(*) FROM messages m`+unreadFilter, userID).Scan(&count)
+	return count, mapError(err)
 }

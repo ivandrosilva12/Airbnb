@@ -19,4 +19,11 @@ type Repository interface {
 
 	AddMessage(ctx context.Context, m *Message) error
 	ListMessages(ctx context.Context, conversationID uuid.UUID, page shared.Page) (shared.PageResult[*Message], error)
+
+	// ConversationUnreadCounts returns, per conversation the user participates in,
+	// the number of messages from the other party newer than the user's read
+	// marker. Conversations with zero unread may be omitted.
+	ConversationUnreadCounts(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]int64, error)
+	// TotalUnread is the user's total unread message count across conversations.
+	TotalUnread(ctx context.Context, userID uuid.UUID) (int64, error)
 }
