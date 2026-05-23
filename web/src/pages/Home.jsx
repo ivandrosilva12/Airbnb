@@ -4,6 +4,7 @@ import PropertyCard from '../components/PropertyCard';
 
 export default function Home() {
   const [filters, setFilters] = useState({ city: '', type: '', minGuests: '', checkIn: '', checkOut: '' });
+  const [geo, setGeo] = useState(null); // { lat, lng, radiusKm } | null
   const [results, setResults] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -25,9 +26,35 @@ export default function Home() {
     load();
   }, []);
 
+  function searchParams(extraGeo) {
+    const g = extraGeo !== undefined ? extraGeo : geo;
+    return { ...filters, ...(g ? { lat: g.lat, lng: g.lng, radiusKm: g.radiusKm } : {}) };
+  }
+
   function onSearch(e) {
     e.preventDefault();
-    load(filters);
+    load(searchParams());
+  }
+
+  function nearMe() {
+    setError(null);
+    if (!navigator.geolocation) {
+      setError('Geolocation is not available in this browser.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const g = { lat: pos.coords.latitude, lng: pos.coords.longitude, radiusKm: 25 };
+        setGeo(g);
+        load(searchParams(g));
+      },
+      () => setError('Could not get your location. Please allow location access.'),
+    );
+  }
+
+  function clearGeo() {
+    setGeo(null);
+    load(searchParams(null));
   }
 
   return (
@@ -69,6 +96,16 @@ export default function Home() {
           />
           <button className="btn btn-primary" type="submit">Search</button>
         </form>
+        <div className="geo-row">
+          {geo ? (
+            <span className="geo-chip">
+              Near you · {geo.radiusKm} km
+              <button type="button" onClick={clearGeo} aria-label="Clear location filter">✕</button>
+            </span>
+          ) : (
+            <button type="button" className="btn btn-ghost" onClick={nearMe}>📍 Near me</button>
+          )}
+        </div>
       </section>
 
       {error && <p className="error">{error}</p>}

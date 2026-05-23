@@ -5,6 +5,7 @@ package memory
 
 import (
 	"context"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -191,6 +192,10 @@ func (r *PropertyRepository) Search(_ context.Context, c property.SearchCriteria
 			continue
 		}
 		if len(c.Amenities) > 0 && !containsAll(p.Amenities, c.Amenities) {
+			continue
+		}
+		if c.Geo != nil && c.Geo.RadiusKm > 0 &&
+			haversineKm(c.Geo.Lat, c.Geo.Lng, p.Address.Latitude, p.Address.Longitude) > c.Geo.RadiusKm {
 			continue
 		}
 		cp := p
@@ -708,6 +713,17 @@ func paginate[T any](items []T, page shared.Page) shared.PageResult[T] {
 		end = len(items)
 	}
 	return shared.PageResult[T]{Items: items[start:end], Total: total}
+}
+
+// haversineKm returns the great-circle distance in kilometres between two
+// latitude/longitude points.
+func haversineKm(lat1, lng1, lat2, lng2 float64) float64 {
+	const earthRadiusKm = 6371.0
+	dLat := (lat2 - lat1) * math.Pi / 180
+	dLng := (lng2 - lng1) * math.Pi / 180
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*math.Sin(dLng/2)*math.Sin(dLng/2)
+	return earthRadiusKm * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 }
 
 func containsAll(haystack, needles []string) bool {

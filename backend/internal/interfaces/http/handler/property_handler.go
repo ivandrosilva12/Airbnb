@@ -87,7 +87,8 @@ func (h *PropertyHandler) Create(c *gin.Context) {
 }
 
 // Search runs a public, filtered listing search. When checkIn/checkOut query
-// params are supplied, listings already booked for that window are excluded.
+// params are supplied, listings already booked for that window are excluded;
+// when lat/lng/radiusKm are supplied, results are limited to that radius.
 func (h *PropertyHandler) Search(c *gin.Context) {
 	maxPrice, _ := strconv.ParseInt(c.Query("maxPrice"), 10, 64)
 	minGuests, _ := strconv.Atoi(c.Query("minGuests"))
@@ -99,6 +100,13 @@ func (h *PropertyHandler) Search(c *gin.Context) {
 		MaxPrice:  maxPrice,
 		Amenities: c.QueryArray("amenity"),
 		Page:      pageFromQuery(c),
+	}
+
+	lat, errLat := strconv.ParseFloat(c.Query("lat"), 64)
+	lng, errLng := strconv.ParseFloat(c.Query("lng"), 64)
+	radiusKm, _ := strconv.ParseFloat(c.Query("radiusKm"), 64)
+	if errLat == nil && errLng == nil && radiusKm > 0 {
+		criteria.Geo = &property.GeoFilter{Lat: lat, Lng: lng, RadiusKm: radiusKm}
 	}
 
 	var window *searchapp.DateWindow

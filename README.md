@@ -151,8 +151,9 @@ go test ./...
 ## API overview (`/api/v1`)
 
 Public:
-- `GET /properties` — search (`?city=&country=&type=&minGuests=&maxPrice=&amenity=&checkIn=&checkOut=`).
-  When `checkIn`/`checkOut` (YYYY-MM-DD) are supplied, listings already booked for that window are excluded.
+- `GET /properties` — search (`?city=&country=&type=&minGuests=&maxPrice=&amenity=&checkIn=&checkOut=&lat=&lng=&radiusKm=`).
+  When `checkIn`/`checkOut` (YYYY-MM-DD) are supplied, listings already booked for that window are excluded;
+  when `lat`/`lng`/`radiusKm` are supplied, results are limited to that radius (haversine distance).
 - `GET /properties/:id`
 - `GET /properties/:id/availability` — booked date ranges (`?from=YYYY-MM-DD&to=YYYY-MM-DD`)
 - `GET /properties/:id/reviews` · `GET /properties/:id/reviews/summary`
@@ -199,6 +200,7 @@ docker-compose.yml
 | Messaging | Complete | Domain→app→infra→HTTP; covered by the e2e test |
 | Favorites / wishlist | Complete | Domain→app→infra→HTTP + web heart toggle; covered by the e2e test |
 | Date-aware search | Complete | `searchapp` query service; covered by the e2e test |
+| Geo radius search | Complete | Haversine distance filter (pg + memory); web "Near me" geolocation; covered by unit + e2e tests |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |

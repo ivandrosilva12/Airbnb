@@ -215,6 +215,18 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 		t.Fatalf("search total = %v, want >= 1", total)
 	}
 
+	// 4b. Geo radius search: near Lisbon finds it; a tight radius around Porto
+	// (~270 km away) does not.
+	rec = h.do(http.MethodGet, "/api/v1/properties?lat=38.72&lng=-9.14&radiusKm=50", "", nil)
+	mustStatus(t, rec, http.StatusOK, "geo search near")
+	if total := h.decode(rec)["total"].(float64); total != 1 {
+		t.Fatalf("geo search near Lisbon total = %v, want 1", total)
+	}
+	rec = h.do(http.MethodGet, "/api/v1/properties?lat=41.15&lng=-8.61&radiusKm=50", "", nil)
+	if total := h.decode(rec)["total"].(float64); total != 0 {
+		t.Fatalf("geo search near Porto total = %v, want 0", total)
+	}
+
 	// 5. Availability empty before booking.
 	rec = h.do(http.MethodGet, "/api/v1/properties/"+propID+"/availability", "", nil)
 	mustStatus(t, rec, http.StatusOK, "availability before")

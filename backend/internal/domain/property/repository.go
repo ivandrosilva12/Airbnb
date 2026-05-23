@@ -7,6 +7,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// GeoFilter restricts results to listings within RadiusKm of a point.
+type GeoFilter struct {
+	Lat      float64
+	Lng      float64
+	RadiusKm float64
+}
+
 // SearchCriteria expresses the filters available when searching listings.
 type SearchCriteria struct {
 	City      string
@@ -15,6 +22,8 @@ type SearchCriteria struct {
 	MinGuests int
 	MaxPrice  int64 // in cents; 0 means no cap
 	Amenities []string
+	// Geo, when non-nil, keeps only listings within the given radius of a point.
+	Geo *GeoFilter
 	// ExcludeIDs removes specific listings from the results (e.g. those already
 	// booked for a requested date range). Empty means no exclusion.
 	ExcludeIDs []uuid.UUID

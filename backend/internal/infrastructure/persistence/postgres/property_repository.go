@@ -152,6 +152,19 @@ func (r *PropertyRepository) Search(ctx context.Context, c property.SearchCriter
 	if len(c.ExcludeIDs) > 0 {
 		add("id <> ALL($%d)", c.ExcludeIDs)
 	}
+	if c.Geo != nil && c.Geo.RadiusKm > 0 {
+		// Great-circle (haversine) distance in km. acos's argument is clamped to
+		// [-1, 1] to avoid NaN from floating-point error at tiny distances.
+		lat := len(args) + 1
+		lng := len(args) + 2
+		radius := len(args) + 3
+		args = append(args, c.Geo.Lat, c.Geo.Lng, c.Geo.RadiusKm)
+		conds = append(conds, fmt.Sprintf(
+			`6371 * acos(least(1, greatest(-1, `+
+				`cos(radians($%d)) * cos(radians(latitude)) * cos(radians(longitude) - radians($%d)) `+
+				`+ sin(radians($%d)) * sin(radians(latitude))))) <= $%d`,
+			lat, lng, lat, radius))
+	}
 	where := "WHERE " + strings.Join(conds, " AND ")
 
 	var total int64
