@@ -14,8 +14,10 @@ import (
 	"time"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
 	messageapp "github.com/airhost/backend/internal/application/message"
+	notificationapp "github.com/airhost/backend/internal/application/notification"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	searchapp "github.com/airhost/backend/internal/application/search"
@@ -61,14 +63,19 @@ func newHarness(t *testing.T) *harness {
 	reviewRepo := memory.NewReviewRepository()
 	messageRepo := memory.NewMessageRepository()
 	favoriteRepo := memory.NewFavoriteRepository()
+	notificationRepo := memory.NewNotificationRepository()
+
+	dispatcher := event.NewDispatcher()
 
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{})
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, 0.10) // 10% service fee
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, 0.10, dispatcher) // 10% service fee
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo)
-	messageSvc := messageapp.NewService(messageRepo, propertyRepo)
+	messageSvc := messageapp.NewService(messageRepo, propertyRepo, dispatcher)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
+	notificationSvc := notificationapp.NewService(notificationRepo)
+	dispatcher.Subscribe(notificationSvc.EventHandler())
 
 	registry := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(registry)
@@ -95,13 +102,14 @@ func newHarness(t *testing.T) *harness {
 		Registry: registry,
 		Auth:     authMW,
 		Handlers: apphttp.Handlers{
-			Health:   handler.NewHealthHandler(nil),
-			User:     handler.NewUserHandler(userSvc),
-			Property: handler.NewPropertyHandler(propertySvc, searchSvc, metrics),
-			Booking:  handler.NewBookingHandler(bookingSvc, metrics),
-			Review:   handler.NewReviewHandler(reviewSvc),
-			Message:  handler.NewMessageHandler(messageSvc),
-			Favorite: handler.NewFavoriteHandler(favoriteSvc),
+			Health:       handler.NewHealthHandler(nil),
+			User:         handler.NewUserHandler(userSvc),
+			Property:     handler.NewPropertyHandler(propertySvc, searchSvc, metrics),
+			Booking:      handler.NewBookingHandler(bookingSvc, metrics),
+			Review:       handler.NewReviewHandler(reviewSvc),
+			Message:      handler.NewMessageHandler(messageSvc),
+			Favorite:     handler.NewFavoriteHandler(favoriteSvc),
+			Notification: handler.NewNotificationHandler(notificationSvc),
 		},
 	})
 
@@ -327,6 +335,47 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	mustStatus(t, rec, http.StatusOK, "admin unsuspend")
 	if h.decode(rec)["status"] != "published" {
 		t.Fatal("expected status published after unsuspend")
+	}
+
+	// 17. Notifications: the host was notified of the booking request and the
+	// message; the guest was notified of the confirmation.
+	rec = h.do(http.MethodGet, "/api/v1/notifications", hostTok, nil)
+	mustStatus(t, rec, http.StatusOK, "host notifications")
+	hostNotifs := h.decode(rec)
+	if unread := hostNotifs["unread"].(float64); unread < 2 {
+		t.Fatalf("host unread notifications = %v, want >= 2", unread)
+	}
+	items := hostNotifs["items"].([]any)
+	var sawBookingRequested bool
+	for _, it := range items {
+		if it.(map[string]any)["type"] == "booking_requested" {
+			sawBookingRequested = true
+		}
+	}
+	if !sawBookingRequested {
+		t.Fatal("expected a booking_requested notification for the host")
+	}
+
+	rec = h.do(http.MethodGet, "/api/v1/notifications", guestTok, nil)
+	guestNotifs := h.decode(rec)
+	if unread := guestNotifs["unread"].(float64); unread < 1 {
+		t.Fatalf("guest unread notifications = %v, want >= 1", unread)
+	}
+
+	// Marking one read decreases the unread count.
+	firstID := items[0].(map[string]any)["id"].(string)
+	before := hostNotifs["unread"].(float64)
+	if r := h.do(http.MethodPost, "/api/v1/notifications/"+firstID+"/read", hostTok, nil); r.Code != http.StatusNoContent {
+		t.Fatalf("mark read: status = %d, want 204", r.Code)
+	}
+	rec = h.do(http.MethodGet, "/api/v1/notifications", hostTok, nil)
+	if after := h.decode(rec)["unread"].(float64); after != before-1 {
+		t.Fatalf("unread after mark-read = %v, want %v", after, before-1)
+	}
+
+	// A guest cannot mark the host's notification read (not found for them).
+	if r := h.do(http.MethodPost, "/api/v1/notifications/"+firstID+"/read", guestTok, nil); r.Code != http.StatusNotFound {
+		t.Fatalf("cross-user mark read: status = %d, want 404", r.Code)
 	}
 }
 

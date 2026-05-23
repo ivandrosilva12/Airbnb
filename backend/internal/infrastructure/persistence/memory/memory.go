@@ -13,6 +13,7 @@ import (
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/message"
+	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -22,12 +23,13 @@ import (
 
 // Compile-time guarantees that the in-memory repos satisfy the domain ports.
 var (
-	_ user.Repository     = (*UserRepository)(nil)
-	_ property.Repository = (*PropertyRepository)(nil)
-	_ booking.Repository  = (*BookingRepository)(nil)
-	_ review.Repository   = (*ReviewRepository)(nil)
-	_ message.Repository  = (*MessageRepository)(nil)
-	_ favorite.Repository = (*FavoriteRepository)(nil)
+	_ user.Repository         = (*UserRepository)(nil)
+	_ property.Repository     = (*PropertyRepository)(nil)
+	_ booking.Repository      = (*BookingRepository)(nil)
+	_ review.Repository       = (*ReviewRepository)(nil)
+	_ message.Repository      = (*MessageRepository)(nil)
+	_ favorite.Repository     = (*FavoriteRepository)(nil)
+	_ notification.Repository = (*NotificationRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -527,6 +529,76 @@ func (r *FavoriteRepository) ListPropertyIDs(_ context.Context, userID uuid.UUID
 		ids = append(ids, list[i].PropertyID)
 	}
 	return paginate(ids, page), nil
+}
+
+// --- Notifications -----------------------------------------------------------
+
+// NotificationRepository is an in-memory notification.Repository.
+type NotificationRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]notification.Notification
+}
+
+// NewNotificationRepository builds an empty in-memory notification repository.
+func NewNotificationRepository() *NotificationRepository {
+	return &NotificationRepository{m: map[uuid.UUID]notification.Notification{}}
+}
+
+func (r *NotificationRepository) Create(_ context.Context, n *notification.Notification) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.m[n.ID] = *n
+	return nil
+}
+
+func (r *NotificationRepository) ListByUser(_ context.Context, userID uuid.UUID, page shared.Page) (shared.PageResult[*notification.Notification], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*notification.Notification
+	for _, n := range r.m {
+		if n.UserID == userID {
+			c := n
+			all = append(all, &c)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
+	return paginate(all, page), nil
+}
+
+func (r *NotificationRepository) UnreadCount(_ context.Context, userID uuid.UUID) (int64, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var count int64
+	for _, n := range r.m {
+		if n.UserID == userID && n.ReadAt == nil {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (r *NotificationRepository) MarkRead(_ context.Context, id, userID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, ok := r.m[id]
+	if !ok || n.UserID != userID {
+		return shared.ErrNotFound
+	}
+	n.MarkRead()
+	r.m[id] = n
+	return nil
+}
+
+func (r *NotificationRepository) MarkAllRead(_ context.Context, userID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, n := range r.m {
+		if n.UserID == userID && n.ReadAt == nil {
+			n.MarkRead()
+			r.m[id] = n
+		}
+	}
+	return nil
 }
 
 // --- helpers -----------------------------------------------------------------

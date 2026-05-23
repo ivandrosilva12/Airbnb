@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -18,12 +19,17 @@ type Service struct {
 	bookings       booking.Repository
 	properties     property.Repository
 	serviceFeeRate float64
+	events         event.Publisher
 }
 
 // NewService wires the booking application service. serviceFeeRate is the
-// platform fee applied to each booking (e.g. 0.12 for 12%).
-func NewService(bookings booking.Repository, properties property.Repository, serviceFeeRate float64) *Service {
-	return &Service{bookings: bookings, properties: properties, serviceFeeRate: serviceFeeRate}
+// platform fee applied to each booking (e.g. 0.12 for 12%). publisher may be
+// nil, in which case no domain events are emitted.
+func NewService(bookings booking.Repository, properties property.Repository, serviceFeeRate float64, publisher event.Publisher) *Service {
+	if publisher == nil {
+		publisher = event.Nop()
+	}
+	return &Service{bookings: bookings, properties: properties, serviceFeeRate: serviceFeeRate, events: publisher}
 }
 
 // CreateInput carries the data required to make a reservation.
@@ -68,6 +74,13 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	if err := s.bookings.Create(ctx, b); err != nil {
 		return nil, err
 	}
+	s.events.Publish(ctx, event.BookingRequested{
+		BookingID:     b.ID,
+		PropertyID:    prop.ID,
+		PropertyTitle: prop.Title,
+		HostID:        prop.HostID,
+		GuestID:       in.GuestID,
+	})
 	return b, nil
 }
 
@@ -122,6 +135,12 @@ func (s *Service) Confirm(ctx context.Context, actorID, bookingID uuid.UUID) (*b
 	if err := s.bookings.Update(ctx, b); err != nil {
 		return nil, err
 	}
+	s.events.Publish(ctx, event.BookingConfirmed{
+		BookingID:     b.ID,
+		PropertyID:    prop.ID,
+		PropertyTitle: prop.Title,
+		GuestID:       b.GuestID,
+	})
 	return b, nil
 }
 
@@ -140,6 +159,14 @@ func (s *Service) Cancel(ctx context.Context, actorID, bookingID uuid.UUID) (*bo
 	if err := s.bookings.Update(ctx, b); err != nil {
 		return nil, err
 	}
+	s.events.Publish(ctx, event.BookingCancelled{
+		BookingID:     b.ID,
+		PropertyID:    prop.ID,
+		PropertyTitle: prop.Title,
+		HostID:        prop.HostID,
+		GuestID:       b.GuestID,
+		CancelledBy:   actorID,
+	})
 	return b, nil
 }
 

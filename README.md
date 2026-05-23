@@ -46,8 +46,14 @@ ones:
 | **Composition root** | `cmd/api/main.go` | Wires everything together and runs the server. |
 
 Bounded contexts: **user**, **property**, **booking**, **review**, **message**
-(host↔guest threads), **favorite** (wishlists). Date-aware search is a read-model
-query service (`searchapp`) composing the property and booking contexts.
+(host↔guest threads), **favorite** (wishlists), **notification** (in-app). Date-aware
+search is a read-model query service (`searchapp`) composing the property and booking
+contexts.
+
+Cross-context reactions go through a small synchronous **domain-events** dispatcher
+(`application/event`): booking/message use cases publish events (e.g.
+`booking.requested`, `message.sent`) and the notification subscriber turns them into
+notifications — best-effort, so a failing subscriber never breaks the use case.
 
 Key domain rules enforced in code:
 - A host cannot book their own property; only published listings are bookable.
@@ -154,6 +160,7 @@ Authenticated (Bearer token):
 - `GET /conversations` · `POST /conversations` (start/get a thread about a property)
 - `GET /conversations/:id/messages` · `POST /conversations/:id/messages`
 - `GET /favorites` · `POST /favorites` · `DELETE /favorites/:propertyId` (wishlist)
+- `GET /notifications` (with unread count) · `POST /notifications/:id/read` · `POST /notifications/read-all`
 
 Host only:
 - `GET /host/properties` · `POST /properties` · `PATCH /properties/:id` · `DELETE /properties/:id`
@@ -188,6 +195,8 @@ docker-compose.yml
 | Date-aware search | Complete | `searchapp` query service; covered by the e2e test |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
+| Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |
+| Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |
 | E2E HTTP test | Complete | Drives the real router (host→publish→book→confirm→message) |
 | CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build |

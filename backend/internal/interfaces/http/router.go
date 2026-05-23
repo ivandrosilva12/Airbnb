@@ -13,13 +13,14 @@ import (
 
 // Handlers bundles the HTTP handlers wired by the composition root.
 type Handlers struct {
-	Health   *handler.HealthHandler
-	User     *handler.UserHandler
-	Property *handler.PropertyHandler
-	Booking  *handler.BookingHandler
-	Review   *handler.ReviewHandler
-	Message  *handler.MessageHandler
-	Favorite *handler.FavoriteHandler
+	Health       *handler.HealthHandler
+	User         *handler.UserHandler
+	Property     *handler.PropertyHandler
+	Booking      *handler.BookingHandler
+	Review       *handler.ReviewHandler
+	Message      *handler.MessageHandler
+	Favorite     *handler.FavoriteHandler
+	Notification *handler.NotificationHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -92,6 +93,11 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.GET("/favorites", h.Favorite.List)
 		auth.POST("/favorites", h.Favorite.Add)
 		auth.DELETE("/favorites/:propertyId", h.Favorite.Remove)
+
+		// In-app notifications.
+		auth.GET("/notifications", h.Notification.List)
+		auth.POST("/notifications/read-all", h.Notification.MarkAllRead)
+		auth.POST("/notifications/:id/read", h.Notification.MarkRead)
 
 		// Host-only listing management.
 		host := auth.Group("")

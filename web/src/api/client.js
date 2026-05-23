@@ -89,4 +89,9 @@ export const api = {
   listFavorites: () => request('GET', '/favorites', { auth: true }),
   addFavorite: (propertyId) => request('POST', '/favorites', { body: { propertyId }, auth: true }),
   removeFavorite: (propertyId) => request('DELETE', `/favorites/${propertyId}`, { auth: true }),
+
+  // Notifications
+  listNotifications: () => request('GET', '/notifications', { auth: true }),
+  markNotificationRead: (id) => request('POST', `/notifications/${id}/read`, { auth: true }),
+  markAllNotificationsRead: () => request('POST', '/notifications/read-all', { auth: true }),
 };

@@ -6,6 +6,7 @@ import PropertyDetail from './pages/PropertyDetail';
 import MyTrips from './pages/MyTrips';
 import Favorites from './pages/Favorites';
 import Messages from './pages/Messages';
+import Notifications from './pages/Notifications';
 import HostDashboard from './pages/HostDashboard';
 import HostBookings from './pages/HostBookings';
 import CreateListing from './pages/CreateListing';
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="/trips" element={<Protected><MyTrips /></Protected>} />
             <Route path="/saved" element={<Protected><Favorites /></Protected>} />
             <Route path="/messages" element={<Protected><Messages /></Protected>} />
+            <Route path="/notifications" element={<Protected><Notifications /></Protected>} />
             <Route path="/host" element={<Protected><HostDashboard /></Protected>} />
             <Route path="/host/new" element={<Protected><CreateListing /></Protected>} />
             <Route path="/host/properties/:id/bookings" element={<Protected><HostBookings /></Protected>} />

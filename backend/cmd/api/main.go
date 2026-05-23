@@ -15,8 +15,10 @@ import (
 	"syscall"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
 	messageapp "github.com/airhost/backend/internal/application/message"
+	notificationapp "github.com/airhost/backend/internal/application/notification"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	searchapp "github.com/airhost/backend/internal/application/search"
@@ -86,15 +88,24 @@ func run() error {
 	reviewRepo := postgres.NewReviewRepository(pool)
 	messageRepo := postgres.NewMessageRepository(pool)
 	favoriteRepo := postgres.NewFavoriteRepository(pool)
+	notificationRepo := postgres.NewNotificationRepository(pool)
+
+	// --- Domain events ----------------------------------------------------
+	// A synchronous in-process dispatcher fans domain events out to subscribers.
+	dispatcher := event.NewDispatcher()
 
 	// --- Application services ---------------------------------------------
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, objectStore)
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, cfg.Pricing.ServiceFeeRate)
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, cfg.Pricing.ServiceFeeRate, dispatcher)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo)
-	messageSvc := messageapp.NewService(messageRepo, propertyRepo)
+	messageSvc := messageapp.NewService(messageRepo, propertyRepo, dispatcher)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
+	notificationSvc := notificationapp.NewService(notificationRepo)
+
+	// Notifications are produced by reacting to domain events.
+	dispatcher.Subscribe(notificationSvc.EventHandler())
 
 	// --- Observability -----------------------------------------------------
 	registry := prometheus.NewRegistry()
@@ -118,13 +129,14 @@ func run() error {
 		Registry: registry,
 		Auth:     authMW,
 		Handlers: apphttp.Handlers{
-			Health:   handler.NewHealthHandler(pool),
-			User:     handler.NewUserHandler(userSvc),
-			Property: handler.NewPropertyHandler(propertySvc, searchSvc, metrics),
-			Booking:  handler.NewBookingHandler(bookingSvc, metrics),
-			Review:   handler.NewReviewHandler(reviewSvc),
-			Message:  handler.NewMessageHandler(messageSvc),
-			Favorite: handler.NewFavoriteHandler(favoriteSvc),
+			Health:       handler.NewHealthHandler(pool),
+			User:         handler.NewUserHandler(userSvc),
+			Property:     handler.NewPropertyHandler(propertySvc, searchSvc, metrics),
+			Booking:      handler.NewBookingHandler(bookingSvc, metrics),
+			Review:       handler.NewReviewHandler(reviewSvc),
+			Message:      handler.NewMessageHandler(messageSvc),
+			Favorite:     handler.NewFavoriteHandler(favoriteSvc),
+			Notification: handler.NewNotificationHandler(notificationSvc),
 		},
 	})
 

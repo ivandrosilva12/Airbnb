@@ -8,6 +8,7 @@ import (
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/message"
+	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -249,6 +250,41 @@ func FromMessage(m *message.Message) MessageView {
 		Body:           m.Body,
 		CreatedAt:      m.CreatedAt,
 	}
+}
+
+// NotificationView is the public representation of a notification.
+type NotificationView struct {
+	ID        uuid.UUID  `json:"id"`
+	Type      string     `json:"type"`
+	Title     string     `json:"title"`
+	Body      string     `json:"body"`
+	RelatedID *uuid.UUID `json:"relatedId,omitempty"`
+	Read      bool       `json:"read"`
+	CreatedAt time.Time  `json:"createdAt"`
+}
+
+// FromNotification maps a notification aggregate to its view.
+func FromNotification(n *notification.Notification) NotificationView {
+	v := NotificationView{
+		ID:        n.ID,
+		Type:      string(n.Type),
+		Title:     n.Title,
+		Body:      n.Body,
+		Read:      n.IsRead(),
+		CreatedAt: n.CreatedAt,
+	}
+	if n.RelatedID != uuid.Nil {
+		id := n.RelatedID
+		v.RelatedID = &id
+	}
+	return v
+}
+
+// NotificationListView is the list response, including the unread count.
+type NotificationListView struct {
+	Items  []NotificationView `json:"items"`
+	Total  int64              `json:"total"`
+	Unread int64              `json:"unread"`
 }
 
 // PageView wraps a paginated list response.

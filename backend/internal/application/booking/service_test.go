@@ -25,7 +25,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	bookings := memory.NewBookingRepository()
 	properties := memory.NewPropertyRepository()
-	svc := bookingapp.NewService(bookings, properties, 0)
+	svc := bookingapp.NewService(bookings, properties, 0, nil)
 
 	hostID := uuid.New()
 	price, _ := shared.NewMoney(10000, "EUR") // 100.00/night
