@@ -15,12 +15,13 @@ import (
 func makeBooking(t *testing.T, guestID, propertyID uuid.UUID, status booking.Status) *booking.Booking {
 	t.Helper()
 	price, _ := shared.NewMoney(5000, "EUR")
+	cleaning, _ := shared.NewMoney(0, "EUR")
 	start := time.Now().UTC().AddDate(0, 0, 1)
 	dr, err := booking.NewDateRange(start, start.AddDate(0, 0, 2))
 	if err != nil {
 		t.Fatalf("date range: %v", err)
 	}
-	b, err := booking.NewBooking(propertyID, guestID, dr, 1, price)
+	b, err := booking.NewBooking(propertyID, guestID, dr, 1, price, cleaning, 0)
 	if err != nil {
 		t.Fatalf("new booking: %v", err)
 	}

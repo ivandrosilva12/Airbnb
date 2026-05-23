@@ -76,6 +76,7 @@ type Property struct {
 	Status        Status
 	Address       Address
 	PricePerNight shared.Money
+	CleaningFee   shared.Money
 	MaxGuests     int
 	Bedrooms      int
 	Beds          int
@@ -92,7 +93,7 @@ func NewProperty(
 	title, description string,
 	pType PropertyType,
 	address Address,
-	price shared.Money,
+	price, cleaningFee shared.Money,
 	maxGuests, bedrooms, beds, bathrooms int,
 	amenities []string,
 ) (*Property, error) {
@@ -105,6 +106,9 @@ func NewProperty(
 	}
 	if err := address.validate(); err != nil {
 		return nil, err
+	}
+	if cleaningFee.Currency() != price.Currency() {
+		return nil, shared.NewValidationError("cleaning fee must use the same currency as the nightly price")
 	}
 	if maxGuests < 1 {
 		return nil, shared.NewValidationError("maxGuests must be at least 1")
@@ -123,6 +127,7 @@ func NewProperty(
 		Status:        StatusDraft,
 		Address:       address,
 		PricePerNight: price,
+		CleaningFee:   cleaningFee,
 		MaxGuests:     maxGuests,
 		Bedrooms:      bedrooms,
 		Beds:          beds,
@@ -150,6 +155,16 @@ func (p *Property) Suspend() {
 	p.touch()
 }
 
+// Unsuspend restores a suspended listing back to published.
+func (p *Property) Unsuspend() error {
+	if p.Status != StatusSuspended {
+		return shared.NewValidationError("only suspended listings can be reinstated")
+	}
+	p.Status = StatusPublished
+	p.touch()
+	return nil
+}
+
 // AddPhoto appends a photo to the listing.
 func (p *Property) AddPhoto(objectKey, url string) Photo {
 	photo := Photo{
@@ -164,10 +179,13 @@ func (p *Property) AddPhoto(objectKey, url string) Photo {
 }
 
 // UpdateDetails mutates editable descriptive fields.
-func (p *Property) UpdateDetails(title, description string, price shared.Money, maxGuests int) error {
+func (p *Property) UpdateDetails(title, description string, price, cleaningFee shared.Money, maxGuests int) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return shared.NewValidationError("title is required")
+	}
+	if cleaningFee.Currency() != price.Currency() {
+		return shared.NewValidationError("cleaning fee must use the same currency as the nightly price")
 	}
 	if maxGuests < 1 {
 		return shared.NewValidationError("maxGuests must be at least 1")
@@ -175,6 +193,7 @@ func (p *Property) UpdateDetails(title, description string, price shared.Money, 
 	p.Title = title
 	p.Description = strings.TrimSpace(description)
 	p.PricePerNight = price
+	p.CleaningFee = cleaningFee
 	p.MaxGuests = maxGuests
 	p.touch()
 	return nil

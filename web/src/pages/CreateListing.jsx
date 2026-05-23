@@ -13,6 +13,7 @@ const initial = {
   latitude: 0,
   longitude: 0,
   price: '',
+  cleaningFee: '',
   currency: 'EUR',
   maxGuests: 2,
   bedrooms: 1,
@@ -46,6 +47,7 @@ export default function CreateListing() {
         latitude: Number(form.latitude),
         longitude: Number(form.longitude),
         priceCents: Math.round(Number(form.price) * 100),
+        cleaningFeeCents: Math.round(Number(form.cleaningFee || 0) * 100),
         currency: form.currency,
         maxGuests: Number(form.maxGuests),
         bedrooms: Number(form.bedrooms),
@@ -87,6 +89,7 @@ export default function CreateListing() {
         <label>Latitude<input type="number" step="any" value={form.latitude} onChange={set('latitude')} /></label>
         <label>Longitude<input type="number" step="any" value={form.longitude} onChange={set('longitude')} /></label>
         <label>Price / night<input required type="number" min="0" step="0.01" value={form.price} onChange={set('price')} /></label>
+        <label>Cleaning fee<input type="number" min="0" step="0.01" value={form.cleaningFee} onChange={set('cleaningFee')} /></label>
         <label>Currency<input required maxLength="3" value={form.currency} onChange={set('currency')} /></label>
         <label>Max guests<input type="number" min="1" value={form.maxGuests} onChange={set('maxGuests')} /></label>
         <label>Bedrooms<input type="number" min="0" value={form.bedrooms} onChange={set('bedrooms')} /></label>

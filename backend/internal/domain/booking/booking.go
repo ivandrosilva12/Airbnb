@@ -55,24 +55,33 @@ type Booking struct {
 	GuestID    uuid.UUID
 	Dates      DateRange
 	Guests     int
-	TotalPrice shared.Money
+	Pricing    Pricing
 	Status     Status
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
 
-// NewBooking creates a pending Booking. Total price is derived from the
-// per-night price and number of nights — pricing belongs to the domain.
+// TotalPrice is the amount the guest pays — a convenience accessor over the
+// pricing breakdown.
+func (b *Booking) TotalPrice() shared.Money { return b.Pricing.Total }
+
+// NewBooking creates a pending Booking. The full price breakdown (nightly
+// subtotal, cleaning fee, platform service fee, total) is derived in the domain
+// — clients never supply the price.
 func NewBooking(
 	propertyID, guestID uuid.UUID,
 	dates DateRange,
 	guests int,
-	pricePerNight shared.Money,
+	pricePerNight, cleaningFee shared.Money,
+	serviceFeeRate float64,
 ) (*Booking, error) {
 	if guests < 1 {
 		return nil, shared.NewValidationError("at least one guest is required")
 	}
-	total := pricePerNight.Mul(int64(dates.Nights()))
+	pricing, err := ComputePricing(pricePerNight, cleaningFee, dates.Nights(), serviceFeeRate)
+	if err != nil {
+		return nil, err
+	}
 
 	now := time.Now().UTC()
 	return &Booking{
@@ -81,7 +90,7 @@ func NewBooking(
 		GuestID:    guestID,
 		Dates:      dates,
 		Guests:     guests,
-		TotalPrice: total,
+		Pricing:    pricing,
 		Status:     StatusPending,
 		CreatedAt:  now,
 		UpdatedAt:  now,

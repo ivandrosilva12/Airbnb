@@ -108,6 +108,14 @@ func NewRouter(d Deps) *gin.Engine {
 			host.POST("/bookings/:id/confirm", h.Booking.Confirm)
 			host.POST("/bookings/:id/complete", h.Booking.Complete)
 		}
+
+		// Admin-only moderation.
+		admin := auth.Group("/admin")
+		admin.Use(middleware.RequireAdmin())
+		{
+			admin.POST("/properties/:id/suspend", h.Property.AdminSuspend)
+			admin.POST("/properties/:id/unsuspend", h.Property.AdminUnsuspend)
+		}
 	}
 
 	return r

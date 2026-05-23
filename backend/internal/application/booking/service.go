@@ -15,13 +15,15 @@ import (
 
 // Service orchestrates booking use cases.
 type Service struct {
-	bookings   booking.Repository
-	properties property.Repository
+	bookings       booking.Repository
+	properties     property.Repository
+	serviceFeeRate float64
 }
 
-// NewService wires the booking application service.
-func NewService(bookings booking.Repository, properties property.Repository) *Service {
-	return &Service{bookings: bookings, properties: properties}
+// NewService wires the booking application service. serviceFeeRate is the
+// platform fee applied to each booking (e.g. 0.12 for 12%).
+func NewService(bookings booking.Repository, properties property.Repository, serviceFeeRate float64) *Service {
+	return &Service{bookings: bookings, properties: properties, serviceFeeRate: serviceFeeRate}
 }
 
 // CreateInput carries the data required to make a reservation.
@@ -59,7 +61,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		return nil, shared.NewValidationError("selected dates are not available")
 	}
 
-	b, err := booking.NewBooking(in.PropertyID, in.GuestID, dates, in.Guests, prop.PricePerNight)
+	b, err := booking.NewBooking(in.PropertyID, in.GuestID, dates, in.Guests, prop.PricePerNight, prop.CleaningFee, s.serviceFeeRate)
 	if err != nil {
 		return nil, err
 	}

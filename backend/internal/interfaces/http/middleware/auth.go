@@ -59,6 +59,22 @@ func RequireHost() gin.HandlerFunc {
 	}
 }
 
+// RequireAdmin ensures the authenticated user is a platform administrator.
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		u, ok := CurrentUser(c)
+		if !ok {
+			response.FailMessage(c, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		if u.Role != user.RoleAdmin {
+			response.FailMessage(c, http.StatusForbidden, "admin role required")
+			return
+		}
+		c.Next()
+	}
+}
+
 func bearerToken(header string) string {
 	const prefix = "Bearer "
 	if len(header) > len(prefix) && strings.EqualFold(header[:len(prefix)], prefix) {

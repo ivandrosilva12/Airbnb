@@ -25,12 +25,13 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	bookings := memory.NewBookingRepository()
 	properties := memory.NewPropertyRepository()
-	svc := bookingapp.NewService(bookings, properties)
+	svc := bookingapp.NewService(bookings, properties, 0)
 
 	hostID := uuid.New()
 	price, _ := shared.NewMoney(10000, "EUR") // 100.00/night
+	cleaning, _ := shared.NewMoney(0, "EUR")  // no cleaning fee in this fixture
 	addr := property.Address{City: "Lisbon", Country: "PT", Latitude: 38.7, Longitude: -9.1}
-	prop, err := property.NewProperty(hostID, "Sunny flat", "", property.TypeApartment, addr, price, 4, 2, 2, 1, nil)
+	prop, err := property.NewProperty(hostID, "Sunny flat", "", property.TypeApartment, addr, price, cleaning, 4, 2, 2, 1, nil)
 	if err != nil {
 		t.Fatalf("new property: %v", err)
 	}
@@ -55,8 +56,8 @@ func TestCreate_HappyPathDerivesPrice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if b.TotalPrice.AmountCents() != 30000 { // 3 nights * 100.00
-		t.Errorf("total = %d, want 30000", b.TotalPrice.AmountCents())
+	if b.TotalPrice().AmountCents() != 30000 { // 3 nights * 100.00, no fees in fixture
+		t.Errorf("total = %d, want 30000", b.TotalPrice().AmountCents())
 	}
 }
 

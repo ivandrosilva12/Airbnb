@@ -27,28 +27,33 @@ func NewService(repo property.Repository, storage port.Storage) *Service {
 
 // CreateInput carries the data required to create a listing.
 type CreateInput struct {
-	HostID       uuid.UUID
-	Title        string
-	Description  string
-	Type         string
-	AddressLine1 string
-	City         string
-	Country      string
-	PostalCode   string
-	Latitude     float64
-	Longitude    float64
-	PriceCents   int64
-	Currency     string
-	MaxGuests    int
-	Bedrooms     int
-	Beds         int
-	Bathrooms    int
-	Amenities    []string
+	HostID           uuid.UUID
+	Title            string
+	Description      string
+	Type             string
+	AddressLine1     string
+	City             string
+	Country          string
+	PostalCode       string
+	Latitude         float64
+	Longitude        float64
+	PriceCents       int64
+	CleaningFeeCents int64
+	Currency         string
+	MaxGuests        int
+	Bedrooms         int
+	Beds             int
+	Bathrooms        int
+	Amenities        []string
 }
 
 // Create builds and persists a draft listing.
 func (s *Service) Create(ctx context.Context, in CreateInput) (*property.Property, error) {
 	price, err := shared.NewMoney(in.PriceCents, in.Currency)
+	if err != nil {
+		return nil, err
+	}
+	cleaningFee, err := shared.NewMoney(in.CleaningFeeCents, in.Currency)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +67,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*property.Propert
 	}
 	p, err := property.NewProperty(
 		in.HostID, in.Title, in.Description, property.PropertyType(in.Type),
-		addr, price, in.MaxGuests, in.Bedrooms, in.Beds, in.Bathrooms, in.Amenities,
+		addr, price, cleaningFee, in.MaxGuests, in.Bedrooms, in.Beds, in.Bathrooms, in.Amenities,
 	)
 	if err != nil {
 		return nil, err
@@ -90,11 +95,12 @@ func (s *Service) ListByHost(ctx context.Context, hostID uuid.UUID, page shared.
 
 // UpdateInput carries editable listing fields.
 type UpdateInput struct {
-	Title       string
-	Description string
-	PriceCents  int64
-	Currency    string
-	MaxGuests   int
+	Title            string
+	Description      string
+	PriceCents       int64
+	CleaningFeeCents int64
+	Currency         string
+	MaxGuests        int
 }
 
 // Update mutates a listing after verifying ownership.
@@ -107,7 +113,11 @@ func (s *Service) Update(ctx context.Context, actorID, propertyID uuid.UUID, in 
 	if err != nil {
 		return nil, err
 	}
-	if err := p.UpdateDetails(in.Title, in.Description, price, in.MaxGuests); err != nil {
+	cleaningFee, err := shared.NewMoney(in.CleaningFeeCents, in.Currency)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.UpdateDetails(in.Title, in.Description, price, cleaningFee, in.MaxGuests); err != nil {
 		return nil, err
 	}
 	if err := s.repo.Update(ctx, p); err != nil {
@@ -172,6 +182,35 @@ func (s *Service) Delete(ctx context.Context, actorID, propertyID uuid.UUID) err
 		return err
 	}
 	return s.repo.Delete(ctx, propertyID)
+}
+
+// Suspend hides a listing from search. Intended for platform admins (the
+// caller is responsible for enforcing the admin role), so no ownership check.
+func (s *Service) Suspend(ctx context.Context, propertyID uuid.UUID) (*property.Property, error) {
+	p, err := s.repo.FindByID(ctx, propertyID)
+	if err != nil {
+		return nil, err
+	}
+	p.Suspend()
+	if err := s.repo.Update(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// Unsuspend restores a suspended listing to published (admin action).
+func (s *Service) Unsuspend(ctx context.Context, propertyID uuid.UUID) (*property.Property, error) {
+	p, err := s.repo.FindByID(ctx, propertyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.Unsuspend(); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 func (s *Service) ownedProperty(ctx context.Context, actorID, propertyID uuid.UUID) (*property.Property, error) {

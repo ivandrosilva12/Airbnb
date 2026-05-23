@@ -64,7 +64,7 @@ func newHarness(t *testing.T) *harness {
 
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{})
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo)
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, 0.10) // 10% service fee
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo)
@@ -161,15 +161,18 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	host := h.seedUser(domainuser.RoleHost, "host@test.dev")
 	guest := h.seedUser(domainuser.RoleGuest, "guest@test.dev")
 	other := h.seedUser(domainuser.RoleGuest, "other@test.dev")
+	admin := h.seedUser(domainuser.RoleAdmin, "admin@test.dev")
 
 	hostTok := host.ID.String()
 	guestTok := guest.ID.String()
 	otherTok := other.ID.String()
+	adminTok := admin.ID.String()
 
 	// 1. Host creates a property.
 	rec := h.do(http.MethodPost, "/api/v1/properties", hostTok, map[string]any{
 		"title": "Sea View Loft", "type": "apartment", "city": "Lisbon", "country": "PT",
-		"latitude": 38.7, "longitude": -9.1, "priceCents": 12000, "currency": "EUR", "maxGuests": 3,
+		"latitude": 38.7, "longitude": -9.1, "priceCents": 12000, "cleaningFeeCents": 3000,
+		"currency": "EUR", "maxGuests": 3,
 	})
 	mustStatus(t, rec, http.StatusCreated, "create property")
 	propID := h.decode(rec)["id"].(string)
@@ -214,8 +217,13 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	mustStatus(t, rec, http.StatusCreated, "create booking")
 	booking := h.decode(rec)
 	bookingID := booking["id"].(string)
-	if booking["totalPrice"].(map[string]any)["amountCents"].(float64) != 36000 { // 3 nights * 120.00
-		t.Fatalf("total price = %v, want 36000", booking["totalPrice"])
+	// 3 nights * 120.00 = 360.00 subtotal + 30.00 cleaning = 390.00; 10% service
+	// fee = 39.00; total = 429.00.
+	if got := booking["subtotal"].(map[string]any)["amountCents"].(float64); got != 36000 {
+		t.Fatalf("subtotal = %v, want 36000", got)
+	}
+	if got := booking["totalPrice"].(map[string]any)["amountCents"].(float64); got != 42900 {
+		t.Fatalf("total price = %v, want 42900", got)
 	}
 
 	// 7. Availability now shows one booked range.
@@ -299,6 +307,26 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	rec = h.do(http.MethodGet, "/api/v1/favorites", guestTok, nil)
 	if total := h.decode(rec)["total"].(float64); total != 0 {
 		t.Fatalf("favorites after remove = %v, want 0", total)
+	}
+
+	// 16. Admin moderation: a non-admin is forbidden; an admin can suspend the
+	// listing (removing it from search) and then reinstate it.
+	if r := h.do(http.MethodPost, "/api/v1/admin/properties/"+propID+"/suspend", hostTok, nil); r.Code != http.StatusForbidden {
+		t.Fatalf("non-admin suspend: status = %d, want 403", r.Code)
+	}
+	rec = h.do(http.MethodPost, "/api/v1/admin/properties/"+propID+"/suspend", adminTok, nil)
+	mustStatus(t, rec, http.StatusOK, "admin suspend")
+	if h.decode(rec)["status"] != "suspended" {
+		t.Fatal("expected status suspended")
+	}
+	rec = h.do(http.MethodGet, "/api/v1/properties?city=Lisbon", "", nil)
+	if total := h.decode(rec)["total"].(float64); total != 0 {
+		t.Fatalf("search after suspend total = %v, want 0", total)
+	}
+	rec = h.do(http.MethodPost, "/api/v1/admin/properties/"+propID+"/unsuspend", adminTok, nil)
+	mustStatus(t, rec, http.StatusOK, "admin unsuspend")
+	if h.decode(rec)["status"] != "published" {
+		t.Fatal("expected status published after unsuspend")
 	}
 }
 

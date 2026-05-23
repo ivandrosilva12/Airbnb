@@ -17,6 +17,12 @@ type Config struct {
 	Database DatabaseConfig
 	Keycloak KeycloakConfig
 	Storage  StorageConfig
+	Pricing  PricingConfig
+}
+
+// PricingConfig holds platform pricing policy.
+type PricingConfig struct {
+	ServiceFeeRate float64 // platform fee fraction, e.g. 0.12 for 12%
 }
 
 // AppConfig holds general application settings.
@@ -109,6 +115,9 @@ func Load() (*Config, error) {
 			UseSSL:     getBool("MINIO_USE_SSL", false),
 			PublicHost: getEnv("MINIO_PUBLIC_HOST", "http://localhost:9000"),
 		},
+		Pricing: PricingConfig{
+			ServiceFeeRate: getFloat("SERVICE_FEE_RATE", 0.12),
+		},
 	}
 
 	return cfg, nil
@@ -125,6 +134,15 @@ func getInt(key string, fallback int) int {
 	if v, ok := os.LookupEnv(key); ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
+		}
+	}
+	return fallback
+}
+
+func getFloat(key string, fallback float64) float64 {
+	if v, ok := os.LookupEnv(key); ok {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
 		}
 	}
 	return fallback

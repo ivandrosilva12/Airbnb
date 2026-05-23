@@ -24,17 +24,17 @@ func NewPropertyRepository(pool *pgxpool.Pool) *PropertyRepository {
 
 const propertyColumns = `id, host_id, title, description, type, status,
 	address_line1, city, country, postal_code, latitude, longitude,
-	price_cents, currency, max_guests, bedrooms, beds, bathrooms, amenities,
+	price_cents, currency, cleaning_fee_cents, max_guests, bedrooms, beds, bathrooms, amenities,
 	created_at, updated_at`
 
 func (r *PropertyRepository) Create(ctx context.Context, p *property.Property) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO properties (`+propertyColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
 		p.ID, p.HostID, p.Title, p.Description, string(p.Type), string(p.Status),
 		p.Address.Line1, p.Address.City, p.Address.Country, p.Address.PostalCode,
 		p.Address.Latitude, p.Address.Longitude,
-		p.PricePerNight.AmountCents(), p.PricePerNight.Currency(),
+		p.PricePerNight.AmountCents(), p.PricePerNight.Currency(), p.CleaningFee.AmountCents(),
 		p.MaxGuests, p.Bedrooms, p.Beds, p.Bathrooms, p.Amenities,
 		p.CreatedAt, p.UpdatedAt,
 	)
@@ -52,13 +52,13 @@ func (r *PropertyRepository) Update(ctx context.Context, p *property.Property) e
 		UPDATE properties SET
 			title=$2, description=$3, type=$4, status=$5,
 			address_line1=$6, city=$7, country=$8, postal_code=$9, latitude=$10, longitude=$11,
-			price_cents=$12, currency=$13, max_guests=$14, bedrooms=$15, beds=$16, bathrooms=$17,
-			amenities=$18, updated_at=$19
+			price_cents=$12, currency=$13, cleaning_fee_cents=$14, max_guests=$15, bedrooms=$16, beds=$17, bathrooms=$18,
+			amenities=$19, updated_at=$20
 		WHERE id=$1`,
 		p.ID, p.Title, p.Description, string(p.Type), string(p.Status),
 		p.Address.Line1, p.Address.City, p.Address.Country, p.Address.PostalCode,
 		p.Address.Latitude, p.Address.Longitude,
-		p.PricePerNight.AmountCents(), p.PricePerNight.Currency(),
+		p.PricePerNight.AmountCents(), p.PricePerNight.Currency(), p.CleaningFee.AmountCents(),
 		p.MaxGuests, p.Bedrooms, p.Beds, p.Bathrooms, p.Amenities, p.UpdatedAt,
 	)
 	if err != nil {
@@ -230,17 +230,18 @@ type rowScanner interface {
 
 func scanProperty(row rowScanner) (*property.Property, error) {
 	var (
-		p          property.Property
-		pType      string
-		status     string
-		priceCents int64
-		currency   string
+		p             property.Property
+		pType         string
+		status        string
+		priceCents    int64
+		currency      string
+		cleaningCents int64
 	)
 	err := row.Scan(
 		&p.ID, &p.HostID, &p.Title, &p.Description, &pType, &status,
 		&p.Address.Line1, &p.Address.City, &p.Address.Country, &p.Address.PostalCode,
 		&p.Address.Latitude, &p.Address.Longitude,
-		&priceCents, &currency, &p.MaxGuests, &p.Bedrooms, &p.Beds, &p.Bathrooms, &p.Amenities,
+		&priceCents, &currency, &cleaningCents, &p.MaxGuests, &p.Bedrooms, &p.Beds, &p.Bathrooms, &p.Amenities,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
@@ -250,6 +251,8 @@ func scanProperty(row rowScanner) (*property.Property, error) {
 	p.Status = property.Status(status)
 	money, _ := shared.NewMoney(priceCents, currency)
 	p.PricePerNight = money
+	cleaning, _ := shared.NewMoney(cleaningCents, currency)
+	p.CleaningFee = cleaning
 	if p.Amenities == nil {
 		p.Amenities = []string{}
 	}

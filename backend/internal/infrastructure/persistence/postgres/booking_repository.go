@@ -21,14 +21,17 @@ func NewBookingRepository(pool *pgxpool.Pool) *BookingRepository {
 }
 
 const bookingColumns = `id, property_id, guest_id, check_in, check_out, guests,
-	total_cents, currency, status, created_at, updated_at`
+	subtotal_cents, cleaning_fee_cents, service_fee_cents, total_cents, currency,
+	status, created_at, updated_at`
 
 func (r *BookingRepository) Create(ctx context.Context, b *booking.Booking) error {
+	p := b.Pricing
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO bookings (`+bookingColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
 		b.ID, b.PropertyID, b.GuestID, b.Dates.CheckIn, b.Dates.CheckOut, b.Guests,
-		b.TotalPrice.AmountCents(), b.TotalPrice.Currency(), string(b.Status), b.CreatedAt, b.UpdatedAt,
+		p.Subtotal.AmountCents(), p.CleaningFee.AmountCents(), p.ServiceFee.AmountCents(),
+		p.Total.AmountCents(), p.Total.Currency(), string(b.Status), b.CreatedAt, b.UpdatedAt,
 	)
 	return mapError(err)
 }
@@ -151,20 +154,33 @@ func (r *BookingRepository) HasOverlap(ctx context.Context, propertyID uuid.UUID
 
 func scanBooking(row rowScanner) (*booking.Booking, error) {
 	var (
-		b          booking.Booking
-		status     string
-		totalCents int64
-		currency   string
+		b             booking.Booking
+		status        string
+		subtotalCents int64
+		cleaningCents int64
+		serviceCents  int64
+		totalCents    int64
+		currency      string
 	)
 	err := row.Scan(
 		&b.ID, &b.PropertyID, &b.GuestID, &b.Dates.CheckIn, &b.Dates.CheckOut, &b.Guests,
-		&totalCents, &currency, &status, &b.CreatedAt, &b.UpdatedAt,
+		&subtotalCents, &cleaningCents, &serviceCents, &totalCents, &currency, &status,
+		&b.CreatedAt, &b.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 	b.Status = booking.Status(status)
-	money, _ := shared.NewMoney(totalCents, currency)
-	b.TotalPrice = money
+	subtotal, _ := shared.NewMoney(subtotalCents, currency)
+	cleaning, _ := shared.NewMoney(cleaningCents, currency)
+	service, _ := shared.NewMoney(serviceCents, currency)
+	total, _ := shared.NewMoney(totalCents, currency)
+	b.Pricing = booking.Pricing{
+		Nights:      b.Dates.Nights(),
+		Subtotal:    subtotal,
+		CleaningFee: cleaning,
+		ServiceFee:  service,
+		Total:       total,
+	}
 	return &b, nil
 }

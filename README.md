@@ -53,8 +53,9 @@ Key domain rules enforced in code:
 - A host cannot book their own property; only published listings are bookable.
 - Bookings use half-open date ranges `[checkIn, checkOut)` — same-day turnover is
   allowed, overlapping active bookings are rejected.
-- Total price is derived in the domain (`pricePerNight × nights`), never trusted
-  from the client.
+- Pricing is derived in the domain, never trusted from the client: the booking
+  total is `subtotal (pricePerNight × nights) + cleaning fee + platform service
+  fee`, where the service fee rate is configurable (`SERVICE_FEE_RATE`, default 12%).
 - Money is stored as integer minor units (cents) with an ISO currency.
 - A review requires a *completed* booking owned by the guest, and only one review
   per booking.
@@ -160,6 +161,9 @@ Host only:
 - `POST /properties/:id/photos` (multipart) · `POST /properties/:id/photos/presign`
 - `GET /properties/:id/bookings` · `POST /bookings/:id/confirm` · `POST /bookings/:id/complete`
 
+Admin only:
+- `POST /admin/properties/:id/suspend` · `POST /admin/properties/:id/unsuspend`
+
 The stay lifecycle is: `pending → confirmed → completed`, with `cancelled` reachable
 from pending/confirmed. A guest can only review a **completed** booking, so the host
 marks a stay completed (after check-out) to unlock the review.
@@ -182,6 +186,8 @@ docker-compose.yml
 | Messaging | Complete | Domain→app→infra→HTTP; covered by the e2e test |
 | Favorites / wishlist | Complete | Domain→app→infra→HTTP + web heart toggle; covered by the e2e test |
 | Date-aware search | Complete | `searchapp` query service; covered by the e2e test |
+| Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
+| Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |
 | E2E HTTP test | Complete | Drives the real router (host→publish→book→confirm→message) |
 | CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build |

@@ -75,6 +75,7 @@ type PropertyView struct {
 	Status        string      `json:"status"`
 	Address       AddressView `json:"address"`
 	PricePerNight MoneyView   `json:"pricePerNight"`
+	CleaningFee   MoneyView   `json:"cleaningFee"`
 	MaxGuests     int         `json:"maxGuests"`
 	Bedrooms      int         `json:"bedrooms"`
 	Beds          int         `json:"beds"`
@@ -106,6 +107,7 @@ func FromProperty(p *property.Property) PropertyView {
 			Longitude:  p.Address.Longitude,
 		},
 		PricePerNight: fromMoney(p.PricePerNight),
+		CleaningFee:   fromMoney(p.CleaningFee),
 		MaxGuests:     p.MaxGuests,
 		Bedrooms:      p.Bedrooms,
 		Beds:          p.Beds,
@@ -116,33 +118,40 @@ func FromProperty(p *property.Property) PropertyView {
 	}
 }
 
-// BookingView is the public representation of a reservation.
+// BookingView is the public representation of a reservation, including the
+// full price breakdown.
 type BookingView struct {
-	ID         uuid.UUID `json:"id"`
-	PropertyID uuid.UUID `json:"propertyId"`
-	GuestID    uuid.UUID `json:"guestId"`
-	CheckIn    string    `json:"checkIn"`
-	CheckOut   string    `json:"checkOut"`
-	Nights     int       `json:"nights"`
-	Guests     int       `json:"guests"`
-	TotalPrice MoneyView `json:"totalPrice"`
-	Status     string    `json:"status"`
-	CreatedAt  time.Time `json:"createdAt"`
+	ID          uuid.UUID `json:"id"`
+	PropertyID  uuid.UUID `json:"propertyId"`
+	GuestID     uuid.UUID `json:"guestId"`
+	CheckIn     string    `json:"checkIn"`
+	CheckOut    string    `json:"checkOut"`
+	Nights      int       `json:"nights"`
+	Guests      int       `json:"guests"`
+	Subtotal    MoneyView `json:"subtotal"`
+	CleaningFee MoneyView `json:"cleaningFee"`
+	ServiceFee  MoneyView `json:"serviceFee"`
+	TotalPrice  MoneyView `json:"totalPrice"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 // FromBooking maps a booking aggregate to its view.
 func FromBooking(b *booking.Booking) BookingView {
 	return BookingView{
-		ID:         b.ID,
-		PropertyID: b.PropertyID,
-		GuestID:    b.GuestID,
-		CheckIn:    b.Dates.CheckIn.Format("2006-01-02"),
-		CheckOut:   b.Dates.CheckOut.Format("2006-01-02"),
-		Nights:     b.Dates.Nights(),
-		Guests:     b.Guests,
-		TotalPrice: fromMoney(b.TotalPrice),
-		Status:     string(b.Status),
-		CreatedAt:  b.CreatedAt,
+		ID:          b.ID,
+		PropertyID:  b.PropertyID,
+		GuestID:     b.GuestID,
+		CheckIn:     b.Dates.CheckIn.Format("2006-01-02"),
+		CheckOut:    b.Dates.CheckOut.Format("2006-01-02"),
+		Nights:      b.Dates.Nights(),
+		Guests:      b.Guests,
+		Subtotal:    fromMoney(b.Pricing.Subtotal),
+		CleaningFee: fromMoney(b.Pricing.CleaningFee),
+		ServiceFee:  fromMoney(b.Pricing.ServiceFee),
+		TotalPrice:  fromMoney(b.Pricing.Total),
+		Status:      string(b.Status),
+		CreatedAt:   b.CreatedAt,
 	}
 }
 

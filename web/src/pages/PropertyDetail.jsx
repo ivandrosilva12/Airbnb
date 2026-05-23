@@ -91,6 +91,16 @@ export default function PropertyDetail() {
 
   const isOwnListing = profile?.id === property.hostId;
 
+  const currency = property.pricePerNight.currency;
+  const fmt = (cents) => `${(cents / 100).toFixed(2)} ${currency}`;
+  const nights = (() => {
+    if (!form.checkIn || !form.checkOut) return 0;
+    const ms = new Date(form.checkOut) - new Date(form.checkIn);
+    return ms > 0 ? Math.round(ms / 86400000) : 0;
+  })();
+  const subtotalCents = nights * property.pricePerNight.amountCents;
+  const cleaningCents = property.cleaningFee?.amountCents || 0;
+
   return (
     <div className="container detail">
       <h1>{property.title}</h1>
@@ -148,6 +158,14 @@ export default function PropertyDetail() {
               Guests
               <input type="number" min="1" max={property.maxGuests} value={form.guests} onChange={(e) => setForm({ ...form, guests: e.target.value })} />
             </label>
+            {nights > 0 && (
+              <div className="price-breakdown">
+                <div><span>{property.pricePerNight.display} × {nights} night(s)</span><span>{fmt(subtotalCents)}</span></div>
+                {cleaningCents > 0 && <div><span>Cleaning fee</span><span>{fmt(cleaningCents)}</span></div>}
+                <div className="muted">Service fee added at checkout</div>
+                <div className="bd-total"><span>Before service fee</span><span>{fmt(subtotalCents + cleaningCents)}</span></div>
+              </div>
+            )}
             <button className="btn btn-primary block" type="submit">
               {authenticated ? 'Reserve' : 'Sign in to reserve'}
             </button>
