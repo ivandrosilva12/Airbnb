@@ -232,7 +232,7 @@ docker-compose.yml
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification/payment/email subscribe |
 | Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |
-| Email notifications | Complete | Transactional email via a `Mailer` port reacting to booking/message events; SMTP in prod, log mailer when unconfigured, MailHog locally; covered by unit + e2e tests |
+| Email notifications | Complete | Transactional HTML email (multipart/alternative with text fallback) via a `Mailer` port reacting to booking/message events; templated with `html/template` (auto-escaped); SMTP in prod, log mailer when unconfigured, MailHog locally; covered by unit + e2e tests |
 | Payments | Complete | Authorize/capture/refund driven by booking events via a gateway port (fake by default); web shows payment status; covered by unit + e2e tests |
 | Message read-receipts | Complete | Per-participant read markers, per-conversation + total unread counts, navbar/inbox badges; covered by the e2e test |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |

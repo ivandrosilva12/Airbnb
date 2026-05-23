@@ -62,7 +62,8 @@ func (s *Service) send(ctx context.Context, userID uuid.UUID, subject, body stri
 	if u.Email == "" {
 		return
 	}
-	if err := s.mailer.Send(ctx, u.Email, subject, body); err != nil {
+	msg := port.Email{To: u.Email, Subject: subject, Text: body, HTML: renderHTML(subject, body)}
+	if err := s.mailer.Send(ctx, msg); err != nil {
 		slog.Error("email: send failed", "to", u.Email, "subject", subject, "error", err)
 	}
 }

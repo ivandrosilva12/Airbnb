@@ -2,6 +2,7 @@ package emailapp_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	emailapp "github.com/airhost/backend/internal/application/email"
@@ -36,6 +37,39 @@ func TestEventHandler_SendsTransactionalEmails(t *testing.T) {
 	assertSent(t, sent, host.Email, "New booking request")
 	assertSent(t, sent, guest.Email, "Booking confirmed")
 	assertSent(t, sent, host.Email, "New message")
+
+	// Each email carries a branded HTML body alongside the plaintext fallback.
+	for _, m := range sent {
+		if m.Text == "" {
+			t.Fatalf("email to %s has empty text body", m.To)
+		}
+		if !strings.Contains(m.HTML, "<html") || !strings.Contains(m.HTML, "AirHost") {
+			t.Fatalf("email to %s missing HTML layout: %q", m.To, m.HTML)
+		}
+	}
+}
+
+func TestEventHandler_HTMLEscapesUntrustedTitles(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	host := mustUser(t, users, "host@test.dev", user.RoleHost)
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	// A property title is user-controlled; the HTML body must not embed raw markup.
+	dispatcher.Publish(ctx, event.BookingRequested{
+		PropertyTitle: "<script>alert(1)</script>", HostID: host.ID,
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want 1", len(sent))
+	}
+	if strings.Contains(sent[0].HTML, "<script>") {
+		t.Fatalf("HTML body contains unescaped markup: %q", sent[0].HTML)
+	}
 }
 
 func TestEventHandler_CancellationEmailsTheOtherParty(t *testing.T) {
