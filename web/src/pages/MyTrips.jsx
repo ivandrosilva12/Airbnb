@@ -74,6 +74,14 @@ export default function MyTrips() {
     }
   }
 
+  async function downloadReceipt(id) {
+    try {
+      await api.downloadReceipt(id);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   return (
     <div className="container">
       <h1>My trips</h1>
@@ -101,6 +109,9 @@ export default function MyTrips() {
                   {payments[b.id]
                     ? <span className={`badge badge-pay-${payments[b.id]}`}>{payments[b.id]}</span>
                     : <span className="muted-text">—</span>}
+                  {payments[b.id] && (
+                    <button className="link-btn" onClick={() => downloadReceipt(b.id)}>receipt</button>
+                  )}
                 </td>
                 <td>
                   {(b.status === 'pending' || b.status === 'confirmed') && (

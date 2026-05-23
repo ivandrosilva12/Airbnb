@@ -37,6 +37,32 @@ async function request(method, path, { body, formData, auth = false } = {}) {
   return data;
 }
 
+// downloadFile fetches an authenticated binary endpoint and triggers a browser
+// download, since a plain link cannot carry the bearer token.
+async function downloadFile(path, filename) {
+  if (keycloak.authenticated) {
+    try {
+      await keycloak.updateToken(30);
+    } catch {
+      keycloak.login();
+      return;
+    }
+  }
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${keycloak.token}` },
+  });
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   // Listings (public)
   searchProperties: (params = {}) => {
@@ -102,4 +128,5 @@ export const api = {
 
   // Payments
   listPayments: () => request('GET', '/payments/me', { auth: true }),
+  downloadReceipt: (bookingId) => downloadFile(`/bookings/${bookingId}/receipt`, `airhost-receipt-${bookingId}.pdf`),
 };

@@ -74,7 +74,7 @@ Key domain rules enforced in code:
 
 ## Tech stack
 
-- **Backend:** Go 1.24, Gin, pgx/v5, go-oidc, minio-go, prometheus/client_golang
+- **Backend:** Go 1.24, Gin, pgx/v5, go-oidc, minio-go, prometheus/client_golang, go-pdf/fpdf
 - **Web:** React 18, Vite, React Router, keycloak-js
 - **Mobile:** React Native (Expo SDK 51), expo-auth-session (OIDC PKCE)
 - **Auth:** Keycloak 25 (realm `airhost`)
@@ -171,6 +171,7 @@ Authenticated (Bearer token):
 - `GET /favorites` · `POST /favorites` · `DELETE /favorites/:propertyId` (wishlist)
 - `GET /notifications` (with unread count) · `POST /notifications/:id/read` · `POST /notifications/read-all`
 - `GET /payments/me` · `GET /bookings/:id/payment` (payment status for the guest's booking)
+- `GET /bookings/:id/receipt` — downloadable PDF payment receipt
 
 Host only:
 - `GET /host/properties` · `POST /properties` · `PATCH /properties/:id` · `DELETE /properties/:id`
@@ -210,6 +211,7 @@ docker-compose.yml
 | Listing ratings | Complete | Denormalised avg rating/count refreshed on review (migration 0009); shown on cards; covered by unit test |
 | Result sorting | Complete | Sort by newest/price/rating (pg ORDER BY + memory); web sort dropdown; covered by unit test |
 | Host metrics | Complete | `analyticsapp` read-model composing property+booking+payment (revenue, counts, upcoming, rating); dashboard cards; covered by e2e test |
+| PDF receipts | Complete | `GET /bookings/:id/receipt` renders a PDF (go-pdf/fpdf) with the price breakdown; web download; covered by e2e test |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |

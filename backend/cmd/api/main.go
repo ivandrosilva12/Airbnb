@@ -107,7 +107,7 @@ func run() error {
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
-	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway())
+	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway(), bookingRepo, propertyRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 
 	// Notifications and payments are produced by reacting to domain events.

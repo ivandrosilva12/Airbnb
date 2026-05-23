@@ -108,6 +108,7 @@ func NewRouter(d Deps) *gin.Engine {
 		// Payments (guest-facing reads).
 		auth.GET("/payments/me", h.Payment.ListMine)
 		auth.GET("/bookings/:id/payment", h.Payment.GetForBooking)
+		auth.GET("/bookings/:id/receipt", h.Payment.Receipt)
 
 		// Host-only listing management.
 		host := auth.Group("")

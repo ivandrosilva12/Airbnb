@@ -79,7 +79,7 @@ func newHarness(t *testing.T) *harness {
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
-	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway())
+	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway(), bookingRepo, propertyRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	dispatcher.Subscribe(notificationSvc.EventHandler())
 	dispatcher.Subscribe(paymentSvc.EventHandler())
@@ -305,6 +305,19 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	mustStatus(t, rec, http.StatusOK, "payments me")
 	if total := h.decode(rec)["total"].(float64); total != 1 {
 		t.Fatalf("payments/me total = %v, want 1", total)
+	}
+
+	// The guest can download a PDF receipt; a non-owner cannot.
+	rec = h.do(http.MethodGet, "/api/v1/bookings/"+bookingID+"/receipt", guestTok, nil)
+	mustStatus(t, rec, http.StatusOK, "receipt")
+	if ct := rec.Header().Get("Content-Type"); ct != "application/pdf" {
+		t.Fatalf("receipt content-type = %q, want application/pdf", ct)
+	}
+	if body := rec.Body.Bytes(); len(body) < 4 || string(body[:4]) != "%PDF" {
+		t.Fatalf("receipt body is not a PDF (len %d)", len(body))
+	}
+	if r := h.do(http.MethodGet, "/api/v1/bookings/"+bookingID+"/receipt", otherTok, nil); r.Code != http.StatusForbidden {
+		t.Fatalf("cross-user receipt: status = %d, want 403", r.Code)
 	}
 
 	// 10. Guest cannot confirm (host-only).

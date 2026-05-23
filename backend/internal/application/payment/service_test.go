@@ -16,7 +16,7 @@ import (
 func TestPaymentLifecycleFromEvents(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewPaymentRepository()
-	svc := paymentapp.NewService(repo, infrapayment.NewFakeGateway())
+	svc := paymentapp.NewService(repo, infrapayment.NewFakeGateway(), memory.NewBookingRepository(), memory.NewPropertyRepository())
 
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())

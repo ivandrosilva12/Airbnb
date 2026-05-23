@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"net/http"
+
 	paymentapp "github.com/airhost/backend/internal/application/payment"
+	"github.com/airhost/backend/internal/infrastructure/pdf"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
 	"github.com/gin-gonic/gin"
@@ -49,4 +52,41 @@ func (h *PaymentHandler) GetForBooking(c *gin.Context) {
 		return
 	}
 	response.OK(c, dto.FromPayment(p))
+}
+
+// Receipt streams a PDF receipt for a booking's payment to the owning guest.
+func (h *PaymentHandler) Receipt(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	bookingID, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	data, err := h.svc.Receipt(c.Request.Context(), actorID, bookingID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	body, err := pdf.RenderReceipt(pdf.Receipt{
+		ReceiptNo:     data.ReceiptNo,
+		IssuedAt:      data.IssuedAt.Format("2006-01-02 15:04 UTC"),
+		Status:        string(data.Status),
+		PropertyTitle: data.PropertyTitle,
+		CheckIn:       data.CheckIn.Format("2006-01-02"),
+		CheckOut:      data.CheckOut.Format("2006-01-02"),
+		Nights:        data.Nights,
+		Guests:        data.Guests,
+		Subtotal:      data.Subtotal.String(),
+		CleaningFee:   data.CleaningFee.String(),
+		ServiceFee:    data.ServiceFee.String(),
+		Total:         data.Total.String(),
+	})
+	if err != nil {
+		response.FailMessage(c, http.StatusInternalServerError, "could not render receipt")
+		return
+	}
+	c.Header("Content-Disposition", `attachment; filename="airhost-receipt-`+bookingID.String()+`.pdf"`)
+	c.Data(http.StatusOK, "application/pdf", body)
 }
