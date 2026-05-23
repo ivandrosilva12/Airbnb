@@ -161,13 +161,24 @@ func (s *Service) Cancel(ctx context.Context, actorID, bookingID uuid.UUID) (*bo
 	if err := s.bookings.Update(ctx, b); err != nil {
 		return nil, err
 	}
+
+	// A host cancellation is the host's fault and always refunds in full;
+	// otherwise the listing's cancellation policy decides the refund fraction.
+	refundFraction := 1.0
+	if !prop.IsOwnedBy(actorID) {
+		today := time.Now().UTC().Truncate(24 * time.Hour)
+		daysUntilCheckIn := int(b.Dates.CheckIn.Sub(today).Hours() / 24)
+		refundFraction = prop.CancellationPolicy.RefundFraction(daysUntilCheckIn)
+	}
+
 	s.events.Publish(ctx, event.BookingCancelled{
-		BookingID:     b.ID,
-		PropertyID:    prop.ID,
-		PropertyTitle: prop.Title,
-		HostID:        prop.HostID,
-		GuestID:       b.GuestID,
-		CancelledBy:   actorID,
+		BookingID:      b.ID,
+		PropertyID:     prop.ID,
+		PropertyTitle:  prop.Title,
+		HostID:         prop.HostID,
+		GuestID:        b.GuestID,
+		CancelledBy:    actorID,
+		RefundFraction: refundFraction,
 	})
 	return b, nil
 }

@@ -71,6 +71,10 @@ Key domain rules enforced in code:
   per booking.
 - A payment follows the booking: it is *authorized* when the booking is requested,
   *captured* when the host confirms, and *refunded* if the booking is cancelled.
+- Each listing has a cancellation policy (flexible/moderate/strict). A guest
+  cancellation refunds a policy-determined fraction of the captured charge based
+  on days before check-in; a host cancellation always refunds in full; an
+  uncaptured hold is always released in full.
 
 ## Tech stack
 
@@ -212,6 +216,7 @@ docker-compose.yml
 | Result sorting | Complete | Sort by newest/price/rating (pg ORDER BY + memory); web sort dropdown; covered by unit test |
 | Host metrics | Complete | `analyticsapp` read-model composing property+booking+payment (revenue, counts, upcoming, rating); dashboard cards; covered by e2e test |
 | PDF receipts | Complete | `GET /bookings/:id/receipt` renders a PDF (go-pdf/fpdf) with the price breakdown; web download; covered by e2e test |
+| Cancellation policies | Complete | Per-listing flexible/moderate/strict; partial/full refund on cancel via the payment subscriber; covered by unit tests |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |

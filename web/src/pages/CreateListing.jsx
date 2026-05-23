@@ -20,6 +20,7 @@ const initial = {
   beds: 1,
   bathrooms: 1,
   amenities: '',
+  cancellationPolicy: 'flexible',
 };
 
 export default function CreateListing() {
@@ -54,6 +55,7 @@ export default function CreateListing() {
         beds: Number(form.beds),
         bathrooms: Number(form.bathrooms),
         amenities: form.amenities.split(',').map((a) => a.trim()).filter(Boolean),
+        cancellationPolicy: form.cancellationPolicy,
       });
       if (photo) {
         await api.uploadPhoto(created.id, photo);
@@ -95,6 +97,13 @@ export default function CreateListing() {
         <label>Bedrooms<input type="number" min="0" value={form.bedrooms} onChange={set('bedrooms')} /></label>
         <label>Beds<input type="number" min="0" value={form.beds} onChange={set('beds')} /></label>
         <label>Bathrooms<input type="number" min="0" value={form.bathrooms} onChange={set('bathrooms')} /></label>
+        <label>Cancellation policy
+          <select value={form.cancellationPolicy} onChange={set('cancellationPolicy')}>
+            <option value="flexible">Flexible (full refund ≥1 day before)</option>
+            <option value="moderate">Moderate (full ≥5 days, else 50%)</option>
+            <option value="strict">Strict (full ≥7 days, 50% ≥2 days)</option>
+          </select>
+        </label>
         <label className="full">Amenities (comma separated)<input value={form.amenities} onChange={set('amenities')} placeholder="wifi, kitchen, parking" /></label>
         <label className="full">Cover photo<input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files[0])} /></label>
         <div className="full">

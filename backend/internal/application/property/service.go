@@ -27,24 +27,25 @@ func NewService(repo property.Repository, storage port.Storage) *Service {
 
 // CreateInput carries the data required to create a listing.
 type CreateInput struct {
-	HostID           uuid.UUID
-	Title            string
-	Description      string
-	Type             string
-	AddressLine1     string
-	City             string
-	Country          string
-	PostalCode       string
-	Latitude         float64
-	Longitude        float64
-	PriceCents       int64
-	CleaningFeeCents int64
-	Currency         string
-	MaxGuests        int
-	Bedrooms         int
-	Beds             int
-	Bathrooms        int
-	Amenities        []string
+	HostID             uuid.UUID
+	Title              string
+	Description        string
+	Type               string
+	AddressLine1       string
+	City               string
+	Country            string
+	PostalCode         string
+	Latitude           float64
+	Longitude          float64
+	PriceCents         int64
+	CleaningFeeCents   int64
+	Currency           string
+	MaxGuests          int
+	Bedrooms           int
+	Beds               int
+	Bathrooms          int
+	Amenities          []string
+	CancellationPolicy string
 }
 
 // Create builds and persists a draft listing.
@@ -72,6 +73,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*property.Propert
 	if err != nil {
 		return nil, err
 	}
+	if in.CancellationPolicy != "" {
+		p.SetCancellationPolicy(property.CancellationPolicy(in.CancellationPolicy))
+	}
 	if err := s.repo.Create(ctx, p); err != nil {
 		return nil, err
 	}
@@ -95,12 +99,13 @@ func (s *Service) ListByHost(ctx context.Context, hostID uuid.UUID, page shared.
 
 // UpdateInput carries editable listing fields.
 type UpdateInput struct {
-	Title            string
-	Description      string
-	PriceCents       int64
-	CleaningFeeCents int64
-	Currency         string
-	MaxGuests        int
+	Title              string
+	Description        string
+	PriceCents         int64
+	CleaningFeeCents   int64
+	Currency           string
+	MaxGuests          int
+	CancellationPolicy string
 }
 
 // Update mutates a listing after verifying ownership.
@@ -119,6 +124,9 @@ func (s *Service) Update(ctx context.Context, actorID, propertyID uuid.UUID, in 
 	}
 	if err := p.UpdateDetails(in.Title, in.Description, price, cleaningFee, in.MaxGuests); err != nil {
 		return nil, err
+	}
+	if in.CancellationPolicy != "" {
+		p.SetCancellationPolicy(property.CancellationPolicy(in.CancellationPolicy))
 	}
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err

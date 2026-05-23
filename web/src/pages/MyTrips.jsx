@@ -51,7 +51,7 @@ export default function MyTrips() {
       ]);
       setBookings(bookingsRes.items || []);
       const byBooking = {};
-      for (const p of paymentsRes.items || []) byBooking[p.bookingId] = p.status;
+      for (const p of paymentsRes.items || []) byBooking[p.bookingId] = p;
       setPayments(byBooking);
       setGuestRating(guestReviews?.summary || null);
     } catch (e) {
@@ -107,8 +107,13 @@ export default function MyTrips() {
                 <td><span className={`badge badge-${b.status}`}>{b.status}</span></td>
                 <td>
                   {payments[b.id]
-                    ? <span className={`badge badge-pay-${payments[b.id]}`}>{payments[b.id]}</span>
+                    ? <span className={`badge badge-pay-${payments[b.id].status}`}>{payments[b.id].status}</span>
                     : <span className="muted-text">—</span>}
+                  {payments[b.id]?.refundedCents > 0 && (
+                    <div className="muted-text" style={{ fontSize: '.78rem' }}>
+                      refunded {(payments[b.id].refundedCents / 100).toFixed(2)} {payments[b.id].amount.currency}
+                    </div>
+                  )}
                   {payments[b.id] && (
                     <button className="link-btn" onClick={() => downloadReceipt(b.id)}>receipt</button>
                   )}

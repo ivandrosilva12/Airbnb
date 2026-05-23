@@ -44,8 +44,8 @@ func (g *FakeGateway) Capture(_ context.Context, ref string) error {
 	return nil
 }
 
-// Refund marks a reference as refunded.
-func (g *FakeGateway) Refund(_ context.Context, ref string) error {
+// Refund marks a reference as refunded (the amount is recorded by the caller).
+func (g *FakeGateway) Refund(_ context.Context, ref string, _ int64) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if _, ok := g.refs[ref]; !ok {

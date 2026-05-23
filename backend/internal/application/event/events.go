@@ -28,14 +28,16 @@ type BookingConfirmed struct {
 func (BookingConfirmed) EventName() string { return "booking.confirmed" }
 
 // BookingCancelled is published when either party cancels. The other party is
-// notified.
+// notified, and the payment context refunds RefundFraction of any captured
+// amount (a hold that was only authorized is always released in full).
 type BookingCancelled struct {
-	BookingID     uuid.UUID
-	PropertyID    uuid.UUID
-	PropertyTitle string
-	HostID        uuid.UUID
-	GuestID       uuid.UUID
-	CancelledBy   uuid.UUID
+	BookingID      uuid.UUID
+	PropertyID     uuid.UUID
+	PropertyTitle  string
+	HostID         uuid.UUID
+	GuestID        uuid.UUID
+	CancelledBy    uuid.UUID
+	RefundFraction float64 // 0..1, applied to captured payments
 }
 
 func (BookingCancelled) EventName() string { return "booking.cancelled" }

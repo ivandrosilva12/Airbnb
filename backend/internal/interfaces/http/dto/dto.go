@@ -70,24 +70,25 @@ type AddressView struct {
 
 // PropertyView is the public representation of a listing.
 type PropertyView struct {
-	ID            uuid.UUID   `json:"id"`
-	HostID        uuid.UUID   `json:"hostId"`
-	Title         string      `json:"title"`
-	Description   string      `json:"description"`
-	Type          string      `json:"type"`
-	Status        string      `json:"status"`
-	Address       AddressView `json:"address"`
-	PricePerNight MoneyView   `json:"pricePerNight"`
-	CleaningFee   MoneyView   `json:"cleaningFee"`
-	MaxGuests     int         `json:"maxGuests"`
-	Bedrooms      int         `json:"bedrooms"`
-	Beds          int         `json:"beds"`
-	Bathrooms     int         `json:"bathrooms"`
-	Amenities     []string    `json:"amenities"`
-	Photos        []PhotoView `json:"photos"`
-	AverageRating float64     `json:"averageRating"`
-	ReviewCount   int         `json:"reviewCount"`
-	CreatedAt     time.Time   `json:"createdAt"`
+	ID                 uuid.UUID   `json:"id"`
+	HostID             uuid.UUID   `json:"hostId"`
+	Title              string      `json:"title"`
+	Description        string      `json:"description"`
+	Type               string      `json:"type"`
+	Status             string      `json:"status"`
+	Address            AddressView `json:"address"`
+	PricePerNight      MoneyView   `json:"pricePerNight"`
+	CleaningFee        MoneyView   `json:"cleaningFee"`
+	MaxGuests          int         `json:"maxGuests"`
+	Bedrooms           int         `json:"bedrooms"`
+	Beds               int         `json:"beds"`
+	Bathrooms          int         `json:"bathrooms"`
+	Amenities          []string    `json:"amenities"`
+	Photos             []PhotoView `json:"photos"`
+	CancellationPolicy string      `json:"cancellationPolicy"`
+	AverageRating      float64     `json:"averageRating"`
+	ReviewCount        int         `json:"reviewCount"`
+	CreatedAt          time.Time   `json:"createdAt"`
 }
 
 // FromProperty maps a property aggregate to its view.
@@ -111,17 +112,18 @@ func FromProperty(p *property.Property) PropertyView {
 			Latitude:   p.Address.Latitude,
 			Longitude:  p.Address.Longitude,
 		},
-		PricePerNight: fromMoney(p.PricePerNight),
-		CleaningFee:   fromMoney(p.CleaningFee),
-		MaxGuests:     p.MaxGuests,
-		Bedrooms:      p.Bedrooms,
-		Beds:          p.Beds,
-		Bathrooms:     p.Bathrooms,
-		Amenities:     p.Amenities,
-		Photos:        photos,
-		AverageRating: p.AverageRating,
-		ReviewCount:   p.ReviewCount,
-		CreatedAt:     p.CreatedAt,
+		PricePerNight:      fromMoney(p.PricePerNight),
+		CleaningFee:        fromMoney(p.CleaningFee),
+		MaxGuests:          p.MaxGuests,
+		Bedrooms:           p.Bedrooms,
+		Beds:               p.Beds,
+		Bathrooms:          p.Bathrooms,
+		Amenities:          p.Amenities,
+		Photos:             photos,
+		CancellationPolicy: string(p.CancellationPolicy),
+		AverageRating:      p.AverageRating,
+		ReviewCount:        p.ReviewCount,
+		CreatedAt:          p.CreatedAt,
 	}
 }
 
@@ -306,6 +308,7 @@ type PaymentView struct {
 	BookingID     uuid.UUID `json:"bookingId"`
 	Amount        MoneyView `json:"amount"`
 	Status        string    `json:"status"`
+	RefundedCents int64     `json:"refundedCents"`
 	FailureReason string    `json:"failureReason,omitempty"`
 	CreatedAt     time.Time `json:"createdAt"`
 }
@@ -317,6 +320,7 @@ func FromPayment(p *payment.Payment) PaymentView {
 		BookingID:     p.BookingID,
 		Amount:        fromMoney(p.Amount),
 		Status:        string(p.Status),
+		RefundedCents: p.RefundedCents,
 		FailureReason: p.FailureReason,
 		CreatedAt:     p.CreatedAt,
 	}

@@ -28,23 +28,24 @@ func NewPropertyHandler(svc *propertyapp.Service, search *searchapp.Service, m *
 }
 
 type createPropertyRequest struct {
-	Title            string   `json:"title" binding:"required"`
-	Description      string   `json:"description"`
-	Type             string   `json:"type" binding:"required"`
-	AddressLine1     string   `json:"addressLine1"`
-	City             string   `json:"city" binding:"required"`
-	Country          string   `json:"country" binding:"required"`
-	PostalCode       string   `json:"postalCode"`
-	Latitude         float64  `json:"latitude"`
-	Longitude        float64  `json:"longitude"`
-	PriceCents       int64    `json:"priceCents" binding:"required"`
-	CleaningFeeCents int64    `json:"cleaningFeeCents"`
-	Currency         string   `json:"currency" binding:"required"`
-	MaxGuests        int      `json:"maxGuests" binding:"required"`
-	Bedrooms         int      `json:"bedrooms"`
-	Beds             int      `json:"beds"`
-	Bathrooms        int      `json:"bathrooms"`
-	Amenities        []string `json:"amenities"`
+	Title              string   `json:"title" binding:"required"`
+	Description        string   `json:"description"`
+	Type               string   `json:"type" binding:"required"`
+	AddressLine1       string   `json:"addressLine1"`
+	City               string   `json:"city" binding:"required"`
+	Country            string   `json:"country" binding:"required"`
+	PostalCode         string   `json:"postalCode"`
+	Latitude           float64  `json:"latitude"`
+	Longitude          float64  `json:"longitude"`
+	PriceCents         int64    `json:"priceCents" binding:"required"`
+	CleaningFeeCents   int64    `json:"cleaningFeeCents"`
+	Currency           string   `json:"currency" binding:"required"`
+	MaxGuests          int      `json:"maxGuests" binding:"required"`
+	Bedrooms           int      `json:"bedrooms"`
+	Beds               int      `json:"beds"`
+	Bathrooms          int      `json:"bathrooms"`
+	Amenities          []string `json:"amenities"`
+	CancellationPolicy string   `json:"cancellationPolicy"`
 }
 
 // Create publishes a new draft listing for the authenticated host.
@@ -59,24 +60,25 @@ func (h *PropertyHandler) Create(c *gin.Context) {
 		return
 	}
 	p, err := h.svc.Create(c.Request.Context(), propertyapp.CreateInput{
-		HostID:           hostID,
-		Title:            req.Title,
-		Description:      req.Description,
-		Type:             req.Type,
-		AddressLine1:     req.AddressLine1,
-		City:             req.City,
-		Country:          req.Country,
-		PostalCode:       req.PostalCode,
-		Latitude:         req.Latitude,
-		Longitude:        req.Longitude,
-		PriceCents:       req.PriceCents,
-		CleaningFeeCents: req.CleaningFeeCents,
-		Currency:         req.Currency,
-		MaxGuests:        req.MaxGuests,
-		Bedrooms:         req.Bedrooms,
-		Beds:             req.Beds,
-		Bathrooms:        req.Bathrooms,
-		Amenities:        req.Amenities,
+		HostID:             hostID,
+		Title:              req.Title,
+		Description:        req.Description,
+		Type:               req.Type,
+		AddressLine1:       req.AddressLine1,
+		City:               req.City,
+		Country:            req.Country,
+		PostalCode:         req.PostalCode,
+		Latitude:           req.Latitude,
+		Longitude:          req.Longitude,
+		PriceCents:         req.PriceCents,
+		CleaningFeeCents:   req.CleaningFeeCents,
+		Currency:           req.Currency,
+		MaxGuests:          req.MaxGuests,
+		Bedrooms:           req.Bedrooms,
+		Beds:               req.Beds,
+		Bathrooms:          req.Bathrooms,
+		Amenities:          req.Amenities,
+		CancellationPolicy: req.CancellationPolicy,
 	})
 	if err != nil {
 		response.Fail(c, err)
@@ -146,12 +148,13 @@ func (h *PropertyHandler) Get(c *gin.Context) {
 }
 
 type updatePropertyRequest struct {
-	Title            string `json:"title" binding:"required"`
-	Description      string `json:"description"`
-	PriceCents       int64  `json:"priceCents" binding:"required"`
-	CleaningFeeCents int64  `json:"cleaningFeeCents"`
-	Currency         string `json:"currency" binding:"required"`
-	MaxGuests        int    `json:"maxGuests" binding:"required"`
+	Title              string `json:"title" binding:"required"`
+	Description        string `json:"description"`
+	PriceCents         int64  `json:"priceCents" binding:"required"`
+	CleaningFeeCents   int64  `json:"cleaningFeeCents"`
+	Currency           string `json:"currency" binding:"required"`
+	MaxGuests          int    `json:"maxGuests" binding:"required"`
+	CancellationPolicy string `json:"cancellationPolicy"`
 }
 
 // Update edits an owned listing.
@@ -170,12 +173,13 @@ func (h *PropertyHandler) Update(c *gin.Context) {
 		return
 	}
 	p, err := h.svc.Update(c.Request.Context(), actorID, id, propertyapp.UpdateInput{
-		Title:            req.Title,
-		Description:      req.Description,
-		PriceCents:       req.PriceCents,
-		CleaningFeeCents: req.CleaningFeeCents,
-		Currency:         req.Currency,
-		MaxGuests:        req.MaxGuests,
+		Title:              req.Title,
+		Description:        req.Description,
+		PriceCents:         req.PriceCents,
+		CleaningFeeCents:   req.CleaningFeeCents,
+		Currency:           req.Currency,
+		MaxGuests:          req.MaxGuests,
+		CancellationPolicy: req.CancellationPolicy,
 	})
 	if err != nil {
 		response.Fail(c, err)

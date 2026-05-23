@@ -123,6 +123,15 @@ export default function PropertyDetail() {
           <h3>Availability</h3>
           <AvailabilityCalendar booked={booked} months={2} />
 
+          <h3>Cancellation policy</h3>
+          <p className="policy-line">
+            {{
+              flexible: 'Flexible — full refund up to 1 day before check-in.',
+              moderate: 'Moderate — full refund up to 5 days before; 50% after.',
+              strict: 'Strict — full refund up to 7 days before; 50% up to 2 days; none after.',
+            }[property.cancellationPolicy] || property.cancellationPolicy}
+          </p>
+
           <h3>Amenities</h3>
           <ul className="amenities">
             {property.amenities.length === 0 && <li>None listed</li>}

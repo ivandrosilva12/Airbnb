@@ -4,12 +4,23 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
 )
+
+func clampFraction(f float64) float64 {
+	if f < 0 {
+		return 0
+	}
+	if f > 1 {
+		return 1
+	}
+	return f
+}
 
 // EventHandler returns an event.Handler that drives payments off the booking
 // lifecycle: authorize on request, capture on confirmation, refund on
@@ -28,14 +39,27 @@ func (s *Service) EventHandler() event.Handler {
 				return p.Capture()
 			})
 		case event.BookingCancelled:
+			fraction := ev.RefundFraction
 			s.transition(ctx, ev.BookingID, "refund", func(p *payment.Payment) error {
-				if p.Status == payment.StatusRefunded || p.Status == payment.StatusFailed {
-					return nil // nothing to do
+				switch p.Status {
+				case payment.StatusAuthorized:
+					// Nothing was charged yet — release the whole hold.
+					if err := s.gateway.Refund(ctx, p.GatewayRef, p.Amount.AmountCents()); err != nil {
+						return err
+					}
+					return p.Refund(p.Amount.AmountCents())
+				case payment.StatusCaptured:
+					refund := int64(math.Round(float64(p.Amount.AmountCents()) * clampFraction(fraction)))
+					if refund == 0 {
+						return nil // policy grants no refund; the host keeps the charge
+					}
+					if err := s.gateway.Refund(ctx, p.GatewayRef, refund); err != nil {
+						return err
+					}
+					return p.Refund(refund)
+				default:
+					return nil // pending / refunded / failed: nothing to do
 				}
-				if err := s.gateway.Refund(ctx, p.GatewayRef); err != nil {
-					return err
-				}
-				return p.Refund()
 			})
 		}
 	}

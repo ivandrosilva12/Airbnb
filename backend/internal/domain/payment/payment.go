@@ -31,6 +31,7 @@ type Payment struct {
 	Status        Status
 	GatewayRef    string
 	FailureReason string
+	RefundedCents int64 // amount returned to the guest (0 unless refunded)
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
@@ -70,13 +71,18 @@ func (p *Payment) Capture() error {
 	return nil
 }
 
-// Refund returns funds to the guest. Allowed from authorized (releasing the
-// hold) or captured (returning a charge).
-func (p *Payment) Refund() error {
+// Refund returns amountCents to the guest and marks the payment refunded.
+// Allowed from authorized (releasing the hold) or captured (returning a charge).
+// amountCents may be a partial amount (e.g. under a cancellation policy).
+func (p *Payment) Refund(amountCents int64) error {
 	if p.Status != StatusAuthorized && p.Status != StatusCaptured {
 		return shared.NewValidationError("only an authorized or captured payment can be refunded")
 	}
+	if amountCents < 0 || amountCents > p.Amount.AmountCents() {
+		return shared.NewValidationError("refund amount is out of range")
+	}
 	p.Status = StatusRefunded
+	p.RefundedCents = amountCents
 	p.touch()
 	return nil
 }

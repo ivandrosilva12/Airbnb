@@ -12,5 +12,5 @@ import (
 type PaymentGateway interface {
 	Authorize(ctx context.Context, amount shared.Money, idempotencyKey string) (ref string, err error)
 	Capture(ctx context.Context, ref string) error
-	Refund(ctx context.Context, ref string) error
+	Refund(ctx context.Context, ref string, amountCents int64) error
 }

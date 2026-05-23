@@ -38,6 +38,56 @@ const (
 	StatusSuspended Status = "suspended"
 )
 
+// CancellationPolicy governs how much of a captured payment is refunded when a
+// guest cancels, based on how many days before check-in they cancel.
+type CancellationPolicy string
+
+const (
+	PolicyFlexible CancellationPolicy = "flexible"
+	PolicyModerate CancellationPolicy = "moderate"
+	PolicyStrict   CancellationPolicy = "strict"
+)
+
+// ValidCancellationPolicy normalises an input policy, defaulting to flexible.
+func ValidCancellationPolicy(p CancellationPolicy) CancellationPolicy {
+	switch p {
+	case PolicyFlexible, PolicyModerate, PolicyStrict:
+		return p
+	default:
+		return PolicyFlexible
+	}
+}
+
+// RefundFraction returns the fraction (0..1) of a captured payment refunded to a
+// guest who cancels daysUntilCheckIn days before arrival.
+func (p CancellationPolicy) RefundFraction(daysUntilCheckIn int) float64 {
+	switch p {
+	case PolicyModerate:
+		switch {
+		case daysUntilCheckIn >= 5:
+			return 1.0
+		case daysUntilCheckIn >= 1:
+			return 0.5
+		default:
+			return 0.0
+		}
+	case PolicyStrict:
+		switch {
+		case daysUntilCheckIn >= 7:
+			return 1.0
+		case daysUntilCheckIn >= 2:
+			return 0.5
+		default:
+			return 0.0
+		}
+	default: // flexible
+		if daysUntilCheckIn >= 1 {
+			return 1.0
+		}
+		return 0.0
+	}
+}
+
 // Address is a value object describing where a property is located.
 type Address struct {
 	Line1      string
@@ -68,21 +118,22 @@ type Photo struct {
 
 // Property is the aggregate root for a listing.
 type Property struct {
-	ID            uuid.UUID
-	HostID        uuid.UUID
-	Title         string
-	Description   string
-	Type          PropertyType
-	Status        Status
-	Address       Address
-	PricePerNight shared.Money
-	CleaningFee   shared.Money
-	MaxGuests     int
-	Bedrooms      int
-	Beds          int
-	Bathrooms     int
-	Amenities     []string
-	Photos        []Photo
+	ID                 uuid.UUID
+	HostID             uuid.UUID
+	Title              string
+	Description        string
+	Type               PropertyType
+	Status             Status
+	Address            Address
+	PricePerNight      shared.Money
+	CleaningFee        shared.Money
+	MaxGuests          int
+	Bedrooms           int
+	Beds               int
+	Bathrooms          int
+	Amenities          []string
+	Photos             []Photo
+	CancellationPolicy CancellationPolicy
 	// AverageRating and ReviewCount are a denormalised read-model of the
 	// property's guest reviews, refreshed when a review is published.
 	AverageRating float64
@@ -95,6 +146,12 @@ type Property struct {
 func (p *Property) SetRating(average float64, count int) {
 	p.AverageRating = average
 	p.ReviewCount = count
+	p.touch()
+}
+
+// SetCancellationPolicy sets the listing's cancellation policy (normalised).
+func (p *Property) SetCancellationPolicy(policy CancellationPolicy) {
+	p.CancellationPolicy = ValidCancellationPolicy(policy)
 	p.touch()
 }
 
@@ -130,23 +187,24 @@ func NewProperty(
 
 	now := time.Now().UTC()
 	return &Property{
-		ID:            uuid.New(),
-		HostID:        hostID,
-		Title:         title,
-		Description:   strings.TrimSpace(description),
-		Type:          pType,
-		Status:        StatusDraft,
-		Address:       address,
-		PricePerNight: price,
-		CleaningFee:   cleaningFee,
-		MaxGuests:     maxGuests,
-		Bedrooms:      bedrooms,
-		Beds:          beds,
-		Bathrooms:     bathrooms,
-		Amenities:     dedupe(amenities),
-		Photos:        []Photo{},
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:                 uuid.New(),
+		HostID:             hostID,
+		Title:              title,
+		Description:        strings.TrimSpace(description),
+		Type:               pType,
+		Status:             StatusDraft,
+		Address:            address,
+		PricePerNight:      price,
+		CleaningFee:        cleaningFee,
+		MaxGuests:          maxGuests,
+		Bedrooms:           bedrooms,
+		Beds:               beds,
+		Bathrooms:          bathrooms,
+		Amenities:          dedupe(amenities),
+		Photos:             []Photo{},
+		CancellationPolicy: PolicyFlexible,
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}, nil
 }
 

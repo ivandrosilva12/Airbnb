@@ -20,23 +20,23 @@ func NewPaymentRepository(pool *pgxpool.Pool) *PaymentRepository {
 }
 
 const paymentColumns = `id, booking_id, guest_id, amount_cents, currency, status,
-	gateway_ref, failure_reason, created_at, updated_at`
+	gateway_ref, failure_reason, refunded_cents, created_at, updated_at`
 
 func (r *PaymentRepository) Create(ctx context.Context, p *payment.Payment) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO payments (`+paymentColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
 		p.ID, p.BookingID, p.GuestID, p.Amount.AmountCents(), p.Amount.Currency(), string(p.Status),
-		p.GatewayRef, p.FailureReason, p.CreatedAt, p.UpdatedAt,
+		p.GatewayRef, p.FailureReason, p.RefundedCents, p.CreatedAt, p.UpdatedAt,
 	)
 	return mapError(err)
 }
 
 func (r *PaymentRepository) Update(ctx context.Context, p *payment.Payment) error {
 	_, err := r.pool.Exec(ctx, `
-		UPDATE payments SET status=$2, gateway_ref=$3, failure_reason=$4, updated_at=$5
+		UPDATE payments SET status=$2, gateway_ref=$3, failure_reason=$4, refunded_cents=$5, updated_at=$6
 		WHERE id=$1`,
-		p.ID, string(p.Status), p.GatewayRef, p.FailureReason, p.UpdatedAt,
+		p.ID, string(p.Status), p.GatewayRef, p.FailureReason, p.RefundedCents, p.UpdatedAt,
 	)
 	return mapError(err)
 }
@@ -121,7 +121,7 @@ func scanPayment(row rowScanner) (*payment.Payment, error) {
 	)
 	err := row.Scan(
 		&p.ID, &p.BookingID, &p.GuestID, &amountCents, &currency, &status,
-		&p.GatewayRef, &p.FailureReason, &p.CreatedAt, &p.UpdatedAt,
+		&p.GatewayRef, &p.FailureReason, &p.RefundedCents, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
 		return nil, mapError(err)

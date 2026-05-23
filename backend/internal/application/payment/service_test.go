@@ -54,10 +54,34 @@ func TestPaymentLifecycleFromEvents(t *testing.T) {
 		t.Fatalf("status after confirm = %s, want captured", p.Status)
 	}
 
-	// Booking cancelled -> refunded.
-	dispatcher.Publish(ctx, event.BookingCancelled{BookingID: bookingID, GuestID: guestID})
+	// Booking cancelled with a 50% policy refund -> partial refund of the
+	// captured charge.
+	dispatcher.Publish(ctx, event.BookingCancelled{BookingID: bookingID, GuestID: guestID, RefundFraction: 0.5})
 	p, _ = svc.GetForBooking(ctx, guestID, bookingID)
 	if p.Status != payment.StatusRefunded {
 		t.Fatalf("status after cancel = %s, want refunded", p.Status)
+	}
+	if p.RefundedCents != 21450 { // 50% of 42900
+		t.Fatalf("refunded = %d, want 21450", p.RefundedCents)
+	}
+}
+
+func TestCancel_ReleasesAuthorizedHoldInFull(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewPaymentRepository()
+	svc := paymentapp.NewService(repo, infrapayment.NewFakeGateway(), memory.NewBookingRepository(), memory.NewPropertyRepository())
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	bookingID := uuid.New()
+	guestID := uuid.New()
+	dispatcher.Publish(ctx, event.BookingRequested{BookingID: bookingID, GuestID: guestID, TotalCents: 10000, Currency: "EUR"})
+
+	// Not yet captured (still authorized): cancelling releases the whole hold,
+	// regardless of the policy fraction.
+	dispatcher.Publish(ctx, event.BookingCancelled{BookingID: bookingID, GuestID: guestID, RefundFraction: 0})
+	p, _ := svc.GetForBooking(ctx, guestID, bookingID)
+	if p.Status != payment.StatusRefunded || p.RefundedCents != 10000 {
+		t.Fatalf("authorized hold release = status %s refunded %d, want refunded 10000", p.Status, p.RefundedCents)
 	}
 }
