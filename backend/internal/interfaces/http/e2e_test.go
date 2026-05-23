@@ -14,9 +14,11 @@ import (
 	"time"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	favoriteapp "github.com/airhost/backend/internal/application/favorite"
 	messageapp "github.com/airhost/backend/internal/application/message"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	reviewapp "github.com/airhost/backend/internal/application/review"
+	searchapp "github.com/airhost/backend/internal/application/search"
 	userapp "github.com/airhost/backend/internal/application/user"
 	"github.com/airhost/backend/internal/config"
 	domainuser "github.com/airhost/backend/internal/domain/user"
@@ -58,12 +60,15 @@ func newHarness(t *testing.T) *harness {
 	bookingRepo := memory.NewBookingRepository()
 	reviewRepo := memory.NewReviewRepository()
 	messageRepo := memory.NewMessageRepository()
+	favoriteRepo := memory.NewFavoriteRepository()
 
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{})
 	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo)
+	searchSvc := searchapp.NewService(propertyRepo, bookingRepo)
+	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 
 	registry := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(registry)
@@ -92,10 +97,11 @@ func newHarness(t *testing.T) *harness {
 		Handlers: apphttp.Handlers{
 			Health:   handler.NewHealthHandler(nil),
 			User:     handler.NewUserHandler(userSvc),
-			Property: handler.NewPropertyHandler(propertySvc, metrics),
+			Property: handler.NewPropertyHandler(propertySvc, searchSvc, metrics),
 			Booking:  handler.NewBookingHandler(bookingSvc, metrics),
 			Review:   handler.NewReviewHandler(reviewSvc),
 			Message:  handler.NewMessageHandler(messageSvc),
+			Favorite: handler.NewFavoriteHandler(favoriteSvc),
 		},
 	})
 
@@ -263,6 +269,36 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	// 13. A non-participant cannot read the thread.
 	if r := h.do(http.MethodGet, "/api/v1/conversations/"+convID+"/messages", otherTok, nil); r.Code != http.StatusForbidden {
 		t.Fatalf("non-participant read: status = %d, want 403", r.Code)
+	}
+
+	// 14. Date-aware search: the booked window hides the listing, a free window
+	// shows it again.
+	rec = h.do(http.MethodGet, "/api/v1/properties?checkIn="+in+"&checkOut="+out, "", nil)
+	mustStatus(t, rec, http.StatusOK, "search booked window")
+	if total := h.decode(rec)["total"].(float64); total != 0 {
+		t.Fatalf("search over booked window total = %v, want 0", total)
+	}
+	freeIn := time.Now().UTC().AddDate(0, 0, 40).Format("2006-01-02")
+	freeOut := time.Now().UTC().AddDate(0, 0, 43).Format("2006-01-02")
+	rec = h.do(http.MethodGet, "/api/v1/properties?checkIn="+freeIn+"&checkOut="+freeOut, "", nil)
+	if total := h.decode(rec)["total"].(float64); total != 1 {
+		t.Fatalf("search over free window total = %v, want 1", total)
+	}
+
+	// 15. Favorites: save, list, unsave.
+	rec = h.do(http.MethodPost, "/api/v1/favorites", guestTok, map[string]any{"propertyId": propID})
+	mustStatus(t, rec, http.StatusCreated, "add favorite")
+	rec = h.do(http.MethodGet, "/api/v1/favorites", guestTok, nil)
+	mustStatus(t, rec, http.StatusOK, "list favorites")
+	if total := h.decode(rec)["total"].(float64); total != 1 {
+		t.Fatalf("favorites total = %v, want 1", total)
+	}
+	if r := h.do(http.MethodDelete, "/api/v1/favorites/"+propID, guestTok, nil); r.Code != http.StatusNoContent {
+		t.Fatalf("remove favorite: status = %d, want 204", r.Code)
+	}
+	rec = h.do(http.MethodGet, "/api/v1/favorites", guestTok, nil)
+	if total := h.decode(rec)["total"].(float64); total != 0 {
+		t.Fatalf("favorites after remove = %v, want 0", total)
 	}
 }
 

@@ -84,4 +84,9 @@ export const api = {
   listConversations: () => request('GET', '/conversations', { auth: true }),
   listMessages: (id) => request('GET', `/conversations/${id}/messages`, { auth: true }),
   sendMessage: (id, body) => request('POST', `/conversations/${id}/messages`, { body: { body }, auth: true }),
+
+  // Favorites
+  listFavorites: () => request('GET', '/favorites', { auth: true }),
+  addFavorite: (propertyId) => request('POST', '/favorites', { body: { propertyId }, auth: true }),
+  removeFavorite: (propertyId) => request('DELETE', `/favorites/${propertyId}`, { auth: true }),
 };

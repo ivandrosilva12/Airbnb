@@ -4,8 +4,10 @@ import (
 	"net/http"
 	"path"
 	"strconv"
+	"time"
 
 	propertyapp "github.com/airhost/backend/internal/application/property"
+	searchapp "github.com/airhost/backend/internal/application/search"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
@@ -16,12 +18,13 @@ import (
 // PropertyHandler exposes listing endpoints.
 type PropertyHandler struct {
 	svc     *propertyapp.Service
+	search  *searchapp.Service
 	metrics *observability.Metrics
 }
 
 // NewPropertyHandler builds a PropertyHandler.
-func NewPropertyHandler(svc *propertyapp.Service, m *observability.Metrics) *PropertyHandler {
-	return &PropertyHandler{svc: svc, metrics: m}
+func NewPropertyHandler(svc *propertyapp.Service, search *searchapp.Service, m *observability.Metrics) *PropertyHandler {
+	return &PropertyHandler{svc: svc, search: search, metrics: m}
 }
 
 type createPropertyRequest struct {
@@ -81,7 +84,8 @@ func (h *PropertyHandler) Create(c *gin.Context) {
 	response.Created(c, dto.FromProperty(p))
 }
 
-// Search runs a public, filtered listing search.
+// Search runs a public, filtered listing search. When checkIn/checkOut query
+// params are supplied, listings already booked for that window are excluded.
 func (h *PropertyHandler) Search(c *gin.Context) {
 	maxPrice, _ := strconv.ParseInt(c.Query("maxPrice"), 10, 64)
 	minGuests, _ := strconv.Atoi(c.Query("minGuests"))
@@ -94,7 +98,15 @@ func (h *PropertyHandler) Search(c *gin.Context) {
 		Amenities: c.QueryArray("amenity"),
 		Page:      pageFromQuery(c),
 	}
-	res, err := h.svc.Search(c.Request.Context(), criteria)
+
+	var window *searchapp.DateWindow
+	checkIn, errIn := time.Parse("2006-01-02", c.Query("checkIn"))
+	checkOut, errOut := time.Parse("2006-01-02", c.Query("checkOut"))
+	if errIn == nil && errOut == nil {
+		window = &searchapp.DateWindow{CheckIn: checkIn.UTC(), CheckOut: checkOut.UTC()}
+	}
+
+	res, err := h.search.Search(c.Request.Context(), criteria, window)
 	if err != nil {
 		response.Fail(c, err)
 		return

@@ -15,7 +15,10 @@ type SearchCriteria struct {
 	MinGuests int
 	MaxPrice  int64 // in cents; 0 means no cap
 	Amenities []string
-	Page      shared.Page
+	// ExcludeIDs removes specific listings from the results (e.g. those already
+	// booked for a requested date range). Empty means no exclusion.
+	ExcludeIDs []uuid.UUID
+	Page       shared.Page
 }
 
 // Repository is the persistence port for the Property aggregate.

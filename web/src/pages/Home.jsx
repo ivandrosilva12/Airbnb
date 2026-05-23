@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import PropertyCard from '../components/PropertyCard';
 
 export default function Home() {
-  const [filters, setFilters] = useState({ city: '', type: '', minGuests: '' });
+  const [filters, setFilters] = useState({ city: '', type: '', minGuests: '', checkIn: '', checkOut: '' });
   const [results, setResults] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -54,6 +54,18 @@ export default function Home() {
             placeholder="Guests"
             value={filters.minGuests}
             onChange={(e) => setFilters({ ...filters, minGuests: e.target.value })}
+          />
+          <input
+            type="date"
+            title="Check in"
+            value={filters.checkIn}
+            onChange={(e) => setFilters({ ...filters, checkIn: e.target.value })}
+          />
+          <input
+            type="date"
+            title="Check out"
+            value={filters.checkOut}
+            onChange={(e) => setFilters({ ...filters, checkOut: e.target.value })}
           />
           <button className="btn btn-primary" type="submit">Search</button>
         </form>

@@ -19,6 +19,7 @@ type Handlers struct {
 	Booking  *handler.BookingHandler
 	Review   *handler.ReviewHandler
 	Message  *handler.MessageHandler
+	Favorite *handler.FavoriteHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -86,6 +87,11 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.POST("/conversations", h.Message.Start)
 		auth.GET("/conversations/:id/messages", h.Message.ListMessages)
 		auth.POST("/conversations/:id/messages", h.Message.Send)
+
+		// Favorites (wishlist).
+		auth.GET("/favorites", h.Favorite.List)
+		auth.POST("/favorites", h.Favorite.Add)
+		auth.DELETE("/favorites/:propertyId", h.Favorite.Remove)
 
 		// Host-only listing management.
 		host := auth.Group("")

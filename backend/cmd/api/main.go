@@ -15,9 +15,11 @@ import (
 	"syscall"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	favoriteapp "github.com/airhost/backend/internal/application/favorite"
 	messageapp "github.com/airhost/backend/internal/application/message"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	reviewapp "github.com/airhost/backend/internal/application/review"
+	searchapp "github.com/airhost/backend/internal/application/search"
 	userapp "github.com/airhost/backend/internal/application/user"
 	"github.com/airhost/backend/internal/config"
 	domainuser "github.com/airhost/backend/internal/domain/user"
@@ -83,6 +85,7 @@ func run() error {
 	bookingRepo := postgres.NewBookingRepository(pool)
 	reviewRepo := postgres.NewReviewRepository(pool)
 	messageRepo := postgres.NewMessageRepository(pool)
+	favoriteRepo := postgres.NewFavoriteRepository(pool)
 
 	// --- Application services ---------------------------------------------
 	userSvc := userapp.NewService(userRepo)
@@ -90,6 +93,8 @@ func run() error {
 	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo)
+	searchSvc := searchapp.NewService(propertyRepo, bookingRepo)
+	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 
 	// --- Observability -----------------------------------------------------
 	registry := prometheus.NewRegistry()
@@ -115,10 +120,11 @@ func run() error {
 		Handlers: apphttp.Handlers{
 			Health:   handler.NewHealthHandler(pool),
 			User:     handler.NewUserHandler(userSvc),
-			Property: handler.NewPropertyHandler(propertySvc, metrics),
+			Property: handler.NewPropertyHandler(propertySvc, searchSvc, metrics),
 			Booking:  handler.NewBookingHandler(bookingSvc, metrics),
 			Review:   handler.NewReviewHandler(reviewSvc),
 			Message:  handler.NewMessageHandler(messageSvc),
+			Favorite: handler.NewFavoriteHandler(favoriteSvc),
 		},
 	})
 

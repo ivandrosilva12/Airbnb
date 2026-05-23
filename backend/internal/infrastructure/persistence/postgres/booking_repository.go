@@ -110,6 +110,30 @@ func (r *BookingRepository) ListActiveInRange(ctx context.Context, propertyID uu
 	return items, mapError(rows.Err())
 }
 
+func (r *BookingRepository) BookedPropertyIDs(ctx context.Context, from, to time.Time) ([]uuid.UUID, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT property_id FROM bookings
+		WHERE status IN ('pending','confirmed')
+		  AND check_in < $2
+		  AND $1 < check_out`,
+		from, to,
+	)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, mapError(err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, mapError(rows.Err())
+}
+
 func (r *BookingRepository) HasOverlap(ctx context.Context, propertyID uuid.UUID, dates booking.DateRange) (bool, error) {
 	var exists bool
 	// Half-open overlap: existing.check_in < new.check_out AND new.check_in < existing.check_out.

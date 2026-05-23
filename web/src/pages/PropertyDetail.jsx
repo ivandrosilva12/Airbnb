@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useFavorites } from '../context/FavoritesContext';
 import AvailabilityCalendar from '../components/AvailabilityCalendar';
 
 function bookedDaySet(booked) {
@@ -29,6 +30,7 @@ export default function PropertyDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { authenticated, profile, login } = useAuth();
+  const { isFavorite, toggle } = useFavorites();
   const [property, setProperty] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -152,6 +154,11 @@ export default function PropertyDetail() {
           </form>
           {!isOwnListing && (
             <button className="btn btn-ghost block" onClick={contactHost}>Contact host</button>
+          )}
+          {authenticated && !isOwnListing && (
+            <button className="btn btn-ghost block" onClick={() => toggle(property.id)}>
+              {isFavorite(property.id) ? '♥ Saved' : '♡ Save to wishlist'}
+            </button>
           )}
           {message && <p className="success">{message}</p>}
           {error && <p className="error">{error}</p>}

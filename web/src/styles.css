@@ -45,8 +45,11 @@ a { color: inherit; text-decoration: none; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 22px; margin-top: 24px; }
 .card { background: #fff; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); transition: transform .1s; }
 .card:hover { transform: translateY(-2px); }
-.card-photo { aspect-ratio: 4 / 3; background: #eee; }
+.card-photo { aspect-ratio: 4 / 3; background: #eee; position: relative; }
 .card-photo img { width: 100%; height: 100%; object-fit: cover; }
+.heart { position: absolute; top: 8px; right: 8px; border: none; background: rgba(255,255,255,.85); width: 32px; height: 32px; border-radius: 50%; font-size: 1.1rem; line-height: 1; cursor: pointer; color: #222; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.heart:hover { background: #fff; }
+.heart-on { color: var(--primary); }
 .card-photo-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); background: #f0f0f0; }
 .card-body { padding: 12px 14px; }
 .card-title { font-weight: 600; }

@@ -46,7 +46,8 @@ ones:
 | **Composition root** | `cmd/api/main.go` | Wires everything together and runs the server. |
 
 Bounded contexts: **user**, **property**, **booking**, **review**, **message**
-(host↔guest threads).
+(host↔guest threads), **favorite** (wishlists). Date-aware search is a read-model
+query service (`searchapp`) composing the property and booking contexts.
 
 Key domain rules enforced in code:
 - A host cannot book their own property; only published listings are bookable.
@@ -139,7 +140,8 @@ go test ./...
 ## API overview (`/api/v1`)
 
 Public:
-- `GET /properties` — search (`?city=&country=&type=&minGuests=&maxPrice=&amenity=`)
+- `GET /properties` — search (`?city=&country=&type=&minGuests=&maxPrice=&amenity=&checkIn=&checkOut=`).
+  When `checkIn`/`checkOut` (YYYY-MM-DD) are supplied, listings already booked for that window are excluded.
 - `GET /properties/:id`
 - `GET /properties/:id/availability` — booked date ranges (`?from=YYYY-MM-DD&to=YYYY-MM-DD`)
 - `GET /properties/:id/reviews` · `GET /properties/:id/reviews/summary`
@@ -150,6 +152,7 @@ Authenticated (Bearer token):
 - `POST /reviews`
 - `GET /conversations` · `POST /conversations` (start/get a thread about a property)
 - `GET /conversations/:id/messages` · `POST /conversations/:id/messages`
+- `GET /favorites` · `POST /favorites` · `DELETE /favorites/:propertyId` (wishlist)
 
 Host only:
 - `GET /host/properties` · `POST /properties` · `PATCH /properties/:id` · `DELETE /properties/:id`
@@ -177,6 +180,8 @@ docker-compose.yml
 |-----------|-------|----------|
 | Backend (Go) | Complete | `go build`, `go vet`, domain + application `go test` all pass |
 | Messaging | Complete | Domain→app→infra→HTTP; covered by the e2e test |
+| Favorites / wishlist | Complete | Domain→app→infra→HTTP + web heart toggle; covered by the e2e test |
+| Date-aware search | Complete | `searchapp` query service; covered by the e2e test |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |
 | E2E HTTP test | Complete | Drives the real router (host→publish→book→confirm→message) |
 | CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build |

@@ -149,6 +149,9 @@ func (r *PropertyRepository) Search(ctx context.Context, c property.SearchCriter
 	if len(c.Amenities) > 0 {
 		add("amenities @> $%d", c.Amenities)
 	}
+	if len(c.ExcludeIDs) > 0 {
+		add("id <> ALL($%d)", c.ExcludeIDs)
+	}
 	where := "WHERE " + strings.Join(conds, " AND ")
 
 	var total int64

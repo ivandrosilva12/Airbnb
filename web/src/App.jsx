@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import PropertyDetail from './pages/PropertyDetail';
 import MyTrips from './pages/MyTrips';
+import Favorites from './pages/Favorites';
 import Messages from './pages/Messages';
 import HostDashboard from './pages/HostDashboard';
 import HostBookings from './pages/HostBookings';
@@ -32,6 +33,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/properties/:id" element={<PropertyDetail />} />
             <Route path="/trips" element={<Protected><MyTrips /></Protected>} />
+            <Route path="/saved" element={<Protected><Favorites /></Protected>} />
             <Route path="/messages" element={<Protected><Messages /></Protected>} />
             <Route path="/host" element={<Protected><HostDashboard /></Protected>} />
             <Route path="/host/new" element={<Protected><CreateListing /></Protected>} />

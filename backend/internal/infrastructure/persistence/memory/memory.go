@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/review"
@@ -26,6 +27,7 @@ var (
 	_ booking.Repository  = (*BookingRepository)(nil)
 	_ review.Repository   = (*ReviewRepository)(nil)
 	_ message.Repository  = (*MessageRepository)(nil)
+	_ favorite.Repository = (*FavoriteRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -157,9 +159,16 @@ func (r *PropertyRepository) ListByHost(_ context.Context, hostID uuid.UUID, pag
 func (r *PropertyRepository) Search(_ context.Context, c property.SearchCriteria) (shared.PageResult[*property.Property], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	excluded := make(map[uuid.UUID]struct{}, len(c.ExcludeIDs))
+	for _, id := range c.ExcludeIDs {
+		excluded[id] = struct{}{}
+	}
 	var matched []*property.Property
 	for _, p := range r.m {
 		if p.Status != property.StatusPublished {
+			continue
+		}
+		if _, skip := excluded[p.ID]; skip {
 			continue
 		}
 		if c.City != "" && !strings.Contains(strings.ToLower(p.Address.City), strings.ToLower(c.City)) {
@@ -257,6 +266,25 @@ func (r *BookingRepository) HasOverlap(_ context.Context, propertyID uuid.UUID, 
 		}
 	}
 	return false, nil
+}
+
+func (r *BookingRepository) BookedPropertyIDs(_ context.Context, from, to time.Time) ([]uuid.UUID, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	seen := map[uuid.UUID]struct{}{}
+	var ids []uuid.UUID
+	for _, b := range r.m {
+		if !b.IsActive() {
+			continue
+		}
+		if b.Dates.CheckIn.Before(to) && from.Before(b.Dates.CheckOut) {
+			if _, ok := seen[b.PropertyID]; !ok {
+				seen[b.PropertyID] = struct{}{}
+				ids = append(ids, b.PropertyID)
+			}
+		}
+	}
+	return ids, nil
 }
 
 func (r *BookingRepository) ListActiveInRange(_ context.Context, propertyID uuid.UUID, from, to time.Time) ([]*booking.Booking, error) {
@@ -437,6 +465,68 @@ func (r *MessageRepository) ListMessages(_ context.Context, conversationID uuid.
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.Before(all[j].CreatedAt) })
 	return paginate(all, page), nil
+}
+
+// --- Favorites ---------------------------------------------------------------
+
+// FavoriteRepository is an in-memory favorite.Repository.
+type FavoriteRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID][]favorite.Favorite // keyed by user id, newest last
+}
+
+// NewFavoriteRepository builds an empty in-memory favorite repository.
+func NewFavoriteRepository() *FavoriteRepository {
+	return &FavoriteRepository{m: map[uuid.UUID][]favorite.Favorite{}}
+}
+
+func (r *FavoriteRepository) Add(_ context.Context, f *favorite.Favorite) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, existing := range r.m[f.UserID] {
+		if existing.PropertyID == f.PropertyID {
+			return nil // idempotent
+		}
+	}
+	r.m[f.UserID] = append(r.m[f.UserID], *f)
+	return nil
+}
+
+func (r *FavoriteRepository) Remove(_ context.Context, userID, propertyID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	list := r.m[userID]
+	out := list[:0]
+	for _, f := range list {
+		if f.PropertyID != propertyID {
+			out = append(out, f)
+		}
+	}
+	r.m[userID] = out
+	return nil
+}
+
+func (r *FavoriteRepository) Exists(_ context.Context, userID, propertyID uuid.UUID) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, f := range r.m[userID] {
+		if f.PropertyID == propertyID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *FavoriteRepository) ListPropertyIDs(_ context.Context, userID uuid.UUID, page shared.Page) (shared.PageResult[uuid.UUID], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	list := r.m[userID]
+	// Newest first.
+	ids := make([]uuid.UUID, 0, len(list))
+	for i := len(list) - 1; i >= 0; i-- {
+		ids = append(ids, list[i].PropertyID)
+	}
+	return paginate(ids, page), nil
 }
 
 // --- helpers -----------------------------------------------------------------
