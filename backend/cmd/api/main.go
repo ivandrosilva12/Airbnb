@@ -19,6 +19,7 @@ import (
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
 	messageapp "github.com/airhost/backend/internal/application/message"
 	notificationapp "github.com/airhost/backend/internal/application/notification"
+	paymentapp "github.com/airhost/backend/internal/application/payment"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	searchapp "github.com/airhost/backend/internal/application/search"
@@ -27,6 +28,7 @@ import (
 	domainuser "github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/infrastructure/auth"
 	"github.com/airhost/backend/internal/infrastructure/observability"
+	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/postgres"
 	"github.com/airhost/backend/internal/infrastructure/storage"
 	apphttp "github.com/airhost/backend/internal/interfaces/http"
@@ -89,6 +91,7 @@ func run() error {
 	messageRepo := postgres.NewMessageRepository(pool)
 	favoriteRepo := postgres.NewFavoriteRepository(pool)
 	notificationRepo := postgres.NewNotificationRepository(pool)
+	paymentRepo := postgres.NewPaymentRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers.
@@ -103,9 +106,11 @@ func run() error {
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
+	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway())
 
-	// Notifications are produced by reacting to domain events.
+	// Notifications and payments are produced by reacting to domain events.
 	dispatcher.Subscribe(notificationSvc.EventHandler())
+	dispatcher.Subscribe(paymentSvc.EventHandler())
 
 	// --- Observability -----------------------------------------------------
 	registry := prometheus.NewRegistry()
@@ -137,6 +142,7 @@ func run() error {
 			Message:      handler.NewMessageHandler(messageSvc),
 			Favorite:     handler.NewFavoriteHandler(favoriteSvc),
 			Notification: handler.NewNotificationHandler(notificationSvc),
+			Payment:      handler.NewPaymentHandler(paymentSvc),
 		},
 	})
 

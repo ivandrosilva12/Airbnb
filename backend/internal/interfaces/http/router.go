@@ -21,6 +21,7 @@ type Handlers struct {
 	Message      *handler.MessageHandler
 	Favorite     *handler.FavoriteHandler
 	Notification *handler.NotificationHandler
+	Payment      *handler.PaymentHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -98,6 +99,10 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.GET("/notifications", h.Notification.List)
 		auth.POST("/notifications/read-all", h.Notification.MarkAllRead)
 		auth.POST("/notifications/:id/read", h.Notification.MarkRead)
+
+		// Payments (guest-facing reads).
+		auth.GET("/payments/me", h.Payment.ListMine)
+		auth.GET("/bookings/:id/payment", h.Payment.GetForBooking)
 
 		// Host-only listing management.
 		host := auth.Group("")

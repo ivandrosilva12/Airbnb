@@ -136,6 +136,12 @@ a { color: inherit; text-decoration: none; }
 .badge-published, .badge-confirmed, .badge-completed { background: #e6f7ed; color: #1a7f47; }
 .badge-draft, .badge-pending { background: #fff5e6; color: #b9750a; }
 .badge-suspended, .badge-cancelled { background: #fde8e8; color: #c0392b; }
+.badge-pay-captured { background: #e6f7ed; color: #1a7f47; }
+.badge-pay-authorized { background: #eaf2ff; color: #1d4ed8; }
+.badge-pay-pending { background: #fff5e6; color: #b9750a; }
+.badge-pay-refunded { background: #f0f0f0; color: #555; }
+.badge-pay-failed { background: #fde8e8; color: #c0392b; }
+.muted-text { color: var(--muted); }
 .error { color: #c0392b; }
 .success { color: #1a7f47; }
 

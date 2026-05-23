@@ -14,6 +14,7 @@ import (
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/notification"
+	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -30,6 +31,7 @@ var (
 	_ message.Repository      = (*MessageRepository)(nil)
 	_ favorite.Repository     = (*FavoriteRepository)(nil)
 	_ notification.Repository = (*NotificationRepository)(nil)
+	_ payment.Repository      = (*PaymentRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -599,6 +601,72 @@ func (r *NotificationRepository) MarkAllRead(_ context.Context, userID uuid.UUID
 		}
 	}
 	return nil
+}
+
+// --- Payments ----------------------------------------------------------------
+
+// PaymentRepository is an in-memory payment.Repository.
+type PaymentRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]payment.Payment
+}
+
+// NewPaymentRepository builds an empty in-memory payment repository.
+func NewPaymentRepository() *PaymentRepository {
+	return &PaymentRepository{m: map[uuid.UUID]payment.Payment{}}
+}
+
+func (r *PaymentRepository) Create(_ context.Context, p *payment.Payment) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.m[p.ID] = *p
+	return nil
+}
+
+func (r *PaymentRepository) Update(_ context.Context, p *payment.Payment) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[p.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[p.ID] = *p
+	return nil
+}
+
+func (r *PaymentRepository) FindByID(_ context.Context, id uuid.UUID) (*payment.Payment, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if p, ok := r.m[id]; ok {
+		c := p
+		return &c, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *PaymentRepository) FindByBookingID(_ context.Context, bookingID uuid.UUID) (*payment.Payment, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, p := range r.m {
+		if p.BookingID == bookingID {
+			c := p
+			return &c, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *PaymentRepository) ListByGuest(_ context.Context, guestID uuid.UUID, page shared.Page) (shared.PageResult[*payment.Payment], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*payment.Payment
+	for _, p := range r.m {
+		if p.GuestID == guestID {
+			c := p
+			all = append(all, &c)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
+	return paginate(all, page), nil
 }
 
 // --- helpers -----------------------------------------------------------------

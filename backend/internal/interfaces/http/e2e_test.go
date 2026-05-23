@@ -18,6 +18,7 @@ import (
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
 	messageapp "github.com/airhost/backend/internal/application/message"
 	notificationapp "github.com/airhost/backend/internal/application/notification"
+	paymentapp "github.com/airhost/backend/internal/application/payment"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	searchapp "github.com/airhost/backend/internal/application/search"
@@ -25,6 +26,7 @@ import (
 	"github.com/airhost/backend/internal/config"
 	domainuser "github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/infrastructure/observability"
+	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 	apphttp "github.com/airhost/backend/internal/interfaces/http"
 	"github.com/airhost/backend/internal/interfaces/http/handler"
@@ -64,6 +66,7 @@ func newHarness(t *testing.T) *harness {
 	messageRepo := memory.NewMessageRepository()
 	favoriteRepo := memory.NewFavoriteRepository()
 	notificationRepo := memory.NewNotificationRepository()
+	paymentRepo := memory.NewPaymentRepository()
 
 	dispatcher := event.NewDispatcher()
 
@@ -75,7 +78,9 @@ func newHarness(t *testing.T) *harness {
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
+	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway())
 	dispatcher.Subscribe(notificationSvc.EventHandler())
+	dispatcher.Subscribe(paymentSvc.EventHandler())
 
 	registry := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(registry)
@@ -110,6 +115,7 @@ func newHarness(t *testing.T) *harness {
 			Message:      handler.NewMessageHandler(messageSvc),
 			Favorite:     handler.NewFavoriteHandler(favoriteSvc),
 			Notification: handler.NewNotificationHandler(notificationSvc),
+			Payment:      handler.NewPaymentHandler(paymentSvc),
 		},
 	})
 
@@ -234,7 +240,22 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 		t.Fatalf("total price = %v, want 42900", got)
 	}
 
-	// 7. Availability now shows one booked range.
+	// 7. The payment was authorized for the full total when the booking was made.
+	rec = h.do(http.MethodGet, "/api/v1/bookings/"+bookingID+"/payment", guestTok, nil)
+	mustStatus(t, rec, http.StatusOK, "get payment")
+	payment := h.decode(rec)
+	if payment["status"] != "authorized" {
+		t.Fatalf("payment status = %v, want authorized", payment["status"])
+	}
+	if got := payment["amount"].(map[string]any)["amountCents"].(float64); got != 42900 {
+		t.Fatalf("payment amount = %v, want 42900", got)
+	}
+	// A different guest cannot view this payment.
+	if r := h.do(http.MethodGet, "/api/v1/bookings/"+bookingID+"/payment", otherTok, nil); r.Code != http.StatusForbidden {
+		t.Fatalf("cross-user payment read: status = %d, want 403", r.Code)
+	}
+
+	// 8. Availability now shows one booked range.
 	rec = h.do(http.MethodGet, "/api/v1/properties/"+propID+"/availability", "", nil)
 	if booked := h.decode(rec)["booked"].([]any); len(booked) != 1 {
 		t.Fatalf("expected 1 booked range, got %d", len(booked))
@@ -257,6 +278,18 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	mustStatus(t, rec, http.StatusOK, "confirm")
 	if h.decode(rec)["status"] != "confirmed" {
 		t.Fatal("expected confirmed")
+	}
+
+	// Confirming the booking captured the payment.
+	rec = h.do(http.MethodGet, "/api/v1/bookings/"+bookingID+"/payment", guestTok, nil)
+	if h.decode(rec)["status"] != "captured" {
+		t.Fatalf("payment status after confirm = %v, want captured", h.decode(rec)["status"])
+	}
+	// The guest sees the payment in their list.
+	rec = h.do(http.MethodGet, "/api/v1/payments/me", guestTok, nil)
+	mustStatus(t, rec, http.StatusOK, "payments me")
+	if total := h.decode(rec)["total"].(float64); total != 1 {
+		t.Fatalf("payments/me total = %v, want 1", total)
 	}
 
 	// 10. Guest cannot confirm (host-only).

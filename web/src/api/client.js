@@ -94,4 +94,7 @@ export const api = {
   listNotifications: () => request('GET', '/notifications', { auth: true }),
   markNotificationRead: (id) => request('POST', `/notifications/${id}/read`, { auth: true }),
   markAllNotificationsRead: () => request('POST', '/notifications/read-all', { auth: true }),
+
+  // Payments
+  listPayments: () => request('GET', '/payments/me', { auth: true }),
 };

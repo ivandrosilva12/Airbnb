@@ -46,14 +46,16 @@ ones:
 | **Composition root** | `cmd/api/main.go` | Wires everything together and runs the server. |
 
 Bounded contexts: **user**, **property**, **booking**, **review**, **message**
-(host↔guest threads), **favorite** (wishlists), **notification** (in-app). Date-aware
-search is a read-model query service (`searchapp`) composing the property and booking
-contexts.
+(host↔guest threads), **favorite** (wishlists), **notification** (in-app),
+**payment**. Date-aware search is a read-model query service (`searchapp`) composing
+the property and booking contexts.
 
 Cross-context reactions go through a small synchronous **domain-events** dispatcher
 (`application/event`): booking/message use cases publish events (e.g.
-`booking.requested`, `message.sent`) and the notification subscriber turns them into
-notifications — best-effort, so a failing subscriber never breaks the use case.
+`booking.requested`, `booking.confirmed`, `message.sent`) and subscribers react —
+the notification context creates notifications, and the payment context authorizes,
+captures or refunds via a `PaymentGateway` port (a fake in-memory gateway by default).
+Dispatch is best-effort, so a failing subscriber never breaks the publishing use case.
 
 Key domain rules enforced in code:
 - A host cannot book their own property; only published listings are bookable.
@@ -65,6 +67,8 @@ Key domain rules enforced in code:
 - Money is stored as integer minor units (cents) with an ISO currency.
 - A review requires a *completed* booking owned by the guest, and only one review
   per booking.
+- A payment follows the booking: it is *authorized* when the booking is requested,
+  *captured* when the host confirms, and *refunded* if the booking is cancelled.
 
 ## Tech stack
 
@@ -161,6 +165,7 @@ Authenticated (Bearer token):
 - `GET /conversations/:id/messages` · `POST /conversations/:id/messages`
 - `GET /favorites` · `POST /favorites` · `DELETE /favorites/:propertyId` (wishlist)
 - `GET /notifications` (with unread count) · `POST /notifications/:id/read` · `POST /notifications/read-all`
+- `GET /payments/me` · `GET /bookings/:id/payment` (payment status for the guest's booking)
 
 Host only:
 - `GET /host/properties` · `POST /properties` · `PATCH /properties/:id` · `DELETE /properties/:id`
@@ -197,6 +202,7 @@ docker-compose.yml
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |
 | Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |
+| Payments | Complete | Authorize/capture/refund driven by booking events via a gateway port (fake by default); web shows payment status; covered by unit + e2e tests |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |
 | E2E HTTP test | Complete | Drives the real router (host→publish→book→confirm→message) |
 | CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build |

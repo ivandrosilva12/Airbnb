@@ -9,6 +9,7 @@ import (
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/notification"
+	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -285,6 +286,28 @@ type NotificationListView struct {
 	Items  []NotificationView `json:"items"`
 	Total  int64              `json:"total"`
 	Unread int64              `json:"unread"`
+}
+
+// PaymentView is the public representation of a payment.
+type PaymentView struct {
+	ID            uuid.UUID `json:"id"`
+	BookingID     uuid.UUID `json:"bookingId"`
+	Amount        MoneyView `json:"amount"`
+	Status        string    `json:"status"`
+	FailureReason string    `json:"failureReason,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+}
+
+// FromPayment maps a payment aggregate to its view.
+func FromPayment(p *payment.Payment) PaymentView {
+	return PaymentView{
+		ID:            p.ID,
+		BookingID:     p.BookingID,
+		Amount:        fromMoney(p.Amount),
+		Status:        string(p.Status),
+		FailureReason: p.FailureReason,
+		CreatedAt:     p.CreatedAt,
+	}
 }
 
 // PageView wraps a paginated list response.

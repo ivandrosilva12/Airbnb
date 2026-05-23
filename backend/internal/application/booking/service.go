@@ -80,6 +80,8 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		PropertyTitle: prop.Title,
 		HostID:        prop.HostID,
 		GuestID:       in.GuestID,
+		TotalCents:    b.Pricing.Total.AmountCents(),
+		Currency:      b.Pricing.Total.Currency(),
 	})
 	return b, nil
 }

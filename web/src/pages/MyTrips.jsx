@@ -34,6 +34,7 @@ function ReviewForm({ bookingId, onDone, onError }) {
 
 export default function MyTrips() {
   const [bookings, setBookings] = useState([]);
+  const [payments, setPayments] = useState({});
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState(null);
@@ -42,8 +43,11 @@ export default function MyTrips() {
   async function load() {
     setLoading(true);
     try {
-      const res = await api.myBookings();
-      setBookings(res.items || []);
+      const [bookingsRes, paymentsRes] = await Promise.all([api.myBookings(), api.listPayments()]);
+      setBookings(bookingsRes.items || []);
+      const byBooking = {};
+      for (const p of paymentsRes.items || []) byBooking[p.bookingId] = p.status;
+      setPayments(byBooking);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -75,7 +79,7 @@ export default function MyTrips() {
       ) : (
         <table className="table">
           <thead>
-            <tr><th>Dates</th><th>Guests</th><th>Total</th><th>Status</th><th></th></tr>
+            <tr><th>Dates</th><th>Guests</th><th>Total</th><th>Status</th><th>Payment</th><th></th></tr>
           </thead>
           <tbody>
             {bookings.map((b) => (
@@ -84,6 +88,11 @@ export default function MyTrips() {
                 <td>{b.guests}</td>
                 <td>{b.totalPrice.display}</td>
                 <td><span className={`badge badge-${b.status}`}>{b.status}</span></td>
+                <td>
+                  {payments[b.id]
+                    ? <span className={`badge badge-pay-${payments[b.id]}`}>{payments[b.id]}</span>
+                    : <span className="muted-text">—</span>}
+                </td>
                 <td>
                   {(b.status === 'pending' || b.status === 'confirmed') && (
                     <button className="btn btn-ghost" onClick={() => cancel(b.id)}>Cancel</button>

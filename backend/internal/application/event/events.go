@@ -3,13 +3,15 @@ package event
 import "github.com/google/uuid"
 
 // BookingRequested is published when a guest creates a booking. The host should
-// be notified to review the request.
+// be notified, and the payment context authorizes the total.
 type BookingRequested struct {
 	BookingID     uuid.UUID
 	PropertyID    uuid.UUID
 	PropertyTitle string
 	HostID        uuid.UUID
 	GuestID       uuid.UUID
+	TotalCents    int64
+	Currency      string
 }
 
 func (BookingRequested) EventName() string { return "booking.requested" }
