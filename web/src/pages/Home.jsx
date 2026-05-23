@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import PropertyCard from '../components/PropertyCard';
 import { useT } from '../i18n/I18nContext';
-
-const AMENITIES = ['wifi', 'kitchen', 'parking', 'pool', 'washer', 'tv', 'heating', 'air conditioning'];
+import { AMENITY_CODES } from '../amenities';
 
 export default function Home() {
   const { t } = useT();
+  const [amenityOptions, setAmenityOptions] = useState(AMENITY_CODES);
   const [filters, setFilters] = useState({ city: '', type: '', minGuests: '', checkIn: '', checkOut: '', sort: '', amenities: [] });
   const [geo, setGeo] = useState(null); // { lat, lng, radiusKm } | null
   const [results, setResults] = useState({ items: [], total: 0 });
@@ -28,6 +28,7 @@ export default function Home() {
 
   useEffect(() => {
     load();
+    api.listAmenities().then((r) => r?.amenities?.length && setAmenityOptions(r.amenities)).catch(() => {});
   }, []);
 
   function buildParams(f = filters, g = geo) {
@@ -131,7 +132,7 @@ export default function Home() {
         </div>
         <div className="amenity-filter">
           <span className="amenity-filter-label">{t('home.amenities')}:</span>
-          {AMENITIES.map((a) => (
+          {amenityOptions.map((a) => (
             <button
               key={a}
               type="button"

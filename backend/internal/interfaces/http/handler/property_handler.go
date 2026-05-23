@@ -100,7 +100,7 @@ func (h *PropertyHandler) Search(c *gin.Context) {
 		Type:      property.PropertyType(c.Query("type")),
 		MinGuests: minGuests,
 		MaxPrice:  maxPrice,
-		Amenities: c.QueryArray("amenity"),
+		Amenities: property.NormalizeAmenities(c.QueryArray("amenity")),
 		Sort:      property.Sort(c.Query("sort")),
 		Page:      pageFromQuery(c),
 	}
@@ -131,6 +131,12 @@ func (h *PropertyHandler) Search(c *gin.Context) {
 	response.OK(c, dto.PageView[dto.PropertyView]{
 		Items: items, Total: res.Total, Limit: criteria.Page.Limit, Offset: criteria.Page.Offset,
 	})
+}
+
+// Amenities returns the canonical amenity codes (public), so clients render the
+// same set in the create form and the search filter.
+func (h *PropertyHandler) Amenities(c *gin.Context) {
+	response.OK(c, gin.H{"amenities": property.CanonicalAmenities})
 }
 
 // Get returns a single listing.

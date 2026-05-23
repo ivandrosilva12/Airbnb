@@ -189,14 +189,27 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	otherTok := other.ID.String()
 	adminTok := admin.ID.String()
 
-	// 1. Host creates a property.
+	// 1. Host creates a property. Amenities are normalised to canonical codes.
 	rec := h.do(http.MethodPost, "/api/v1/properties", hostTok, map[string]any{
 		"title": "Sea View Loft", "type": "apartment", "city": "Lisbon", "country": "PT",
 		"latitude": 38.7, "longitude": -9.1, "priceCents": 12000, "cleaningFeeCents": 3000,
 		"currency": "EUR", "maxGuests": 3,
+		"amenities": []string{"WiFi", "kitchen", "Air Conditioning", "bogus"},
 	})
 	mustStatus(t, rec, http.StatusCreated, "create property")
-	propID := h.decode(rec)["id"].(string)
+	created := h.decode(rec)
+	propID := created["id"].(string)
+	amenities := created["amenities"].([]any)
+	if len(amenities) != 3 || amenities[0] != "wifi" || amenities[2] != "air-conditioning" {
+		t.Fatalf("amenities = %v, want [wifi kitchen air-conditioning]", amenities)
+	}
+
+	// The canonical amenity list is exposed publicly.
+	rec = h.do(http.MethodGet, "/api/v1/amenities", "", nil)
+	mustStatus(t, rec, http.StatusOK, "amenities list")
+	if list := h.decode(rec)["amenities"].([]any); len(list) < 8 {
+		t.Fatalf("canonical amenities = %d, want several", len(list))
+	}
 
 	// A guest must not be able to create a listing (host-only route).
 	if r := h.do(http.MethodPost, "/api/v1/properties", guestTok, map[string]any{

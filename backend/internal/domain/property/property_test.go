@@ -25,6 +25,20 @@ func TestCancellationPolicy_RefundFraction(t *testing.T) {
 	}
 }
 
+func TestNormalizeAmenities(t *testing.T) {
+	in := []string{"WiFi", "  kitchen ", "Air Conditioning", "air_conditioning", "unknown", "wifi"}
+	got := NormalizeAmenities(in)
+	want := []string{"wifi", "kitchen", "air-conditioning"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}
+
 func TestValidCancellationPolicy_DefaultsToFlexible(t *testing.T) {
 	if ValidCancellationPolicy("nonsense") != PolicyFlexible {
 		t.Error("unknown policy should default to flexible")

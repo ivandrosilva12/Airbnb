@@ -200,7 +200,7 @@ func NewProperty(
 		Bedrooms:           bedrooms,
 		Beds:               beds,
 		Bathrooms:          bathrooms,
-		Amenities:          dedupe(amenities),
+		Amenities:          NormalizeAmenities(amenities),
 		Photos:             []Photo{},
 		CancellationPolicy: PolicyFlexible,
 		CreatedAt:          now,
@@ -284,20 +284,3 @@ func (p *Property) CanBeBookedBy(guestID uuid.UUID) error {
 func (p *Property) IsOwnedBy(userID uuid.UUID) bool { return p.HostID == userID }
 
 func (p *Property) touch() { p.UpdatedAt = time.Now().UTC() }
-
-func dedupe(in []string) []string {
-	seen := make(map[string]struct{}, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	return out
-}

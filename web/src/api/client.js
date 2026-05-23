@@ -81,6 +81,7 @@ export const api = {
     return request('GET', `/properties${qs ? `?${qs}` : ''}`);
   },
   getProperty: (id) => request('GET', `/properties/${id}`),
+  listAmenities: () => request('GET', '/amenities'),
   getReviews: (id) => request('GET', `/properties/${id}/reviews`),
   getReviewSummary: (id) => request('GET', `/properties/${id}/reviews/summary`),
 

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useT } from '../i18n/I18nContext';
+import { AMENITY_CODES } from '../amenities';
 
 const initial = {
   title: '',
@@ -20,7 +21,7 @@ const initial = {
   bedrooms: 1,
   beds: 1,
   bathrooms: 1,
-  amenities: '',
+  amenities: [],
   cancellationPolicy: 'flexible',
 };
 
@@ -28,11 +29,23 @@ export default function CreateListing() {
   const { t } = useT();
   const navigate = useNavigate();
   const [form, setForm] = useState(initial);
+  const [amenityOptions, setAmenityOptions] = useState(AMENITY_CODES);
   const [photo, setPhoto] = useState(null);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    api.listAmenities().then((r) => r?.amenities?.length && setAmenityOptions(r.amenities)).catch(() => {});
+  }, []);
+
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  function toggleAmenity(a) {
+    setForm((f) => ({
+      ...f,
+      amenities: f.amenities.includes(a) ? f.amenities.filter((x) => x !== a) : [...f.amenities, a],
+    }));
+  }
 
   async function submit(e) {
     e.preventDefault();
@@ -56,7 +69,7 @@ export default function CreateListing() {
         bedrooms: Number(form.bedrooms),
         beds: Number(form.beds),
         bathrooms: Number(form.bathrooms),
-        amenities: form.amenities.split(',').map((a) => a.trim()).filter(Boolean),
+        amenities: form.amenities,
         cancellationPolicy: form.cancellationPolicy,
       });
       if (photo) {
@@ -106,7 +119,21 @@ export default function CreateListing() {
             <option value="strict">{t('create.policyStrict')}</option>
           </select>
         </label>
-        <label className="full">{t('create.fAmenities')}<input value={form.amenities} onChange={set('amenities')} placeholder="wifi, kitchen, parking" /></label>
+        <div className="full">
+          <span className="form-label">{t('home.amenities')}</span>
+          <div className="amenity-filter">
+            {amenityOptions.map((a) => (
+              <button
+                key={a}
+                type="button"
+                className={`amenity-chip${form.amenities.includes(a) ? ' on' : ''}`}
+                onClick={() => toggleAmenity(a)}
+              >
+                {t(`amenity.${a}`)}
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="full">{t('create.fCover')}<input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files[0])} /></label>
         <div className="full">
           <button className="btn btn-primary" type="submit" disabled={submitting}>

@@ -61,6 +61,7 @@ func NewRouter(d Deps) *gin.Engine {
 	api := r.Group("/api/v1")
 
 	// Public listing & review reads.
+	api.GET("/amenities", h.Property.Amenities)
 	api.GET("/properties", h.Property.Search)
 	api.GET("/properties/:id", h.Property.Get)
 	api.GET("/properties/:id/availability", h.Booking.Availability)

@@ -163,6 +163,7 @@ Public:
   when `lat`/`lng`/`radiusKm` are supplied, results are limited to that radius (haversine distance);
   `sort` is one of `newest` (default), `price_asc`, `price_desc`, `rating`.
 - `GET /properties/:id`
+- `GET /amenities` — canonical amenity codes (shared by the create form and search filter)
 - `GET /properties/:id/availability` — booked date ranges (`?from=YYYY-MM-DD&to=YYYY-MM-DD`)
 - `GET /properties/:id/reviews` · `GET /properties/:id/reviews/summary`
 
@@ -221,6 +222,7 @@ docker-compose.yml
 | Cancellation policies | Complete | Per-listing flexible/moderate/strict; partial/full refund on cancel via the payment subscriber; covered by unit tests |
 | i18n (PT/EN) | Complete | Lightweight web i18n context + dictionaries; browser detection + a persisted language switcher in the navbar |
 | Amenities filter (UI) | Complete | Toggle chips on the search bar emitting repeated `amenity=` params (backend filter already existed) |
+| Canonical amenities | Complete | Shared canonical code set; backend normalizes on create + search (drops unknowns); `GET /amenities` drives the create form and filter; covered by unit + e2e tests |
 | Host calendar blocks | Complete | New `block` context; blocked ranges reject bookings, show in availability, and exclude from date search; host UI to add/remove; covered by unit + e2e tests |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
