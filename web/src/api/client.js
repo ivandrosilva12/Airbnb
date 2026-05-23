@@ -63,10 +63,21 @@ async function downloadFile(path, filename) {
   URL.revokeObjectURL(url);
 }
 
+// buildQuery turns an object into a query string, repeating the key for array
+// values (e.g. { amenity: ['wifi','tv'] } -> "amenity=wifi&amenity=tv").
+function buildQuery(params) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) v.forEach((item) => qs.append(k, item));
+    else qs.append(k, v);
+  }
+  return qs.toString();
+}
+
 export const api = {
   // Listings (public)
   searchProperties: (params = {}) => {
-    const qs = new URLSearchParams(params).toString();
+    const qs = buildQuery(params);
     return request('GET', `/properties${qs ? `?${qs}` : ''}`);
   },
   getProperty: (id) => request('GET', `/properties/${id}`),

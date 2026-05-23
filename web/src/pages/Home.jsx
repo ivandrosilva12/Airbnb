@@ -3,9 +3,11 @@ import { api } from '../api/client';
 import PropertyCard from '../components/PropertyCard';
 import { useT } from '../i18n/I18nContext';
 
+const AMENITIES = ['wifi', 'kitchen', 'parking', 'pool', 'washer', 'tv', 'heating', 'air conditioning'];
+
 export default function Home() {
   const { t } = useT();
-  const [filters, setFilters] = useState({ city: '', type: '', minGuests: '', checkIn: '', checkOut: '', sort: '' });
+  const [filters, setFilters] = useState({ city: '', type: '', minGuests: '', checkIn: '', checkOut: '', sort: '', amenities: [] });
   const [geo, setGeo] = useState(null); // { lat, lng, radiusKm } | null
   const [results, setResults] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
@@ -28,14 +30,27 @@ export default function Home() {
     load();
   }, []);
 
-  function searchParams(extraGeo) {
-    const g = extraGeo !== undefined ? extraGeo : geo;
-    return { ...filters, ...(g ? { lat: g.lat, lng: g.lng, radiusKm: g.radiusKm } : {}) };
+  function buildParams(f = filters, g = geo) {
+    const { amenities, ...rest } = f;
+    return {
+      ...rest,
+      ...(amenities.length ? { amenity: amenities } : {}),
+      ...(g ? { lat: g.lat, lng: g.lng, radiusKm: g.radiusKm } : {}),
+    };
+  }
+
+  function toggleAmenity(a) {
+    const next = filters.amenities.includes(a)
+      ? filters.amenities.filter((x) => x !== a)
+      : [...filters.amenities, a];
+    const updated = { ...filters, amenities: next };
+    setFilters(updated);
+    load(buildParams(updated));
   }
 
   function onSearch(e) {
     e.preventDefault();
-    load(searchParams());
+    load(buildParams());
   }
 
   function nearMe() {
@@ -48,7 +63,7 @@ export default function Home() {
       (pos) => {
         const g = { lat: pos.coords.latitude, lng: pos.coords.longitude, radiusKm: 25 };
         setGeo(g);
-        load(searchParams(g));
+        load(buildParams(filters, g));
       },
       () => setError(t('home.geoDenied')),
     );
@@ -56,7 +71,7 @@ export default function Home() {
 
   function clearGeo() {
     setGeo(null);
-    load(searchParams(null));
+    load(buildParams(filters, null));
   }
 
   return (
@@ -113,6 +128,19 @@ export default function Home() {
           ) : (
             <button type="button" className="btn btn-ghost" onClick={nearMe}>{t('home.nearMe')}</button>
           )}
+        </div>
+        <div className="amenity-filter">
+          <span className="amenity-filter-label">{t('home.amenities')}:</span>
+          {AMENITIES.map((a) => (
+            <button
+              key={a}
+              type="button"
+              className={`amenity-chip${filters.amenities.includes(a) ? ' on' : ''}`}
+              onClick={() => toggleAmenity(a)}
+            >
+              {t(`amenity.${a}`)}
+            </button>
+          ))}
         </div>
       </section>
 

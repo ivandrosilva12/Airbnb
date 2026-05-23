@@ -218,6 +218,7 @@ docker-compose.yml
 | PDF receipts | Complete | `GET /bookings/:id/receipt` renders a PDF (go-pdf/fpdf) with the price breakdown; web download; covered by e2e test |
 | Cancellation policies | Complete | Per-listing flexible/moderate/strict; partial/full refund on cancel via the payment subscriber; covered by unit tests |
 | i18n (PT/EN) | Complete | Lightweight web i18n context + dictionaries; browser detection + a persisted language switcher in the navbar |
+| Amenities filter (UI) | Complete | Toggle chips on the search bar emitting repeated `amenity=` params (backend filter already existed) |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |
