@@ -6,14 +6,16 @@ import { useAuth } from '../context/AuthContext';
 export default function HostDashboard() {
   const { isHost, becomeHost, refreshProfile } = useAuth();
   const [properties, setProperties] = useState([]);
+  const [metrics, setMetrics] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
     setLoading(true);
     try {
-      const res = await api.myProperties();
-      setProperties(res.items || []);
+      const [props, m] = await Promise.all([api.myProperties(), api.hostMetrics()]);
+      setProperties(props.items || []);
+      setMetrics(m);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -71,6 +73,16 @@ export default function HostDashboard() {
         <h1>Your listings</h1>
         <Link to="/host/new" className="btn btn-primary">New listing</Link>
       </div>
+      {metrics && (
+        <div className="metrics-grid">
+          <div className="metric"><div className="metric-value">{metrics.capturedRevenue.display}</div><div className="metric-label">Revenue captured</div></div>
+          <div className="metric"><div className="metric-value">{metrics.pendingRevenue.display}</div><div className="metric-label">Pending</div></div>
+          <div className="metric"><div className="metric-value">{metrics.bookings}</div><div className="metric-label">Bookings ({metrics.confirmed} confirmed)</div></div>
+          <div className="metric"><div className="metric-value">{metrics.upcomingCheckins}</div><div className="metric-label">Upcoming check-ins</div></div>
+          <div className="metric"><div className="metric-value">{metrics.nightsBooked}</div><div className="metric-label">Nights booked</div></div>
+          <div className="metric"><div className="metric-value">{metrics.reviewCount > 0 ? `★ ${metrics.averageRating.toFixed(1)}` : '—'}</div><div className="metric-label">Avg rating ({metrics.reviewCount})</div></div>
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
       {loading ? (
         <p>Loading…</p>

@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
@@ -107,6 +108,7 @@ func run() error {
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway())
+	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 
 	// Notifications and payments are produced by reacting to domain events.
 	dispatcher.Subscribe(notificationSvc.EventHandler())
@@ -143,6 +145,7 @@ func run() error {
 			Favorite:     handler.NewFavoriteHandler(favoriteSvc),
 			Notification: handler.NewNotificationHandler(notificationSvc),
 			Payment:      handler.NewPaymentHandler(paymentSvc),
+			Analytics:    handler.NewAnalyticsHandler(analyticsSvc),
 		},
 	})
 

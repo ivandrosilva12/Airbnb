@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
@@ -79,6 +80,7 @@ func newHarness(t *testing.T) *harness {
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway())
+	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	dispatcher.Subscribe(notificationSvc.EventHandler())
 	dispatcher.Subscribe(paymentSvc.EventHandler())
 
@@ -116,6 +118,7 @@ func newHarness(t *testing.T) *harness {
 			Favorite:     handler.NewFavoriteHandler(favoriteSvc),
 			Notification: handler.NewNotificationHandler(notificationSvc),
 			Payment:      handler.NewPaymentHandler(paymentSvc),
+			Analytics:    handler.NewAnalyticsHandler(analyticsSvc),
 		},
 	})
 
@@ -444,6 +447,29 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	// A guest cannot mark the host's notification read (not found for them).
 	if r := h.do(http.MethodPost, "/api/v1/notifications/"+firstID+"/read", guestTok, nil); r.Code != http.StatusNotFound {
 		t.Fatalf("cross-user mark read: status = %d, want 404", r.Code)
+	}
+
+	// 18. Host metrics: one published listing, one confirmed booking worth the
+	// captured total, with an upcoming check-in.
+	rec = h.do(http.MethodGet, "/api/v1/host/metrics", hostTok, nil)
+	mustStatus(t, rec, http.StatusOK, "host metrics")
+	metrics := h.decode(rec)
+	if metrics["listings"].(float64) != 1 || metrics["published"].(float64) != 1 {
+		t.Fatalf("metrics listings/published = %v/%v, want 1/1", metrics["listings"], metrics["published"])
+	}
+	if metrics["confirmed"].(float64) != 1 {
+		t.Fatalf("metrics confirmed = %v, want 1", metrics["confirmed"])
+	}
+	if metrics["upcomingCheckins"].(float64) != 1 {
+		t.Fatalf("metrics upcomingCheckins = %v, want 1", metrics["upcomingCheckins"])
+	}
+	if cap := metrics["capturedRevenue"].(map[string]any)["amountCents"].(float64); cap != 42900 {
+		t.Fatalf("metrics captured revenue = %v, want 42900", cap)
+	}
+
+	// A non-host (plain guest) cannot read host metrics.
+	if r := h.do(http.MethodGet, "/api/v1/host/metrics", guestTok, nil); r.Code != http.StatusForbidden {
+		t.Fatalf("guest host metrics: status = %d, want 403", r.Code)
 	}
 }
 

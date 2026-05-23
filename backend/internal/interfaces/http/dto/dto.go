@@ -5,6 +5,7 @@ package dto
 import (
 	"time"
 
+	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/message"
@@ -318,6 +319,44 @@ func FromPayment(p *payment.Payment) PaymentView {
 		Status:        string(p.Status),
 		FailureReason: p.FailureReason,
 		CreatedAt:     p.CreatedAt,
+	}
+}
+
+// HostMetricsView renders a host's dashboard analytics.
+type HostMetricsView struct {
+	Listings         int       `json:"listings"`
+	Published        int       `json:"published"`
+	Bookings         int       `json:"bookings"`
+	Pending          int       `json:"pending"`
+	Confirmed        int       `json:"confirmed"`
+	Completed        int       `json:"completed"`
+	Cancelled        int       `json:"cancelled"`
+	UpcomingCheckins int       `json:"upcomingCheckins"`
+	NightsBooked     int       `json:"nightsBooked"`
+	CapturedRevenue  MoneyView `json:"capturedRevenue"`
+	PendingRevenue   MoneyView `json:"pendingRevenue"`
+	AverageRating    float64   `json:"averageRating"`
+	ReviewCount      int       `json:"reviewCount"`
+}
+
+// FromHostMetrics maps the analytics read-model to its view.
+func FromHostMetrics(m analyticsapp.HostMetrics) HostMetricsView {
+	captured, _ := shared.NewMoney(m.CapturedCents, m.Currency)
+	pending, _ := shared.NewMoney(m.PendingCents, m.Currency)
+	return HostMetricsView{
+		Listings:         m.Listings,
+		Published:        m.Published,
+		Bookings:         m.Bookings,
+		Pending:          m.Pending,
+		Confirmed:        m.Confirmed,
+		Completed:        m.Completed,
+		Cancelled:        m.Cancelled,
+		UpcomingCheckins: m.UpcomingCheckins,
+		NightsBooked:     m.NightsBooked,
+		CapturedRevenue:  fromMoney(captured),
+		PendingRevenue:   fromMoney(pending),
+		AverageRating:    m.AverageRating,
+		ReviewCount:      m.ReviewCount,
 	}
 }
 

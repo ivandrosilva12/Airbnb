@@ -746,6 +746,29 @@ func (r *PaymentRepository) FindByBookingID(_ context.Context, bookingID uuid.UU
 	return nil, shared.ErrNotFound
 }
 
+func (r *PaymentRepository) RevenueForBookings(_ context.Context, bookingIDs []uuid.UUID) (payment.Revenue, error) {
+	want := make(map[uuid.UUID]struct{}, len(bookingIDs))
+	for _, id := range bookingIDs {
+		want[id] = struct{}{}
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var rev payment.Revenue
+	for _, p := range r.m {
+		if _, ok := want[p.BookingID]; !ok {
+			continue
+		}
+		rev.Currency = p.Amount.Currency()
+		switch p.Status {
+		case payment.StatusCaptured:
+			rev.CapturedCents += p.Amount.AmountCents()
+		case payment.StatusAuthorized:
+			rev.PendingCents += p.Amount.AmountCents()
+		}
+	}
+	return rev, nil
+}
+
 func (r *PaymentRepository) ListByGuest(_ context.Context, guestID uuid.UUID, page shared.Page) (shared.PageResult[*payment.Payment], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

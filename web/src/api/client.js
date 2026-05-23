@@ -62,6 +62,7 @@ export const api = {
   myGuestReviews: () => request('GET', '/me/guest-reviews', { auth: true }),
 
   // Host
+  hostMetrics: () => request('GET', '/host/metrics', { auth: true }),
   myProperties: () => request('GET', '/host/properties', { auth: true }),
   createProperty: (body) => request('POST', '/properties', { body, auth: true }),
   publishProperty: (id) => request('POST', `/properties/${id}/publish`, { auth: true }),

@@ -22,6 +22,7 @@ type Handlers struct {
 	Favorite     *handler.FavoriteHandler
 	Notification *handler.NotificationHandler
 	Payment      *handler.PaymentHandler
+	Analytics    *handler.AnalyticsHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -113,6 +114,7 @@ func NewRouter(d Deps) *gin.Engine {
 		host.Use(middleware.RequireHost())
 		{
 			host.GET("/host/properties", h.Property.ListMine)
+			host.GET("/host/metrics", h.Analytics.HostMetrics)
 			host.POST("/properties", h.Property.Create)
 			host.PATCH("/properties/:id", h.Property.Update)
 			host.DELETE("/properties/:id", h.Property.Delete)

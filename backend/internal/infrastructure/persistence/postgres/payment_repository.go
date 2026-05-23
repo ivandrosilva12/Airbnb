@@ -79,6 +79,39 @@ func (r *PaymentRepository) ListByGuest(ctx context.Context, guestID uuid.UUID, 
 	return shared.PageResult[*payment.Payment]{Items: items, Total: total}, mapError(rows.Err())
 }
 
+func (r *PaymentRepository) RevenueForBookings(ctx context.Context, bookingIDs []uuid.UUID) (payment.Revenue, error) {
+	var rev payment.Revenue
+	if len(bookingIDs) == 0 {
+		return rev, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT status, currency, SUM(amount_cents)
+		FROM payments WHERE booking_id = ANY($1)
+		GROUP BY status, currency`, bookingIDs)
+	if err != nil {
+		return rev, mapError(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			status   string
+			currency string
+			cents    int64
+		)
+		if err := rows.Scan(&status, &currency, &cents); err != nil {
+			return payment.Revenue{}, mapError(err)
+		}
+		rev.Currency = currency
+		switch payment.Status(status) {
+		case payment.StatusCaptured:
+			rev.CapturedCents += cents
+		case payment.StatusAuthorized:
+			rev.PendingCents += cents
+		}
+	}
+	return rev, mapError(rows.Err())
+}
+
 func scanPayment(row rowScanner) (*payment.Payment, error) {
 	var (
 		p           payment.Payment

@@ -47,8 +47,9 @@ ones:
 
 Bounded contexts: **user**, **property**, **booking**, **review**, **message**
 (host↔guest threads), **favorite** (wishlists), **notification** (in-app),
-**payment**. Date-aware search is a read-model query service (`searchapp`) composing
-the property and booking contexts.
+**payment**. Read-model query services compose multiple contexts without owning
+data: `searchapp` (property + booking, for date-aware search) and `analyticsapp`
+(property + booking + payment, for the host dashboard).
 
 Cross-context reactions go through a small synchronous **domain-events** dispatcher
 (`application/event`): booking/message use cases publish events (e.g.
@@ -177,6 +178,8 @@ Host only:
 - `POST /properties/:id/photos` (multipart) · `POST /properties/:id/photos/presign`
 - `GET /properties/:id/bookings` · `POST /bookings/:id/confirm` · `POST /bookings/:id/complete`
 
+- `GET /host/metrics` — dashboard analytics (revenue, bookings by status, upcoming check-ins, rating)
+
 Admin only:
 - `POST /admin/properties/:id/suspend` · `POST /admin/properties/:id/unsuspend`
 
@@ -206,6 +209,7 @@ docker-compose.yml
 | Bidirectional reviews | Complete | Host reviews guest (kind-discriminated, one per direction); guest sees their rating; covered by unit tests |
 | Listing ratings | Complete | Denormalised avg rating/count refreshed on review (migration 0009); shown on cards; covered by unit test |
 | Result sorting | Complete | Sort by newest/price/rating (pg ORDER BY + memory); web sort dropdown; covered by unit test |
+| Host metrics | Complete | `analyticsapp` read-model composing property+booking+payment (revenue, counts, upcoming, rating); dashboard cards; covered by e2e test |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |
