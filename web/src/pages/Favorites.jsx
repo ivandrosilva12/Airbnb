@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import PropertyCard from '../components/PropertyCard';
 import { useFavorites } from '../context/FavoritesContext';
+import { useT } from '../i18n/I18nContext';
 
 export default function Favorites() {
+  const { t } = useT();
   const { count } = useFavorites();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,12 +30,12 @@ export default function Favorites() {
 
   return (
     <div className="container">
-      <h1>Saved listings</h1>
+      <h1>{t('fav.title')}</h1>
       {error && <p className="error">{error}</p>}
       {loading ? (
-        <p>Loading…</p>
+        <p>{t('common.loading')}</p>
       ) : items.length === 0 ? (
-        <p>No saved listings yet. Tap the heart on any listing to save it.</p>
+        <p>{t('fav.none')}</p>
       ) : (
         <div className="grid">
           {items.map((p) => (

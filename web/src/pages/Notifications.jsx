@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useNotifications } from '../context/NotificationsContext';
+import { useT } from '../i18n/I18nContext';
 
 const ICONS = {
   booking_requested: '📩',
@@ -11,6 +12,7 @@ const ICONS = {
 
 export default function Notifications() {
   const { items, unread, refresh, markRead, markAllRead } = useNotifications();
+  const { t } = useT();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -26,11 +28,11 @@ export default function Notifications() {
   return (
     <div className="container">
       <div className="row-between">
-        <h1>Notifications</h1>
-        {unread > 0 && <button className="btn btn-ghost" onClick={markAllRead}>Mark all read</button>}
+        <h1>{t('notif.title')}</h1>
+        {unread > 0 && <button className="btn btn-ghost" onClick={markAllRead}>{t('notif.markAll')}</button>}
       </div>
       {items.length === 0 ? (
-        <p>No notifications yet.</p>
+        <p>{t('notif.none')}</p>
       ) : (
         <ul className="notif-list">
           {items.map((n) => (

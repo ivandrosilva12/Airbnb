@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { useT } from '../i18n/I18nContext';
 
 function GuestReviewForm({ bookingId, onDone, onError }) {
+  const { t } = useT();
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -27,13 +29,14 @@ function GuestReviewForm({ bookingId, onDone, onError }) {
           <option key={n} value={n}>{'★'.repeat(n)}</option>
         ))}
       </select>
-      <input placeholder="How was the guest?" value={comment} onChange={(e) => setComment(e.target.value)} />
-      <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? '…' : 'Submit'}</button>
+      <input placeholder={t('host.howWasGuest')} value={comment} onChange={(e) => setComment(e.target.value)} />
+      <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? '…' : t('common.submit')}</button>
     </form>
   );
 }
 
 export default function HostBookings() {
+  const { t } = useT();
   const { id } = useParams();
   const [property, setProperty] = useState(null);
   const [bookings, setBookings] = useState([]);
@@ -72,17 +75,17 @@ export default function HostBookings() {
 
   return (
     <div className="container">
-      <p><Link to="/host">← Back to dashboard</Link></p>
-      <h1>Bookings{property ? ` · ${property.title}` : ''}</h1>
+      <p><Link to="/host">{t('host.backDashboard')}</Link></p>
+      <h1>{t('host.bookings')}{property ? ` · ${property.title}` : ''}</h1>
       {error && <p className="error">{error}</p>}
       {loading ? (
-        <p>Loading…</p>
+        <p>{t('common.loading')}</p>
       ) : bookings.length === 0 ? (
-        <p>No bookings for this listing yet.</p>
+        <p>{t('host.noBookings')}</p>
       ) : (
         <table className="table">
           <thead>
-            <tr><th>Dates</th><th>Guests</th><th>Total</th><th>Status</th><th>Actions</th></tr>
+            <tr><th>{t('trips.dates')}</th><th>{t('common.guests')}</th><th>{t('trips.total')}</th><th>{t('trips.status')}</th><th></th></tr>
           </thead>
           <tbody>
             {bookings.map((b) => (
@@ -93,18 +96,18 @@ export default function HostBookings() {
                 <td><span className={`badge badge-${b.status}`}>{b.status}</span></td>
                 <td className="actions">
                   {b.status === 'pending' && (
-                    <button className="btn btn-ghost" onClick={() => act(api.confirmBooking, b.id)}>Confirm</button>
+                    <button className="btn btn-ghost" onClick={() => act(api.confirmBooking, b.id)}>{t('host.confirm')}</button>
                   )}
                   {b.status === 'confirmed' && (
-                    <button className="btn btn-ghost" onClick={() => act(api.completeBooking, b.id)}>Mark completed</button>
+                    <button className="btn btn-ghost" onClick={() => act(api.completeBooking, b.id)}>{t('host.markCompleted')}</button>
                   )}
                   {(b.status === 'pending' || b.status === 'confirmed') && (
-                    <button className="btn btn-ghost" onClick={() => act(api.cancelBooking, b.id)}>Cancel</button>
+                    <button className="btn btn-ghost" onClick={() => act(api.cancelBooking, b.id)}>{t('common.cancel')}</button>
                   )}
                   {b.status === 'completed' && !reviewed[b.id] && reviewing !== b.id && (
-                    <button className="btn btn-ghost" onClick={() => { setError(null); setReviewing(b.id); }}>Review guest</button>
+                    <button className="btn btn-ghost" onClick={() => { setError(null); setReviewing(b.id); }}>{t('host.reviewGuest')}</button>
                   )}
-                  {reviewed[b.id] && <span className="success">Guest reviewed ✓</span>}
+                  {reviewed[b.id] && <span className="success">{t('host.guestReviewed')}</span>}
                   {reviewing === b.id && (
                     <GuestReviewForm
                       bookingId={b.id}

@@ -51,7 +51,10 @@ function Month({ year, month, bookedSet, todayKey }) {
   );
 }
 
+import { useT } from '../i18n/I18nContext';
+
 export default function AvailabilityCalendar({ booked = [], months = 2 }) {
+  const { t } = useT();
   const bookedSet = buildBookedSet(booked);
   const todayKey = toKey(new Date());
   const now = new Date();
@@ -64,8 +67,8 @@ export default function AvailabilityCalendar({ booked = [], months = 2 }) {
   return (
     <div>
       <div className="cal-legend">
-        <span><i className="dot dot-free" /> Available</span>
-        <span><i className="dot dot-booked" /> Booked</span>
+        <span><i className="dot dot-free" /> {t('detail.calAvailable')}</span>
+        <span><i className="dot dot-booked" /> {t('detail.calBooked')}</span>
       </div>
       <div className="cal-wrap">{grids}</div>
     </div>

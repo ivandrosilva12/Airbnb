@@ -79,7 +79,7 @@ Key domain rules enforced in code:
 ## Tech stack
 
 - **Backend:** Go 1.24, Gin, pgx/v5, go-oidc, minio-go, prometheus/client_golang, go-pdf/fpdf
-- **Web:** React 18, Vite, React Router, keycloak-js
+- **Web:** React 18, Vite, React Router, keycloak-js, custom i18n (PT/EN)
 - **Mobile:** React Native (Expo SDK 51), expo-auth-session (OIDC PKCE)
 - **Auth:** Keycloak 25 (realm `airhost`)
 - **Database:** PostgreSQL 16
@@ -217,6 +217,7 @@ docker-compose.yml
 | Host metrics | Complete | `analyticsapp` read-model composing property+booking+payment (revenue, counts, upcoming, rating); dashboard cards; covered by e2e test |
 | PDF receipts | Complete | `GET /bookings/:id/receipt` renders a PDF (go-pdf/fpdf) with the price breakdown; web download; covered by e2e test |
 | Cancellation policies | Complete | Per-listing flexible/moderate/strict; partial/full refund on cancel via the payment subscriber; covered by unit tests |
+| i18n (PT/EN) | Complete | Lightweight web i18n context + dictionaries; browser detection + a persisted language switcher in the navbar |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |

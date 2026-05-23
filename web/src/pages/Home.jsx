@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import PropertyCard from '../components/PropertyCard';
+import { useT } from '../i18n/I18nContext';
 
 export default function Home() {
+  const { t } = useT();
   const [filters, setFilters] = useState({ city: '', type: '', minGuests: '', checkIn: '', checkOut: '', sort: '' });
   const [geo, setGeo] = useState(null); // { lat, lng, radiusKm } | null
   const [results, setResults] = useState({ items: [], total: 0 });
@@ -39,7 +41,7 @@ export default function Home() {
   function nearMe() {
     setError(null);
     if (!navigator.geolocation) {
-      setError('Geolocation is not available in this browser.');
+      setError(t('home.geoUnavailable'));
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -48,7 +50,7 @@ export default function Home() {
         setGeo(g);
         load(searchParams(g));
       },
-      () => setError('Could not get your location. Please allow location access.'),
+      () => setError(t('home.geoDenied')),
     );
   }
 
@@ -60,65 +62,65 @@ export default function Home() {
   return (
     <div className="container">
       <section className="hero">
-        <h1>Find your next stay</h1>
+        <h1>{t('home.title')}</h1>
         <form className="search-bar" onSubmit={onSearch}>
           <input
-            placeholder="City"
+            placeholder={t('home.city')}
             value={filters.city}
             onChange={(e) => setFilters({ ...filters, city: e.target.value })}
           />
           <select value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}>
-            <option value="">Any type</option>
-            <option value="apartment">Apartment</option>
-            <option value="house">House</option>
-            <option value="room">Room</option>
-            <option value="villa">Villa</option>
-            <option value="cabin">Cabin</option>
+            <option value="">{t('type.any')}</option>
+            <option value="apartment">{t('type.apartment')}</option>
+            <option value="house">{t('type.house')}</option>
+            <option value="room">{t('type.room')}</option>
+            <option value="villa">{t('type.villa')}</option>
+            <option value="cabin">{t('type.cabin')}</option>
           </select>
           <input
             type="number"
             min="1"
-            placeholder="Guests"
+            placeholder={t('common.guests')}
             value={filters.minGuests}
             onChange={(e) => setFilters({ ...filters, minGuests: e.target.value })}
           />
           <input
             type="date"
-            title="Check in"
+            title={t('common.checkIn')}
             value={filters.checkIn}
             onChange={(e) => setFilters({ ...filters, checkIn: e.target.value })}
           />
           <input
             type="date"
-            title="Check out"
+            title={t('common.checkOut')}
             value={filters.checkOut}
             onChange={(e) => setFilters({ ...filters, checkOut: e.target.value })}
           />
-          <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })} title="Sort by">
-            <option value="">Newest</option>
-            <option value="price_asc">Price: low to high</option>
-            <option value="price_desc">Price: high to low</option>
-            <option value="rating">Top rated</option>
+          <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })} title="Sort">
+            <option value="">{t('home.sort.newest')}</option>
+            <option value="price_asc">{t('home.sort.priceAsc')}</option>
+            <option value="price_desc">{t('home.sort.priceDesc')}</option>
+            <option value="rating">{t('home.sort.rating')}</option>
           </select>
-          <button className="btn btn-primary" type="submit">Search</button>
+          <button className="btn btn-primary" type="submit">{t('home.search')}</button>
         </form>
         <div className="geo-row">
           {geo ? (
             <span className="geo-chip">
-              Near you · {geo.radiusKm} km
+              {t('home.nearYou', { km: geo.radiusKm })}
               <button type="button" onClick={clearGeo} aria-label="Clear location filter">✕</button>
             </span>
           ) : (
-            <button type="button" className="btn btn-ghost" onClick={nearMe}>📍 Near me</button>
+            <button type="button" className="btn btn-ghost" onClick={nearMe}>{t('home.nearMe')}</button>
           )}
         </div>
       </section>
 
       {error && <p className="error">{error}</p>}
       {loading ? (
-        <p>Loading listings…</p>
+        <p>{t('home.loading')}</p>
       ) : results.items.length === 0 ? (
-        <p>No listings found. Try widening your search.</p>
+        <p>{t('home.empty')}</p>
       ) : (
         <div className="grid">
           {results.items.map((p) => (

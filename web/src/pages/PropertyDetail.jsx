@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useFavorites } from '../context/FavoritesContext';
+import { useT } from '../i18n/I18nContext';
 import AvailabilityCalendar from '../components/AvailabilityCalendar';
 
 function bookedDaySet(booked) {
@@ -31,6 +32,7 @@ export default function PropertyDetail() {
   const navigate = useNavigate();
   const { authenticated, profile, login } = useAuth();
   const { isFavorite, toggle } = useFavorites();
+  const { t } = useT();
   const [property, setProperty] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -55,7 +57,7 @@ export default function PropertyDetail() {
       return;
     }
     if (rangeHitsBooked(form.checkIn, form.checkOut, bookedDaySet(booked))) {
-      setError('Some of those dates are already booked. Please pick another range.');
+      setError(t('detail.datesUnavailable'));
       return;
     }
     try {
@@ -65,7 +67,7 @@ export default function PropertyDetail() {
         checkOut: form.checkOut,
         guests: Number(form.guests),
       });
-      setMessage(`Booked! ${booking.nights} night(s) for ${booking.totalPrice.display}. Status: ${booking.status}.`);
+      setMessage(t('detail.booked', { nights: booking.nights, total: booking.totalPrice.display, status: booking.status }));
       api.availability(id).then((a) => setBooked(a.booked || [])).catch(() => {});
     } catch (e) {
       setError(e.message);
@@ -87,7 +89,7 @@ export default function PropertyDetail() {
   }
 
   if (error && !property) return <div className="container"><p className="error">{error}</p></div>;
-  if (!property) return <div className="container"><p>Loading…</p></div>;
+  if (!property) return <div className="container"><p>{t('common.loading')}</p></div>;
 
   const isOwnListing = profile?.id === property.hostId;
 
@@ -105,12 +107,12 @@ export default function PropertyDetail() {
     <div className="container detail">
       <h1>{property.title}</h1>
       <p className="card-meta">
-        {property.address.city}, {property.address.country} · {property.type} · up to {property.maxGuests} guests
+        {property.address.city}, {property.address.country} · {t(`type.${property.type}`)} · {t('detail.upToGuests', { n: property.maxGuests })}
         {summary && summary.count > 0 && ` · ★ ${summary.averageRating.toFixed(1)} (${summary.count})`}
       </p>
 
       <div className="gallery">
-        {property.photos.length === 0 && <div className="card-photo-placeholder">No photos yet</div>}
+        {property.photos.length === 0 && <div className="card-photo-placeholder">{t('common.noPhoto')}</div>}
         {property.photos.map((ph) => (
           <img key={ph.id} src={ph.url} alt="" />
         ))}
@@ -118,30 +120,24 @@ export default function PropertyDetail() {
 
       <div className="detail-grid">
         <div>
-          <p>{property.description || 'No description provided.'}</p>
+          <p>{property.description || t('detail.noDescription')}</p>
 
-          <h3>Availability</h3>
+          <h3>{t('detail.availability')}</h3>
           <AvailabilityCalendar booked={booked} months={2} />
 
-          <h3>Cancellation policy</h3>
-          <p className="policy-line">
-            {{
-              flexible: 'Flexible — full refund up to 1 day before check-in.',
-              moderate: 'Moderate — full refund up to 5 days before; 50% after.',
-              strict: 'Strict — full refund up to 7 days before; 50% up to 2 days; none after.',
-            }[property.cancellationPolicy] || property.cancellationPolicy}
-          </p>
+          <h3>{t('detail.cancellation')}</h3>
+          <p className="policy-line">{t(`policy.${property.cancellationPolicy}`)}</p>
 
-          <h3>Amenities</h3>
+          <h3>{t('detail.amenities')}</h3>
           <ul className="amenities">
-            {property.amenities.length === 0 && <li>None listed</li>}
+            {property.amenities.length === 0 && <li>{t('detail.noAmenities')}</li>}
             {property.amenities.map((a) => (
               <li key={a}>{a}</li>
             ))}
           </ul>
 
-          <h3>Reviews</h3>
-          {reviews.length === 0 && <p>No reviews yet.</p>}
+          <h3>{t('detail.reviews')}</h3>
+          {reviews.length === 0 && <p>{t('detail.noReviews')}</p>}
           {reviews.map((r) => (
             <div key={r.id} className="review">
               <strong>★ {r.rating}</strong>
@@ -152,39 +148,39 @@ export default function PropertyDetail() {
 
         <aside className="booking-box">
           <div className="booking-price">
-            <strong>{property.pricePerNight.display}</strong> / night
+            <strong>{property.pricePerNight.display}</strong> {t('common.perNight')}
           </div>
           <form onSubmit={book}>
             <label>
-              Check in
+              {t('common.checkIn')}
               <input type="date" required value={form.checkIn} onChange={(e) => setForm({ ...form, checkIn: e.target.value })} />
             </label>
             <label>
-              Check out
+              {t('common.checkOut')}
               <input type="date" required value={form.checkOut} onChange={(e) => setForm({ ...form, checkOut: e.target.value })} />
             </label>
             <label>
-              Guests
+              {t('common.guests')}
               <input type="number" min="1" max={property.maxGuests} value={form.guests} onChange={(e) => setForm({ ...form, guests: e.target.value })} />
             </label>
             {nights > 0 && (
               <div className="price-breakdown">
-                <div><span>{property.pricePerNight.display} × {nights} night(s)</span><span>{fmt(subtotalCents)}</span></div>
-                {cleaningCents > 0 && <div><span>Cleaning fee</span><span>{fmt(cleaningCents)}</span></div>}
-                <div className="muted">Service fee added at checkout</div>
-                <div className="bd-total"><span>Before service fee</span><span>{fmt(subtotalCents + cleaningCents)}</span></div>
+                <div><span>{t('detail.nights', { price: property.pricePerNight.display, n: nights })}</span><span>{fmt(subtotalCents)}</span></div>
+                {cleaningCents > 0 && <div><span>{t('detail.cleaningFee')}</span><span>{fmt(cleaningCents)}</span></div>}
+                <div className="muted">{t('detail.serviceNote')}</div>
+                <div className="bd-total"><span>{t('detail.beforeFees')}</span><span>{fmt(subtotalCents + cleaningCents)}</span></div>
               </div>
             )}
             <button className="btn btn-primary block" type="submit">
-              {authenticated ? 'Reserve' : 'Sign in to reserve'}
+              {authenticated ? t('detail.reserve') : t('detail.signInReserve')}
             </button>
           </form>
           {!isOwnListing && (
-            <button className="btn btn-ghost block" onClick={contactHost}>Contact host</button>
+            <button className="btn btn-ghost block" onClick={contactHost}>{t('detail.contactHost')}</button>
           )}
           {authenticated && !isOwnListing && (
             <button className="btn btn-ghost block" onClick={() => toggle(property.id)}>
-              {isFavorite(property.id) ? '♥ Saved' : '♡ Save to wishlist'}
+              {isFavorite(property.id) ? t('detail.saved') : t('detail.save')}
             </button>
           )}
           {message && <p className="success">{message}</p>}

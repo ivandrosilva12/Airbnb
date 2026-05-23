@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { useT } from '../i18n/I18nContext';
 
 function ReviewForm({ bookingId, onDone, onError }) {
+  const { t } = useT();
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -26,13 +28,14 @@ function ReviewForm({ bookingId, onDone, onError }) {
           <option key={n} value={n}>{'★'.repeat(n)}</option>
         ))}
       </select>
-      <input placeholder="Share your experience" value={comment} onChange={(e) => setComment(e.target.value)} />
-      <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? '…' : 'Submit'}</button>
+      <input placeholder={t('trips.shareExperience')} value={comment} onChange={(e) => setComment(e.target.value)} />
+      <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? '…' : t('common.submit')}</button>
     </form>
   );
 }
 
 export default function MyTrips() {
+  const { t } = useT();
   const [bookings, setBookings] = useState([]);
   const [payments, setPayments] = useState({});
   const [guestRating, setGuestRating] = useState(null);
@@ -84,19 +87,19 @@ export default function MyTrips() {
 
   return (
     <div className="container">
-      <h1>My trips</h1>
+      <h1>{t('trips.title')}</h1>
       {guestRating && guestRating.count > 0 && (
-        <p className="card-meta">As a guest you’re rated ★ {guestRating.averageRating.toFixed(1)} ({guestRating.count} review{guestRating.count > 1 ? 's' : ''} from hosts)</p>
+        <p className="card-meta">{t('trips.guestRating', { rating: guestRating.averageRating.toFixed(1), count: guestRating.count })}</p>
       )}
       {error && <p className="error">{error}</p>}
       {loading ? (
-        <p>Loading…</p>
+        <p>{t('common.loading')}</p>
       ) : bookings.length === 0 ? (
-        <p>No trips yet.</p>
+        <p>{t('trips.none')}</p>
       ) : (
         <table className="table">
           <thead>
-            <tr><th>Dates</th><th>Guests</th><th>Total</th><th>Status</th><th>Payment</th><th></th></tr>
+            <tr><th>{t('trips.dates')}</th><th>{t('common.guests')}</th><th>{t('trips.total')}</th><th>{t('trips.status')}</th><th>{t('trips.payment')}</th><th></th></tr>
           </thead>
           <tbody>
             {bookings.map((b) => (
@@ -111,21 +114,21 @@ export default function MyTrips() {
                     : <span className="muted-text">—</span>}
                   {payments[b.id]?.refundedCents > 0 && (
                     <div className="muted-text" style={{ fontSize: '.78rem' }}>
-                      refunded {(payments[b.id].refundedCents / 100).toFixed(2)} {payments[b.id].amount.currency}
+                      {t('trips.refunded', { amount: `${(payments[b.id].refundedCents / 100).toFixed(2)} ${payments[b.id].amount.currency}` })}
                     </div>
                   )}
                   {payments[b.id] && (
-                    <button className="link-btn" onClick={() => downloadReceipt(b.id)}>receipt</button>
+                    <button className="link-btn" onClick={() => downloadReceipt(b.id)}>{t('trips.receipt')}</button>
                   )}
                 </td>
                 <td>
                   {(b.status === 'pending' || b.status === 'confirmed') && (
-                    <button className="btn btn-ghost" onClick={() => cancel(b.id)}>Cancel</button>
+                    <button className="btn btn-ghost" onClick={() => cancel(b.id)}>{t('common.cancel')}</button>
                   )}
                   {b.status === 'completed' && !reviewed[b.id] && reviewing !== b.id && (
-                    <button className="btn btn-ghost" onClick={() => { setError(null); setReviewing(b.id); }}>Leave review</button>
+                    <button className="btn btn-ghost" onClick={() => { setError(null); setReviewing(b.id); }}>{t('trips.leaveReview')}</button>
                   )}
-                  {reviewed[b.id] && <span className="success">Reviewed ✓</span>}
+                  {reviewed[b.id] && <span className="success">{t('trips.reviewed')}</span>}
                   {reviewing === b.id && (
                     <ReviewForm
                       bookingId={b.id}

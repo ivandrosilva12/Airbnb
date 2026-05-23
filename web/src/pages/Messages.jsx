@@ -3,10 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useMessages } from '../context/MessagesContext';
+import { useT } from '../i18n/I18nContext';
 
 export default function Messages() {
   const { profile } = useAuth();
   const { markRead } = useMessages();
+  const { t } = useT();
   const [searchParams, setSearchParams] = useSearchParams();
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(searchParams.get('conversation'));
@@ -69,15 +71,15 @@ export default function Messages() {
 
   return (
     <div className="container">
-      <h1>Messages</h1>
+      <h1>{t('msg.title')}</h1>
       {error && <p className="error">{error}</p>}
       {conversations.length === 0 ? (
-        <p>No conversations yet. Start one from a listing’s “Contact host” button.</p>
+        <p>{t('msg.none')}</p>
       ) : (
         <div className="messages-layout">
           <div className="conv-list">
             {conversations.map((c) => {
-              const role = c.hostId === profile?.id ? 'Guest enquiry' : 'Your enquiry';
+              const role = c.hostId === profile?.id ? t('msg.guestEnquiry') : t('msg.yourEnquiry');
               return (
                 <div
                   key={c.id}
@@ -106,11 +108,11 @@ export default function Messages() {
             </div>
             <form className="thread-composer" onSubmit={send}>
               <input
-                placeholder="Write a message…"
+                placeholder={t('msg.write')}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
               />
-              <button className="btn btn-primary" type="submit">Send</button>
+              <button className="btn btn-primary" type="submit">{t('msg.send')}</button>
             </form>
           </div>
         </div>
