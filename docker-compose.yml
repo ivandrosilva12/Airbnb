@@ -1,0 +1,124 @@
+# AirHost — full local stack.
+#
+# NOTE on Keycloak hostnames: tokens are issued with an `iss` claim that must be
+# resolvable identically by the browser and by the backend. We pin Keycloak's
+# hostname to `keycloak`, reachable inside the Docker network by service name.
+# For browser logins to work, add this line to your hosts file:
+#     127.0.0.1   keycloak
+# (Windows: C:\Windows\System32\drivers\etc\hosts)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: airhost
+      POSTGRES_PASSWORD: airhost
+      POSTGRES_DB: airhost
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: keycloak
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /realms/airhost HTTP/1.0\\r\\n\\r\\n' >&3 && cat <&3 | head -1 | grep -q '200'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      HTTP_PORT: "8081"
+      HTTP_ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:3000"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: airhost
+      DB_PASSWORD: airhost
+      DB_NAME: airhost
+      DB_SSLMODE: disable
+      DB_MIGRATIONS_PATH: /app/internal/infrastructure/persistence/postgres/migrations
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/airhost
+      KEYCLOAK_CLIENT_ID: airhost-api
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: airhost-media
+      MINIO_USE_SSL: "false"
+      MINIO_PUBLIC_HOST: http://localhost:9000
+    ports:
+      - "8081:8081"
+
+  prometheus:
+    image: prom/prometheus:latest
+    depends_on:
+      - api
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+
+volumes:
+  postgres-data:
+  minio-data:
+  grafana-data:

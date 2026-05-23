@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "AirHost",
+    "slug": "airhost",
+    "scheme": "airhost",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#ffffff"
+    },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "dev.airhost.app" },
+    "android": { "package": "dev.airhost.app" },
+    "extra": {
+      "apiBaseUrl": "http://10.0.2.2:8081/api/v1",
+      "keycloakUrl": "http://10.0.2.2:8080",
+      "keycloakRealm": "airhost",
+      "keycloakClientId": "airhost-web"
+    }
+  }
+}

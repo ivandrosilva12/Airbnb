@@ -1,0 +1,76 @@
+{
+  "realm": "airhost",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "accessTokenLifespan": 1800,
+  "roles": {
+    "realm": [
+      { "name": "guest", "description": "Default platform guest" },
+      { "name": "host", "description": "Can publish and manage listings" },
+      { "name": "admin", "description": "Platform administrator" }
+    ]
+  },
+  "defaultRoles": ["guest"],
+  "clients": [
+    {
+      "clientId": "airhost-web",
+      "name": "AirHost Web & Mobile (public)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:3000/*",
+        "http://localhost:19006/*",
+        "airhost://*",
+        "exp://*"
+      ],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:3000/*"
+      }
+    },
+    {
+      "clientId": "airhost-api",
+      "name": "AirHost API (bearer-only)",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": false
+    }
+  ],
+  "users": [
+    {
+      "username": "host@airhost.dev",
+      "email": "host@airhost.dev",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Demo",
+      "lastName": "Host",
+      "credentials": [
+        { "type": "password", "value": "host123", "temporary": false }
+      ],
+      "realmRoles": ["host"]
+    },
+    {
+      "username": "guest@airhost.dev",
+      "email": "guest@airhost.dev",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Demo",
+      "lastName": "Guest",
+      "credentials": [
+        { "type": "password", "value": "guest123", "temporary": false }
+      ],
+      "realmRoles": ["guest"]
+    }
+  ]
+}

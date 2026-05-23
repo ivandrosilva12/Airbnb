@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+.pnp/
+
+# Build output
+dist/
+build/
+web-build/
+*.exe
+backend/bin/
+backend/api
+
+# Env files
+.env
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Expo / RN
+.expo/
+.expo-shared/

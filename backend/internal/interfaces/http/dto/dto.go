@@ -1,0 +1,187 @@
+// Package dto holds the HTTP view models and the presenters that map domain
+// aggregates onto them, keeping transport shapes out of the domain.
+package dto
+
+import (
+	"time"
+
+	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/property"
+	"github.com/airhost/backend/internal/domain/review"
+	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/domain/user"
+	"github.com/google/uuid"
+)
+
+// UserView is the public representation of a user.
+type UserView struct {
+	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
+	FullName  string    `json:"fullName"`
+	Role      string    `json:"role"`
+	AvatarURL string    `json:"avatarUrl"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// FromUser maps a user aggregate to its view.
+func FromUser(u *user.User) UserView {
+	return UserView{
+		ID:        u.ID,
+		Email:     u.Email,
+		FullName:  u.FullName,
+		Role:      string(u.Role),
+		AvatarURL: u.AvatarURL,
+		CreatedAt: u.CreatedAt,
+	}
+}
+
+// MoneyView renders a money value object.
+type MoneyView struct {
+	AmountCents int64  `json:"amountCents"`
+	Currency    string `json:"currency"`
+	Display     string `json:"display"`
+}
+
+func fromMoney(m shared.Money) MoneyView {
+	return MoneyView{AmountCents: m.AmountCents(), Currency: m.Currency(), Display: m.String()}
+}
+
+// PhotoView renders a property photo.
+type PhotoView struct {
+	ID       uuid.UUID `json:"id"`
+	URL      string    `json:"url"`
+	Position int       `json:"position"`
+}
+
+// AddressView renders an address value object.
+type AddressView struct {
+	Line1      string  `json:"line1"`
+	City       string  `json:"city"`
+	Country    string  `json:"country"`
+	PostalCode string  `json:"postalCode"`
+	Latitude   float64 `json:"latitude"`
+	Longitude  float64 `json:"longitude"`
+}
+
+// PropertyView is the public representation of a listing.
+type PropertyView struct {
+	ID            uuid.UUID   `json:"id"`
+	HostID        uuid.UUID   `json:"hostId"`
+	Title         string      `json:"title"`
+	Description   string      `json:"description"`
+	Type          string      `json:"type"`
+	Status        string      `json:"status"`
+	Address       AddressView `json:"address"`
+	PricePerNight MoneyView   `json:"pricePerNight"`
+	MaxGuests     int         `json:"maxGuests"`
+	Bedrooms      int         `json:"bedrooms"`
+	Beds          int         `json:"beds"`
+	Bathrooms     int         `json:"bathrooms"`
+	Amenities     []string    `json:"amenities"`
+	Photos        []PhotoView `json:"photos"`
+	CreatedAt     time.Time   `json:"createdAt"`
+}
+
+// FromProperty maps a property aggregate to its view.
+func FromProperty(p *property.Property) PropertyView {
+	photos := make([]PhotoView, 0, len(p.Photos))
+	for _, ph := range p.Photos {
+		photos = append(photos, PhotoView{ID: ph.ID, URL: ph.URL, Position: ph.Position})
+	}
+	return PropertyView{
+		ID:          p.ID,
+		HostID:      p.HostID,
+		Title:       p.Title,
+		Description: p.Description,
+		Type:        string(p.Type),
+		Status:      string(p.Status),
+		Address: AddressView{
+			Line1:      p.Address.Line1,
+			City:       p.Address.City,
+			Country:    p.Address.Country,
+			PostalCode: p.Address.PostalCode,
+			Latitude:   p.Address.Latitude,
+			Longitude:  p.Address.Longitude,
+		},
+		PricePerNight: fromMoney(p.PricePerNight),
+		MaxGuests:     p.MaxGuests,
+		Bedrooms:      p.Bedrooms,
+		Beds:          p.Beds,
+		Bathrooms:     p.Bathrooms,
+		Amenities:     p.Amenities,
+		Photos:        photos,
+		CreatedAt:     p.CreatedAt,
+	}
+}
+
+// BookingView is the public representation of a reservation.
+type BookingView struct {
+	ID         uuid.UUID `json:"id"`
+	PropertyID uuid.UUID `json:"propertyId"`
+	GuestID    uuid.UUID `json:"guestId"`
+	CheckIn    string    `json:"checkIn"`
+	CheckOut   string    `json:"checkOut"`
+	Nights     int       `json:"nights"`
+	Guests     int       `json:"guests"`
+	TotalPrice MoneyView `json:"totalPrice"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+// FromBooking maps a booking aggregate to its view.
+func FromBooking(b *booking.Booking) BookingView {
+	return BookingView{
+		ID:         b.ID,
+		PropertyID: b.PropertyID,
+		GuestID:    b.GuestID,
+		CheckIn:    b.Dates.CheckIn.Format("2006-01-02"),
+		CheckOut:   b.Dates.CheckOut.Format("2006-01-02"),
+		Nights:     b.Dates.Nights(),
+		Guests:     b.Guests,
+		TotalPrice: fromMoney(b.TotalPrice),
+		Status:     string(b.Status),
+		CreatedAt:  b.CreatedAt,
+	}
+}
+
+// ReviewView is the public representation of a review.
+type ReviewView struct {
+	ID         uuid.UUID `json:"id"`
+	PropertyID uuid.UUID `json:"propertyId"`
+	GuestID    uuid.UUID `json:"guestId"`
+	Rating     int       `json:"rating"`
+	Comment    string    `json:"comment"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+// FromReview maps a review aggregate to its view.
+func FromReview(r *review.Review) ReviewView {
+	return ReviewView{
+		ID:         r.ID,
+		PropertyID: r.PropertyID,
+		GuestID:    r.GuestID,
+		Rating:     r.Rating,
+		Comment:    r.Comment,
+		CreatedAt:  r.CreatedAt,
+	}
+}
+
+// ReviewSummaryView renders aggregate rating stats.
+type ReviewSummaryView struct {
+	PropertyID    uuid.UUID `json:"propertyId"`
+	AverageRating float64   `json:"averageRating"`
+	Count         int64     `json:"count"`
+}
+
+// FromReviewSummary maps a review summary to its view.
+func FromReviewSummary(s review.Summary) ReviewSummaryView {
+	return ReviewSummaryView{PropertyID: s.PropertyID, AverageRating: s.AverageRating, Count: s.Count}
+}
+
+// PageView wraps a paginated list response.
+type PageView[T any] struct {
+	Items  []T   `json:"items"`
+	Total  int64 `json:"total"`
+	Limit  int   `json:"limit"`
+	Offset int   `json:"offset"`
+}
