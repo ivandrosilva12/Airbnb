@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	messageapp "github.com/airhost/backend/internal/application/message"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	userapp "github.com/airhost/backend/internal/application/user"
@@ -81,12 +82,14 @@ func run() error {
 	propertyRepo := postgres.NewPropertyRepository(pool)
 	bookingRepo := postgres.NewBookingRepository(pool)
 	reviewRepo := postgres.NewReviewRepository(pool)
+	messageRepo := postgres.NewMessageRepository(pool)
 
 	// --- Application services ---------------------------------------------
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, objectStore)
 	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo)
+	messageSvc := messageapp.NewService(messageRepo, propertyRepo)
 
 	// --- Observability -----------------------------------------------------
 	registry := prometheus.NewRegistry()
@@ -115,6 +118,7 @@ func run() error {
 			Property: handler.NewPropertyHandler(propertySvc, metrics),
 			Booking:  handler.NewBookingHandler(bookingSvc, metrics),
 			Review:   handler.NewReviewHandler(reviewSvc),
+			Message:  handler.NewMessageHandler(messageSvc),
 		},
 	})
 

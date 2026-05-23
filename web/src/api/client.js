@@ -71,4 +71,17 @@ export const api = {
   },
   propertyBookings: (id) => request('GET', `/properties/${id}/bookings`, { auth: true }),
   confirmBooking: (id) => request('POST', `/bookings/${id}/confirm`, { auth: true }),
+  completeBooking: (id) => request('POST', `/bookings/${id}/complete`, { auth: true }),
+
+  // Availability (public)
+  availability: (id, params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request('GET', `/properties/${id}/availability${qs ? `?${qs}` : ''}`);
+  },
+
+  // Messaging
+  startConversation: (propertyId) => request('POST', '/conversations', { body: { propertyId }, auth: true }),
+  listConversations: () => request('GET', '/conversations', { auth: true }),
+  listMessages: (id) => request('GET', `/conversations/${id}/messages`, { auth: true }),
+  sendMessage: (id, body) => request('POST', `/conversations/${id}/messages`, { body: { body }, auth: true }),
 };

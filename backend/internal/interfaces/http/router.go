@@ -18,6 +18,7 @@ type Handlers struct {
 	Property *handler.PropertyHandler
 	Booking  *handler.BookingHandler
 	Review   *handler.ReviewHandler
+	Message  *handler.MessageHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -57,6 +58,7 @@ func NewRouter(d Deps) *gin.Engine {
 	// Public listing & review reads.
 	api.GET("/properties", h.Property.Search)
 	api.GET("/properties/:id", h.Property.Get)
+	api.GET("/properties/:id/availability", h.Booking.Availability)
 	api.GET("/properties/:id/reviews", h.Review.ListForProperty)
 	api.GET("/properties/:id/reviews/summary", h.Review.Summary)
 
@@ -78,6 +80,13 @@ func NewRouter(d Deps) *gin.Engine {
 		// Reviews.
 		auth.POST("/reviews", h.Review.Create)
 
+		// Messaging (host↔guest). Both roles participate, so these live under
+		// the authenticated group rather than the host-only group.
+		auth.GET("/conversations", h.Message.ListMine)
+		auth.POST("/conversations", h.Message.Start)
+		auth.GET("/conversations/:id/messages", h.Message.ListMessages)
+		auth.POST("/conversations/:id/messages", h.Message.Send)
+
 		// Host-only listing management.
 		host := auth.Group("")
 		host.Use(middleware.RequireHost())
@@ -91,6 +100,7 @@ func NewRouter(d Deps) *gin.Engine {
 			host.POST("/properties/:id/photos/presign", h.Property.PresignPhotoUpload)
 			host.GET("/properties/:id/bookings", h.Booking.ListForProperty)
 			host.POST("/bookings/:id/confirm", h.Booking.Confirm)
+			host.POST("/bookings/:id/complete", h.Booking.Complete)
 		}
 	}
 

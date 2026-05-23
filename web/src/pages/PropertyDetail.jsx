@@ -1,14 +1,38 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import AvailabilityCalendar from '../components/AvailabilityCalendar';
+
+function bookedDaySet(booked) {
+  const set = new Set();
+  for (const r of booked) {
+    const start = new Date(`${r.checkIn}T00:00:00Z`);
+    const end = new Date(`${r.checkOut}T00:00:00Z`);
+    for (let d = new Date(start); d < end; d.setUTCDate(d.getUTCDate() + 1)) {
+      set.add(d.toISOString().slice(0, 10));
+    }
+  }
+  return set;
+}
+
+function rangeHitsBooked(checkIn, checkOut, set) {
+  const start = new Date(`${checkIn}T00:00:00Z`);
+  const end = new Date(`${checkOut}T00:00:00Z`);
+  for (let d = new Date(start); d < end; d.setUTCDate(d.getUTCDate() + 1)) {
+    if (set.has(d.toISOString().slice(0, 10))) return true;
+  }
+  return false;
+}
 
 export default function PropertyDetail() {
   const { id } = useParams();
-  const { authenticated, login } = useAuth();
+  const navigate = useNavigate();
+  const { authenticated, profile, login } = useAuth();
   const [property, setProperty] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [booked, setBooked] = useState([]);
   const [form, setForm] = useState({ checkIn: '', checkOut: '', guests: 1 });
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
@@ -17,6 +41,7 @@ export default function PropertyDetail() {
     api.getProperty(id).then(setProperty).catch((e) => setError(e.message));
     api.getReviews(id).then((r) => setReviews(r.items || [])).catch(() => {});
     api.getReviewSummary(id).then(setSummary).catch(() => {});
+    api.availability(id).then((a) => setBooked(a.booked || [])).catch(() => {});
   }, [id]);
 
   async function book(e) {
@@ -27,6 +52,10 @@ export default function PropertyDetail() {
       login();
       return;
     }
+    if (rangeHitsBooked(form.checkIn, form.checkOut, bookedDaySet(booked))) {
+      setError('Some of those dates are already booked. Please pick another range.');
+      return;
+    }
     try {
       const booking = await api.createBooking({
         propertyId: id,
@@ -35,6 +64,21 @@ export default function PropertyDetail() {
         guests: Number(form.guests),
       });
       setMessage(`Booked! ${booking.nights} night(s) for ${booking.totalPrice.display}. Status: ${booking.status}.`);
+      api.availability(id).then((a) => setBooked(a.booked || [])).catch(() => {});
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function contactHost() {
+    setError(null);
+    if (!authenticated) {
+      login();
+      return;
+    }
+    try {
+      const conv = await api.startConversation(id);
+      navigate(`/messages?conversation=${conv.id}`);
     } catch (e) {
       setError(e.message);
     }
@@ -42,6 +86,8 @@ export default function PropertyDetail() {
 
   if (error && !property) return <div className="container"><p className="error">{error}</p></div>;
   if (!property) return <div className="container"><p>Loading…</p></div>;
+
+  const isOwnListing = profile?.id === property.hostId;
 
   return (
     <div className="container detail">
@@ -61,6 +107,10 @@ export default function PropertyDetail() {
       <div className="detail-grid">
         <div>
           <p>{property.description || 'No description provided.'}</p>
+
+          <h3>Availability</h3>
+          <AvailabilityCalendar booked={booked} months={2} />
+
           <h3>Amenities</h3>
           <ul className="amenities">
             {property.amenities.length === 0 && <li>None listed</li>}
@@ -100,6 +150,9 @@ export default function PropertyDetail() {
               {authenticated ? 'Reserve' : 'Sign in to reserve'}
             </button>
           </form>
+          {!isOwnListing && (
+            <button className="btn btn-ghost block" onClick={contactHost}>Contact host</button>
+          )}
           {message && <p className="success">{message}</p>}
           {error && <p className="error">{error}</p>}
         </aside>

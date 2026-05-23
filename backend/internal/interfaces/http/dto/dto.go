@@ -5,7 +5,9 @@ package dto
 import (
 	"time"
 
+	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -144,6 +146,26 @@ func FromBooking(b *booking.Booking) BookingView {
 	}
 }
 
+// BookedRangeView renders an occupied window in the availability response.
+type BookedRangeView struct {
+	CheckIn  string `json:"checkIn"`
+	CheckOut string `json:"checkOut"`
+	Status   string `json:"status"`
+}
+
+// FromBookedRanges maps application booked ranges to their view models.
+func FromBookedRanges(ranges []bookingapp.BookedRange) []BookedRangeView {
+	out := make([]BookedRangeView, 0, len(ranges))
+	for _, r := range ranges {
+		out = append(out, BookedRangeView{
+			CheckIn:  r.CheckIn.Format("2006-01-02"),
+			CheckOut: r.CheckOut.Format("2006-01-02"),
+			Status:   string(r.Status),
+		})
+	}
+	return out
+}
+
 // ReviewView is the public representation of a review.
 type ReviewView struct {
 	ID         uuid.UUID `json:"id"`
@@ -176,6 +198,48 @@ type ReviewSummaryView struct {
 // FromReviewSummary maps a review summary to its view.
 func FromReviewSummary(s review.Summary) ReviewSummaryView {
 	return ReviewSummaryView{PropertyID: s.PropertyID, AverageRating: s.AverageRating, Count: s.Count}
+}
+
+// ConversationView is the public representation of a message thread.
+type ConversationView struct {
+	ID            uuid.UUID `json:"id"`
+	PropertyID    uuid.UUID `json:"propertyId"`
+	HostID        uuid.UUID `json:"hostId"`
+	GuestID       uuid.UUID `json:"guestId"`
+	CreatedAt     time.Time `json:"createdAt"`
+	LastMessageAt time.Time `json:"lastMessageAt"`
+}
+
+// FromConversation maps a conversation aggregate to its view.
+func FromConversation(c *message.Conversation) ConversationView {
+	return ConversationView{
+		ID:            c.ID,
+		PropertyID:    c.PropertyID,
+		HostID:        c.HostID,
+		GuestID:       c.GuestID,
+		CreatedAt:     c.CreatedAt,
+		LastMessageAt: c.LastMessageAt,
+	}
+}
+
+// MessageView is the public representation of a message.
+type MessageView struct {
+	ID             uuid.UUID `json:"id"`
+	ConversationID uuid.UUID `json:"conversationId"`
+	SenderID       uuid.UUID `json:"senderId"`
+	Body           string    `json:"body"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
+// FromMessage maps a message entity to its view.
+func FromMessage(m *message.Message) MessageView {
+	return MessageView{
+		ID:             m.ID,
+		ConversationID: m.ConversationID,
+		SenderID:       m.SenderID,
+		Body:           m.Body,
+		CreatedAt:      m.CreatedAt,
+	}
 }
 
 // PageView wraps a paginated list response.

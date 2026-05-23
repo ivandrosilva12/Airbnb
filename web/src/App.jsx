@@ -4,7 +4,9 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import PropertyDetail from './pages/PropertyDetail';
 import MyTrips from './pages/MyTrips';
+import Messages from './pages/Messages';
 import HostDashboard from './pages/HostDashboard';
+import HostBookings from './pages/HostBookings';
 import CreateListing from './pages/CreateListing';
 
 function Protected({ children }) {
@@ -30,8 +32,10 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/properties/:id" element={<PropertyDetail />} />
             <Route path="/trips" element={<Protected><MyTrips /></Protected>} />
+            <Route path="/messages" element={<Protected><Messages /></Protected>} />
             <Route path="/host" element={<Protected><HostDashboard /></Protected>} />
             <Route path="/host/new" element={<Protected><CreateListing /></Protected>} />
+            <Route path="/host/properties/:id/bookings" element={<Protected><HostBookings /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}

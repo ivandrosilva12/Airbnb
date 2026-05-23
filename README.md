@@ -45,7 +45,8 @@ ones:
 | **Interfaces** | `internal/interfaces/http/*` | Gin router, handlers, middleware, request/response DTOs and presenters. |
 | **Composition root** | `cmd/api/main.go` | Wires everything together and runs the server. |
 
-Bounded contexts: **user**, **property**, **booking**, **review**.
+Bounded contexts: **user**, **property**, **booking**, **review**, **message**
+(host↔guest threads).
 
 Key domain rules enforced in code:
 - A host cannot book their own property; only published listings are bookable.
@@ -140,18 +141,25 @@ go test ./...
 Public:
 - `GET /properties` — search (`?city=&country=&type=&minGuests=&maxPrice=&amenity=`)
 - `GET /properties/:id`
+- `GET /properties/:id/availability` — booked date ranges (`?from=YYYY-MM-DD&to=YYYY-MM-DD`)
 - `GET /properties/:id/reviews` · `GET /properties/:id/reviews/summary`
 
 Authenticated (Bearer token):
 - `GET /me` · `PATCH /me` · `POST /me/become-host`
 - `POST /bookings` · `GET /bookings/me` · `GET /bookings/:id` · `POST /bookings/:id/cancel`
 - `POST /reviews`
+- `GET /conversations` · `POST /conversations` (start/get a thread about a property)
+- `GET /conversations/:id/messages` · `POST /conversations/:id/messages`
 
 Host only:
 - `GET /host/properties` · `POST /properties` · `PATCH /properties/:id` · `DELETE /properties/:id`
 - `POST /properties/:id/publish`
 - `POST /properties/:id/photos` (multipart) · `POST /properties/:id/photos/presign`
-- `GET /properties/:id/bookings` · `POST /bookings/:id/confirm`
+- `GET /properties/:id/bookings` · `POST /bookings/:id/confirm` · `POST /bookings/:id/complete`
+
+The stay lifecycle is: `pending → confirmed → completed`, with `cancelled` reachable
+from pending/confirmed. A guest can only review a **completed** booking, so the host
+marks a stay completed (after check-out) to unlock the review.
 
 ## Repository layout
 
@@ -167,7 +175,11 @@ docker-compose.yml
 
 | Component | State | Verified |
 |-----------|-------|----------|
-| Backend (Go) | Complete | `go build`, `go vet`, domain `go test` all pass |
+| Backend (Go) | Complete | `go build`, `go vet`, domain + application `go test` all pass |
+| Messaging | Complete | Domain→app→infra→HTTP; covered by the e2e test |
+| In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |
+| E2E HTTP test | Complete | Drives the real router (host→publish→book→confirm→message) |
+| CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build |
 | SQL schema | Complete | Applied by the startup migrator |
 | Web (React) | Complete | `npm run build` passes |
 | Mobile (Expo) | Runnable scaffold | Builds require an emulator/device; not auto-verified |
@@ -178,6 +190,7 @@ docker-compose.yml
 
 - Payments are out of scope; bookings carry a derived total only.
 - Photo upload supports both server-proxied multipart and presigned direct PUT.
-- Suggested follow-ups: availability calendar endpoint, host payout/ledger
-  context, full-text/geo search, message threads, e2e tests, CI pipeline.
+- Suggested follow-ups: host payout/ledger context, full-text/geo search,
+  message read-receipts and real-time delivery (WebSocket/SSE), mobile messaging
+  UI, and full-stack e2e tests against a live Keycloak.
 ```

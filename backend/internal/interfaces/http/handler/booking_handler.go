@@ -145,6 +145,53 @@ func (h *BookingHandler) Confirm(c *gin.Context) {
 	response.OK(c, dto.FromBooking(b))
 }
 
+// Complete marks a stay as completed (host only, after check-out).
+func (h *BookingHandler) Complete(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	b, err := h.svc.Complete(c.Request.Context(), actorID, id)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromBooking(b))
+}
+
+// Availability returns the occupied date ranges for a property. Public read.
+// Query: ?from=YYYY-MM-DD&to=YYYY-MM-DD (defaults to today .. +90 days).
+func (h *BookingHandler) Availability(c *gin.Context) {
+	propertyID, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	from := parseDateOr(c.Query("from"), time.Now().UTC())
+	to := parseDateOr(c.Query("to"), from.AddDate(0, 0, 90))
+
+	ranges, err := h.svc.Availability(c.Request.Context(), propertyID, from, to)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"propertyId": propertyID, "booked": dto.FromBookedRanges(ranges)})
+}
+
+func parseDateOr(raw string, fallback time.Time) time.Time {
+	if raw == "" {
+		return fallback
+	}
+	t, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return fallback
+	}
+	return t.UTC()
+}
+
 // Cancel cancels a booking (guest or host).
 func (h *BookingHandler) Cancel(c *gin.Context) {
 	actorID, ok := requireUser(c)

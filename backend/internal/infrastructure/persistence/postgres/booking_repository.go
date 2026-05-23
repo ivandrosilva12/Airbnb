@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -81,6 +82,32 @@ func (r *BookingRepository) list(ctx context.Context, where string, arg any, pag
 		items = append(items, b)
 	}
 	return shared.PageResult[*booking.Booking]{Items: items, Total: total}, mapError(rows.Err())
+}
+
+func (r *BookingRepository) ListActiveInRange(ctx context.Context, propertyID uuid.UUID, from, to time.Time) ([]*booking.Booking, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+bookingColumns+` FROM bookings
+		WHERE property_id=$1
+		  AND status IN ('pending','confirmed')
+		  AND check_in < $3
+		  AND $2 < check_out
+		ORDER BY check_in ASC`,
+		propertyID, from, to,
+	)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+
+	var items []*booking.Booking
+	for rows.Next() {
+		b, err := scanBooking(rows)
+		if err != nil {
+			return nil, mapError(err)
+		}
+		items = append(items, b)
+	}
+	return items, mapError(rows.Err())
 }
 
 func (r *BookingRepository) HasOverlap(ctx context.Context, propertyID uuid.UUID, dates booking.DateRange) (bool, error) {

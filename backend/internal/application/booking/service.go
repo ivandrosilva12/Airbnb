@@ -141,6 +141,61 @@ func (s *Service) Cancel(ctx context.Context, actorID, bookingID uuid.UUID) (*bo
 	return b, nil
 }
 
+// Complete marks a confirmed booking as completed once the stay is over. Only
+// the host may complete it, and only after the check-out date has passed —
+// after which the guest becomes eligible to leave a review.
+func (s *Service) Complete(ctx context.Context, actorID, bookingID uuid.UUID) (*booking.Booking, error) {
+	b, prop, err := s.bookingWithProperty(ctx, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	if !prop.IsOwnedBy(actorID) {
+		return nil, shared.ErrForbidden
+	}
+	if time.Now().UTC().Before(b.Dates.CheckOut) {
+		return nil, shared.NewValidationError("a stay can only be completed after check-out")
+	}
+	if err := b.Complete(); err != nil {
+		return nil, err
+	}
+	if err := s.bookings.Update(ctx, b); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// BookedRange is a read-model describing an occupied window of a property.
+type BookedRange struct {
+	CheckIn  time.Time
+	CheckOut time.Time
+	Status   booking.Status
+}
+
+// Availability returns the occupied date ranges for a property within the
+// [from, to) window, so clients can show which dates are unavailable. This is a
+// public read and intentionally exposes no guest-identifying data.
+func (s *Service) Availability(ctx context.Context, propertyID uuid.UUID, from, to time.Time) ([]BookedRange, error) {
+	if !to.After(from) {
+		return nil, shared.NewValidationError("'to' must be after 'from'")
+	}
+	if _, err := s.properties.FindByID(ctx, propertyID); err != nil {
+		return nil, err
+	}
+	active, err := s.bookings.ListActiveInRange(ctx, propertyID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	ranges := make([]BookedRange, 0, len(active))
+	for _, b := range active {
+		ranges = append(ranges, BookedRange{
+			CheckIn:  b.Dates.CheckIn,
+			CheckOut: b.Dates.CheckOut,
+			Status:   b.Status,
+		})
+	}
+	return ranges, nil
+}
+
 func (s *Service) bookingWithProperty(ctx context.Context, bookingID uuid.UUID) (*booking.Booking, *property.Property, error) {
 	b, err := s.bookings.FindByID(ctx, bookingID)
 	if err != nil {

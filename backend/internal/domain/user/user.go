@@ -32,15 +32,15 @@ func (r Role) Valid() bool {
 
 // User is the aggregate root for an application identity.
 type User struct {
-	ID            uuid.UUID
-	KeycloakSub   string // Keycloak subject (sub claim) — the external identity link
-	Email         string
-	FullName      string
-	Role          Role
-	AvatarURL     string
-	IsActive      bool
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID          uuid.UUID
+	KeycloakSub string // Keycloak subject (sub claim) — the external identity link
+	Email       string
+	FullName    string
+	Role        Role
+	AvatarURL   string
+	IsActive    bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // NewUser creates a User aggregate, enforcing invariants.

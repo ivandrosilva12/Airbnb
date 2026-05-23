@@ -60,10 +60,10 @@ func (a Address) validate() error {
 
 // Photo is a value object pointing to a stored media object.
 type Photo struct {
-	ID       uuid.UUID
+	ID        uuid.UUID
 	ObjectKey string // key in the object store (MinIO)
-	URL      string // public URL
-	Position int
+	URL       string // public URL
+	Position  int
 }
 
 // Property is the aggregate root for a listing.

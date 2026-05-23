@@ -27,23 +27,23 @@ func NewService(repo property.Repository, storage port.Storage) *Service {
 
 // CreateInput carries the data required to create a listing.
 type CreateInput struct {
-	HostID        uuid.UUID
-	Title         string
-	Description   string
-	Type          string
-	AddressLine1  string
-	City          string
-	Country       string
-	PostalCode    string
-	Latitude      float64
-	Longitude     float64
-	PriceCents    int64
-	Currency      string
-	MaxGuests     int
-	Bedrooms      int
-	Beds          int
-	Bathrooms     int
-	Amenities     []string
+	HostID       uuid.UUID
+	Title        string
+	Description  string
+	Type         string
+	AddressLine1 string
+	City         string
+	Country      string
+	PostalCode   string
+	Latitude     float64
+	Longitude    float64
+	PriceCents   int64
+	Currency     string
+	MaxGuests    int
+	Bedrooms     int
+	Beds         int
+	Bathrooms    int
+	Amenities    []string
 }
 
 // Create builds and persists a draft listing.

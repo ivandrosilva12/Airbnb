@@ -10,6 +10,7 @@ export default function Navbar() {
         <nav className="nav-links">
           <Link to="/">Explore</Link>
           {authenticated && <Link to="/trips">My trips</Link>}
+          {authenticated && <Link to="/messages">Messages</Link>}
           {authenticated && isHost && <Link to="/host">Host dashboard</Link>}
           {authenticated ? (
             <>

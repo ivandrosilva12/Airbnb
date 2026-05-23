@@ -65,6 +65,37 @@ a { color: inherit; text-decoration: none; }
 .amenities { columns: 2; padding-left: 18px; }
 .review { border-top: 1px solid var(--border); padding: 10px 0; }
 
+/* Availability calendar */
+.cal-wrap { display: flex; gap: 24px; flex-wrap: wrap; margin: 8px 0 4px; }
+.cal-month { min-width: 230px; }
+.cal-title { font-weight: 600; margin-bottom: 8px; text-transform: capitalize; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-weekday { font-size: .72rem; color: var(--muted); text-align: center; }
+.cal-cell { text-align: center; padding: 6px 0; font-size: .82rem; border-radius: 6px; }
+.cal-empty { visibility: hidden; }
+.cal-booked { background: #fde8e8; color: #c0392b; text-decoration: line-through; }
+.cal-past { color: #ccc; }
+.cal-legend { display: flex; gap: 16px; font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+.dot-free { background: #e6f7ed; border: 1px solid #1a7f47; }
+.dot-booked { background: #fde8e8; border: 1px solid #c0392b; }
+
+/* Messaging */
+.messages-layout { display: grid; grid-template-columns: 280px 1fr; gap: 20px; min-height: 60vh; }
+.conv-list { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: #fff; }
+.conv-item { padding: 12px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.conv-item:hover { background: #fafafa; }
+.conv-item.active { background: #fff0f3; }
+.conv-item small { color: var(--muted); }
+.thread { border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; background: #fff; }
+.thread-messages { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 55vh; }
+.bubble { max-width: 70%; padding: 9px 12px; border-radius: 12px; font-size: .92rem; }
+.bubble.mine { align-self: flex-end; background: var(--primary); color: #fff; }
+.bubble.theirs { align-self: flex-start; background: #f0f0f0; }
+.bubble small { display: block; opacity: .7; font-size: .7rem; margin-top: 3px; }
+.thread-composer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
+.thread-composer input { flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+
 /* Forms */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
 .form-grid .full { grid-column: 1 / -1; }
@@ -73,7 +104,10 @@ a { color: inherit; text-decoration: none; }
 /* Tables */
 .table { width: 100%; border-collapse: collapse; margin-top: 16px; background: #fff; }
 .table th, .table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: .92rem; }
-.actions { display: flex; gap: 8px; }
+.actions { display: flex; gap: 8px; align-items: center; }
+.inline-review { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.inline-review input { flex: 1; min-width: 140px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; }
+.inline-review select { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; }
 .row-between { display: flex; align-items: center; justify-content: space-between; }
 
 /* Badges & messages */

@@ -91,6 +91,7 @@ export default function HostDashboard() {
                 <td>{p.photos.length}</td>
                 <td className="actions">
                   {p.status !== 'published' && <button className="btn btn-ghost" onClick={() => publish(p.id)}>Publish</button>}
+                  <Link className="btn btn-ghost" to={`/host/properties/${p.id}/bookings`}>Bookings</Link>
                   <button className="btn btn-ghost" onClick={() => remove(p.id)}>Delete</button>
                 </td>
               </tr>

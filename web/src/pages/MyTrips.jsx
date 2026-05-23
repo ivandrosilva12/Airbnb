@@ -1,10 +1,43 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 
+function ReviewForm({ bookingId, onDone, onError }) {
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await api.createReview({ bookingId, rating: Number(rating), comment });
+      onDone();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="inline-review" onSubmit={submit}>
+      <select value={rating} onChange={(e) => setRating(e.target.value)}>
+        {[5, 4, 3, 2, 1].map((n) => (
+          <option key={n} value={n}>{'★'.repeat(n)}</option>
+        ))}
+      </select>
+      <input placeholder="Share your experience" value={comment} onChange={(e) => setComment(e.target.value)} />
+      <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? '…' : 'Submit'}</button>
+    </form>
+  );
+}
+
 export default function MyTrips() {
   const [bookings, setBookings] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [reviewing, setReviewing] = useState(null);
+  const [reviewed, setReviewed] = useState({});
 
   async function load() {
     setLoading(true);
@@ -54,6 +87,17 @@ export default function MyTrips() {
                 <td>
                   {(b.status === 'pending' || b.status === 'confirmed') && (
                     <button className="btn btn-ghost" onClick={() => cancel(b.id)}>Cancel</button>
+                  )}
+                  {b.status === 'completed' && !reviewed[b.id] && reviewing !== b.id && (
+                    <button className="btn btn-ghost" onClick={() => { setError(null); setReviewing(b.id); }}>Leave review</button>
+                  )}
+                  {reviewed[b.id] && <span className="success">Reviewed ✓</span>}
+                  {reviewing === b.id && (
+                    <ReviewForm
+                      bookingId={b.id}
+                      onDone={() => { setReviewing(null); setReviewed((r) => ({ ...r, [b.id]: true })); }}
+                      onError={setError}
+                    />
                   )}
                 </td>
               </tr>

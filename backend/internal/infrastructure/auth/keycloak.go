@@ -12,11 +12,11 @@ import (
 
 // Claims holds the subset of token claims the application cares about.
 type Claims struct {
-	Subject           string   `json:"sub"`
-	Email             string   `json:"email"`
-	EmailVerified     bool     `json:"email_verified"`
-	Name              string   `json:"name"`
-	PreferredUsername string   `json:"preferred_username"`
+	Subject           string `json:"sub"`
+	Email             string `json:"email"`
+	EmailVerified     bool   `json:"email_verified"`
+	Name              string `json:"name"`
+	PreferredUsername string `json:"preferred_username"`
 	RealmAccess       struct {
 		Roles []string `json:"roles"`
 	} `json:"realm_access"`
