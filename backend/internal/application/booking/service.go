@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -18,6 +19,7 @@ import (
 type Service struct {
 	bookings       booking.Repository
 	properties     property.Repository
+	blocks         block.Repository
 	serviceFeeRate float64
 	events         event.Publisher
 }
@@ -25,11 +27,11 @@ type Service struct {
 // NewService wires the booking application service. serviceFeeRate is the
 // platform fee applied to each booking (e.g. 0.12 for 12%). publisher may be
 // nil, in which case no domain events are emitted.
-func NewService(bookings booking.Repository, properties property.Repository, serviceFeeRate float64, publisher event.Publisher) *Service {
+func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, serviceFeeRate float64, publisher event.Publisher) *Service {
 	if publisher == nil {
 		publisher = event.Nop()
 	}
-	return &Service{bookings: bookings, properties: properties, serviceFeeRate: serviceFeeRate, events: publisher}
+	return &Service{bookings: bookings, properties: properties, blocks: blocks, serviceFeeRate: serviceFeeRate, events: publisher}
 }
 
 // CreateInput carries the data required to make a reservation.
@@ -65,6 +67,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	}
 	if overlap {
 		return nil, shared.NewValidationError("selected dates are not available")
+	}
+
+	blocked, err := s.blocks.HasOverlap(ctx, in.PropertyID, dates)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, shared.NewValidationError("selected dates are blocked by the host")
 	}
 
 	b, err := booking.NewBooking(in.PropertyID, in.GuestID, dates, in.Guests, prop.PricePerNight, prop.CleaningFee, s.serviceFeeRate)
@@ -206,16 +216,18 @@ func (s *Service) Complete(ctx context.Context, actorID, bookingID uuid.UUID) (*
 	return b, nil
 }
 
-// BookedRange is a read-model describing an occupied window of a property.
+// BookedRange is a read-model describing an occupied window of a property. The
+// status is "blocked" for host blocks, otherwise the booking status.
 type BookedRange struct {
 	CheckIn  time.Time
 	CheckOut time.Time
-	Status   booking.Status
+	Status   string
 }
 
 // Availability returns the occupied date ranges for a property within the
-// [from, to) window, so clients can show which dates are unavailable. This is a
-// public read and intentionally exposes no guest-identifying data.
+// [from, to) window — both active bookings and host blocks — so clients can show
+// which dates are unavailable. This is a public read and intentionally exposes no
+// guest-identifying data.
 func (s *Service) Availability(ctx context.Context, propertyID uuid.UUID, from, to time.Time) ([]BookedRange, error) {
 	if !to.After(from) {
 		return nil, shared.NewValidationError("'to' must be after 'from'")
@@ -227,13 +239,17 @@ func (s *Service) Availability(ctx context.Context, propertyID uuid.UUID, from, 
 	if err != nil {
 		return nil, err
 	}
-	ranges := make([]BookedRange, 0, len(active))
+	blocks, err := s.blocks.ListInRange(ctx, propertyID, from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	ranges := make([]BookedRange, 0, len(active)+len(blocks))
 	for _, b := range active {
-		ranges = append(ranges, BookedRange{
-			CheckIn:  b.Dates.CheckIn,
-			CheckOut: b.Dates.CheckOut,
-			Status:   b.Status,
-		})
+		ranges = append(ranges, BookedRange{CheckIn: b.Dates.CheckIn, CheckOut: b.Dates.CheckOut, Status: string(b.Status)})
+	}
+	for _, bl := range blocks {
+		ranges = append(ranges, BookedRange{CheckIn: bl.Dates.CheckIn, CheckOut: bl.Dates.CheckOut, Status: "blocked"})
 	}
 	return ranges, nil
 }

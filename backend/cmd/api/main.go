@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
+	blockapp "github.com/airhost/backend/internal/application/block"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
@@ -93,6 +94,7 @@ func run() error {
 	favoriteRepo := postgres.NewFavoriteRepository(pool)
 	notificationRepo := postgres.NewNotificationRepository(pool)
 	paymentRepo := postgres.NewPaymentRepository(pool)
+	blockRepo := postgres.NewBlockRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers.
@@ -101,14 +103,15 @@ func run() error {
 	// --- Application services ---------------------------------------------
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, objectStore)
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, cfg.Pricing.ServiceFeeRate, dispatcher)
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, cfg.Pricing.ServiceFeeRate, dispatcher)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, dispatcher)
-	searchSvc := searchapp.NewService(propertyRepo, bookingRepo)
+	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway(), bookingRepo, propertyRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
+	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
 
 	// Notifications and payments are produced by reacting to domain events.
 	dispatcher.Subscribe(notificationSvc.EventHandler())
@@ -146,6 +149,7 @@ func run() error {
 			Notification: handler.NewNotificationHandler(notificationSvc),
 			Payment:      handler.NewPaymentHandler(paymentSvc),
 			Analytics:    handler.NewAnalyticsHandler(analyticsSvc),
+			Block:        handler.NewBlockHandler(blockSvc),
 		},
 	})
 

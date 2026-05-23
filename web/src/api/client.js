@@ -112,6 +112,9 @@ export const api = {
   propertyBookings: (id) => request('GET', `/properties/${id}/bookings`, { auth: true }),
   confirmBooking: (id) => request('POST', `/bookings/${id}/confirm`, { auth: true }),
   completeBooking: (id) => request('POST', `/bookings/${id}/complete`, { auth: true }),
+  listBlocks: (propertyId) => request('GET', `/properties/${propertyId}/blocks`, { auth: true }),
+  createBlock: (propertyId, body) => request('POST', `/properties/${propertyId}/blocks`, { body, auth: true }),
+  deleteBlock: (blockId) => request('DELETE', `/blocks/${blockId}`, { auth: true }),
 
   // Availability (public)
   availability: (id, params = {}) => {

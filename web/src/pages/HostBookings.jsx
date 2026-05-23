@@ -44,14 +44,21 @@ export default function HostBookings() {
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState(null);
   const [reviewed, setReviewed] = useState({});
+  const [blocks, setBlocks] = useState([]);
+  const [blockForm, setBlockForm] = useState({ from: '', to: '', reason: '' });
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const [prop, res] = await Promise.all([api.getProperty(id), api.propertyBookings(id)]);
+      const [prop, res, blocksRes] = await Promise.all([
+        api.getProperty(id),
+        api.propertyBookings(id),
+        api.listBlocks(id),
+      ]);
       setProperty(prop);
       setBookings(res.items || []);
+      setBlocks(blocksRes.items || []);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -67,6 +74,28 @@ export default function HostBookings() {
     setError(null);
     try {
       await fn(bookingId);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function addBlock(e) {
+    e.preventDefault();
+    setError(null);
+    try {
+      await api.createBlock(id, blockForm);
+      setBlockForm({ from: '', to: '', reason: '' });
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function removeBlock(blockId) {
+    setError(null);
+    try {
+      await api.deleteBlock(blockId);
       load();
     } catch (e) {
       setError(e.message);
@@ -120,6 +149,38 @@ export default function HostBookings() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {!loading && (
+        <section className="blocks-section">
+          <h2>{t('host.blockedDates')}</h2>
+          <form className="block-form" onSubmit={addBlock}>
+            <label>{t('host.blockFrom')}
+              <input type="date" required value={blockForm.from} onChange={(e) => setBlockForm({ ...blockForm, from: e.target.value })} />
+            </label>
+            <label>{t('host.blockTo')}
+              <input type="date" required value={blockForm.to} onChange={(e) => setBlockForm({ ...blockForm, to: e.target.value })} />
+            </label>
+            <input
+              placeholder={t('host.blockReason')}
+              value={blockForm.reason}
+              onChange={(e) => setBlockForm({ ...blockForm, reason: e.target.value })}
+            />
+            <button className="btn btn-primary" type="submit">{t('host.addBlock')}</button>
+          </form>
+          {blocks.length === 0 ? (
+            <p className="muted-text">{t('host.noBlocks')}</p>
+          ) : (
+            <ul className="block-list">
+              {blocks.map((b) => (
+                <li key={b.id}>
+                  <span>{b.checkIn} → {b.checkOut}{b.reason ? ` · ${b.reason}` : ''}</span>
+                  <button className="link-btn" onClick={() => removeBlock(b.id)}>{t('host.unblock')}</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
     </div>
   );

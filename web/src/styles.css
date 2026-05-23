@@ -147,6 +147,12 @@ a { color: inherit; text-decoration: none; }
 .inline-review input { flex: 1; min-width: 140px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; }
 .inline-review select { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; }
 .row-between { display: flex; align-items: center; justify-content: space-between; }
+.blocks-section { margin-top: 28px; }
+.block-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 12px 0; }
+.block-form label { display: flex; flex-direction: column; font-size: .82rem; color: var(--muted); gap: 4px; }
+.block-form input { padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+.block-list { list-style: none; padding: 0; }
+.block-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .92rem; }
 .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin: 16px 0 8px; }
 .metric { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
 .metric-value { font-size: 1.4rem; font-weight: 700; }

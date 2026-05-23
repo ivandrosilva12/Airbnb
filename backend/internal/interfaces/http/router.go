@@ -23,6 +23,7 @@ type Handlers struct {
 	Notification *handler.NotificationHandler
 	Payment      *handler.PaymentHandler
 	Analytics    *handler.AnalyticsHandler
+	Block        *handler.BlockHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -125,6 +126,11 @@ func NewRouter(d Deps) *gin.Engine {
 			host.GET("/properties/:id/bookings", h.Booking.ListForProperty)
 			host.POST("/bookings/:id/confirm", h.Booking.Confirm)
 			host.POST("/bookings/:id/complete", h.Booking.Complete)
+
+			// Calendar blocks.
+			host.GET("/properties/:id/blocks", h.Block.ListForProperty)
+			host.POST("/properties/:id/blocks", h.Block.Create)
+			host.DELETE("/blocks/:id", h.Block.Delete)
 		}
 
 		// Admin-only moderation.

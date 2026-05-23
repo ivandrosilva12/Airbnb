@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/message"
@@ -33,6 +34,7 @@ var (
 	_ favorite.Repository     = (*FavoriteRepository)(nil)
 	_ notification.Repository = (*NotificationRepository)(nil)
 	_ payment.Repository      = (*PaymentRepository)(nil)
+	_ block.Repository        = (*BlockRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -781,6 +783,101 @@ func (r *PaymentRepository) ListByGuest(_ context.Context, guestID uuid.UUID, pa
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
 	return paginate(all, page), nil
+}
+
+// --- Blocks ------------------------------------------------------------------
+
+// BlockRepository is an in-memory block.Repository.
+type BlockRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]block.Block
+}
+
+// NewBlockRepository builds an empty in-memory block repository.
+func NewBlockRepository() *BlockRepository {
+	return &BlockRepository{m: map[uuid.UUID]block.Block{}}
+}
+
+func (r *BlockRepository) Create(_ context.Context, b *block.Block) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.m[b.ID] = *b
+	return nil
+}
+
+func (r *BlockRepository) Delete(_ context.Context, id uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[id]; !ok {
+		return shared.ErrNotFound
+	}
+	delete(r.m, id)
+	return nil
+}
+
+func (r *BlockRepository) FindByID(_ context.Context, id uuid.UUID) (*block.Block, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if b, ok := r.m[id]; ok {
+		c := b
+		return &c, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *BlockRepository) ListByProperty(_ context.Context, propertyID uuid.UUID, page shared.Page) (shared.PageResult[*block.Block], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*block.Block
+	for _, b := range r.m {
+		if b.PropertyID == propertyID {
+			c := b
+			all = append(all, &c)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].Dates.CheckIn.Before(all[j].Dates.CheckIn) })
+	return paginate(all, page), nil
+}
+
+func (r *BlockRepository) HasOverlap(_ context.Context, propertyID uuid.UUID, dates booking.DateRange) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, b := range r.m {
+		if b.PropertyID == propertyID && b.Dates.Overlaps(dates) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *BlockRepository) ListInRange(_ context.Context, propertyID uuid.UUID, from, to time.Time) ([]*block.Block, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []*block.Block
+	for _, b := range r.m {
+		if b.PropertyID == propertyID && b.Dates.CheckIn.Before(to) && from.Before(b.Dates.CheckOut) {
+			c := b
+			out = append(out, &c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Dates.CheckIn.Before(out[j].Dates.CheckIn) })
+	return out, nil
+}
+
+func (r *BlockRepository) BlockedPropertyIDs(_ context.Context, from, to time.Time) ([]uuid.UUID, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	seen := map[uuid.UUID]struct{}{}
+	var ids []uuid.UUID
+	for _, b := range r.m {
+		if b.Dates.CheckIn.Before(to) && from.Before(b.Dates.CheckOut) {
+			if _, ok := seen[b.PropertyID]; !ok {
+				seen[b.PropertyID] = struct{}{}
+				ids = append(ids, b.PropertyID)
+			}
+		}
+	}
+	return ids, nil
 }
 
 // --- helpers -----------------------------------------------------------------

@@ -7,6 +7,7 @@ import (
 
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/notification"
@@ -178,7 +179,7 @@ func FromBookedRanges(ranges []bookingapp.BookedRange) []BookedRangeView {
 		out = append(out, BookedRangeView{
 			CheckIn:  r.CheckIn.Format("2006-01-02"),
 			CheckOut: r.CheckOut.Format("2006-01-02"),
-			Status:   string(r.Status),
+			Status:   r.Status,
 		})
 	}
 	return out
@@ -361,6 +362,26 @@ func FromHostMetrics(m analyticsapp.HostMetrics) HostMetricsView {
 		PendingRevenue:   fromMoney(pending),
 		AverageRating:    m.AverageRating,
 		ReviewCount:      m.ReviewCount,
+	}
+}
+
+// BlockView is the public representation of a host calendar block.
+type BlockView struct {
+	ID        uuid.UUID `json:"id"`
+	CheckIn   string    `json:"checkIn"`
+	CheckOut  string    `json:"checkOut"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// FromBlock maps a block aggregate to its view.
+func FromBlock(b *block.Block) BlockView {
+	return BlockView{
+		ID:        b.ID,
+		CheckIn:   b.Dates.CheckIn.Format("2006-01-02"),
+		CheckOut:  b.Dates.CheckOut.Format("2006-01-02"),
+		Reason:    b.Reason,
+		CreatedAt: b.CreatedAt,
 	}
 }
 

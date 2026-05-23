@@ -47,9 +47,10 @@ ones:
 
 Bounded contexts: **user**, **property**, **booking**, **review**, **message**
 (host↔guest threads), **favorite** (wishlists), **notification** (in-app),
-**payment**. Read-model query services compose multiple contexts without owning
-data: `searchapp` (property + booking, for date-aware search) and `analyticsapp`
-(property + booking + payment, for the host dashboard).
+**payment**, **block** (host calendar blocks). Read-model query services compose
+multiple contexts without owning data: `searchapp` (property + booking + block,
+for date-aware search) and `analyticsapp` (property + booking + payment, for the
+host dashboard).
 
 Cross-context reactions go through a small synchronous **domain-events** dispatcher
 (`application/event`): booking/message use cases publish events (e.g.
@@ -182,6 +183,7 @@ Host only:
 - `POST /properties/:id/publish`
 - `POST /properties/:id/photos` (multipart) · `POST /properties/:id/photos/presign`
 - `GET /properties/:id/bookings` · `POST /bookings/:id/confirm` · `POST /bookings/:id/complete`
+- `GET /properties/:id/blocks` · `POST /properties/:id/blocks` · `DELETE /blocks/:id` (calendar blocks)
 
 - `GET /host/metrics` — dashboard analytics (revenue, bookings by status, upcoming check-ins, rating)
 
@@ -219,6 +221,7 @@ docker-compose.yml
 | Cancellation policies | Complete | Per-listing flexible/moderate/strict; partial/full refund on cancel via the payment subscriber; covered by unit tests |
 | i18n (PT/EN) | Complete | Lightweight web i18n context + dictionaries; browser detection + a persisted language switcher in the navbar |
 | Amenities filter (UI) | Complete | Toggle chips on the search bar emitting repeated `amenity=` params (backend filter already existed) |
+| Host calendar blocks | Complete | New `block` context; blocked ranges reject bookings, show in availability, and exclude from date search; host UI to add/remove; covered by unit + e2e tests |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |

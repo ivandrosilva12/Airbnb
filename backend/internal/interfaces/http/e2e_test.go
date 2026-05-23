@@ -14,6 +14,7 @@ import (
 	"time"
 
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
+	blockapp "github.com/airhost/backend/internal/application/block"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
@@ -68,19 +69,21 @@ func newHarness(t *testing.T) *harness {
 	favoriteRepo := memory.NewFavoriteRepository()
 	notificationRepo := memory.NewNotificationRepository()
 	paymentRepo := memory.NewPaymentRepository()
+	blockRepo := memory.NewBlockRepository()
 
 	dispatcher := event.NewDispatcher()
 
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{})
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, 0.10, dispatcher) // 10% service fee
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, 0.10, dispatcher) // 10% service fee
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, dispatcher)
-	searchSvc := searchapp.NewService(propertyRepo, bookingRepo)
+	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway(), bookingRepo, propertyRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
+	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
 	dispatcher.Subscribe(notificationSvc.EventHandler())
 	dispatcher.Subscribe(paymentSvc.EventHandler())
 
@@ -119,6 +122,7 @@ func newHarness(t *testing.T) *harness {
 			Notification: handler.NewNotificationHandler(notificationSvc),
 			Payment:      handler.NewPaymentHandler(paymentSvc),
 			Analytics:    handler.NewAnalyticsHandler(analyticsSvc),
+			Block:        handler.NewBlockHandler(blockSvc),
 		},
 	})
 
@@ -274,6 +278,34 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	rec = h.do(http.MethodGet, "/api/v1/properties/"+propID+"/availability", "", nil)
 	if booked := h.decode(rec)["booked"].([]any); len(booked) != 1 {
 		t.Fatalf("expected 1 booked range, got %d", len(booked))
+	}
+
+	// 8a. The host blocks a future range; a guest booking over it is rejected and
+	// it shows up in availability.
+	blockIn := time.Now().UTC().AddDate(0, 0, 20).Format("2006-01-02")
+	blockOut := time.Now().UTC().AddDate(0, 0, 23).Format("2006-01-02")
+	rec = h.do(http.MethodPost, "/api/v1/properties/"+propID+"/blocks", hostTok, map[string]any{
+		"from": blockIn, "to": blockOut, "reason": "Maintenance",
+	})
+	mustStatus(t, rec, http.StatusCreated, "create block")
+	blockID := h.decode(rec)["id"].(string)
+
+	if r := h.do(http.MethodPost, "/api/v1/bookings", otherTok, map[string]any{
+		"propertyId": propID, "checkIn": blockIn, "checkOut": blockOut, "guests": 1,
+	}); r.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("booking over a block: status = %d, want 422 (body %s)", r.Code, r.Body.String())
+	}
+	rec = h.do(http.MethodGet, "/api/v1/properties/"+propID+"/availability?from="+blockIn+"&to="+blockOut, "", nil)
+	if booked := h.decode(rec)["booked"].([]any); len(booked) != 1 || booked[0].(map[string]any)["status"] != "blocked" {
+		t.Fatalf("expected one blocked range, got %v", h.decode(rec)["booked"])
+	}
+	// A non-host cannot create a block.
+	if r := h.do(http.MethodPost, "/api/v1/properties/"+propID+"/blocks", guestTok, map[string]any{"from": blockIn, "to": blockOut}); r.Code != http.StatusForbidden {
+		t.Fatalf("guest create block: status = %d, want 403", r.Code)
+	}
+	// The host can unblock; bookings are then allowed again on those dates.
+	if r := h.do(http.MethodDelete, "/api/v1/blocks/"+blockID, hostTok, nil); r.Code != http.StatusNoContent {
+		t.Fatalf("delete block: status = %d, want 204", r.Code)
 	}
 
 	// 8. Overlapping booking is rejected.

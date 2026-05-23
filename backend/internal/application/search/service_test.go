@@ -38,7 +38,7 @@ func publishPriced(t *testing.T, repo *memory.PropertyRepository, title string, 
 func TestSearch_SortByPriceAndRating(t *testing.T) {
 	ctx := context.Background()
 	props := memory.NewPropertyRepository()
-	svc := searchapp.NewService(props, memory.NewBookingRepository())
+	svc := searchapp.NewService(props, memory.NewBookingRepository(), memory.NewBlockRepository())
 
 	cheap := publishPriced(t, props, "Cheap", 38.7, -9.1, 5000)
 	mid := publishPriced(t, props, "Mid", 38.7, -9.1, 8000)
@@ -71,7 +71,7 @@ func TestSearch_SortByPriceAndRating(t *testing.T) {
 func TestSearch_GeoRadiusFilters(t *testing.T) {
 	ctx := context.Background()
 	props := memory.NewPropertyRepository()
-	svc := searchapp.NewService(props, memory.NewBookingRepository())
+	svc := searchapp.NewService(props, memory.NewBookingRepository(), memory.NewBlockRepository())
 
 	// Lisbon and Porto are ~270 km apart.
 	publish(t, props, "Lisbon", 38.7223, -9.1393)
