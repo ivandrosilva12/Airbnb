@@ -13,7 +13,12 @@ import (
 
 func publish(t *testing.T, repo *memory.PropertyRepository, title string, lat, lng float64) {
 	t.Helper()
-	price, _ := shared.NewMoney(10000, "EUR")
+	publishPriced(t, repo, title, lat, lng, 10000)
+}
+
+func publishPriced(t *testing.T, repo *memory.PropertyRepository, title string, lat, lng float64, priceCents int64) *property.Property {
+	t.Helper()
+	price, _ := shared.NewMoney(priceCents, "EUR")
 	cleaning, _ := shared.NewMoney(0, "EUR")
 	addr := property.Address{City: title, Country: "PT", Latitude: lat, Longitude: lng}
 	p, err := property.NewProperty(uuid.New(), title, "", property.TypeApartment, addr, price, cleaning, 2, 1, 1, 1, nil)
@@ -26,6 +31,40 @@ func publish(t *testing.T, repo *memory.PropertyRepository, title string, lat, l
 	}
 	if err := repo.Create(context.Background(), p); err != nil {
 		t.Fatalf("store: %v", err)
+	}
+	return p
+}
+
+func TestSearch_SortByPriceAndRating(t *testing.T) {
+	ctx := context.Background()
+	props := memory.NewPropertyRepository()
+	svc := searchapp.NewService(props, memory.NewBookingRepository())
+
+	cheap := publishPriced(t, props, "Cheap", 38.7, -9.1, 5000)
+	mid := publishPriced(t, props, "Mid", 38.7, -9.1, 8000)
+	pricey := publishPriced(t, props, "Pricey", 38.7, -9.1, 12000)
+	_ = mid
+
+	// Give the pricey one a rating so it sorts first by rating.
+	if err := props.UpdateRating(ctx, pricey.ID, 4.8, 10); err != nil {
+		t.Fatalf("update rating: %v", err)
+	}
+
+	page := shared.NewPage(20, 0)
+
+	asc, _ := svc.Search(ctx, property.SearchCriteria{Page: page, Sort: property.SortPriceAsc}, nil)
+	if asc.Items[0].ID != cheap.ID {
+		t.Fatalf("price_asc first = %s, want Cheap", asc.Items[0].Title)
+	}
+
+	desc, _ := svc.Search(ctx, property.SearchCriteria{Page: page, Sort: property.SortPriceDesc}, nil)
+	if desc.Items[0].ID != pricey.ID {
+		t.Fatalf("price_desc first = %s, want Pricey", desc.Items[0].Title)
+	}
+
+	rating, _ := svc.Search(ctx, property.SearchCriteria{Page: page, Sort: property.SortRating}, nil)
+	if rating.Items[0].ID != pricey.ID {
+		t.Fatalf("rating first = %s, want Pricey (highest rated)", rating.Items[0].Title)
 	}
 }
 

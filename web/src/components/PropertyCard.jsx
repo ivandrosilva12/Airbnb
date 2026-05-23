@@ -30,7 +30,12 @@ export default function PropertyCard({ property }) {
         )}
       </div>
       <div className="card-body">
-        <div className="card-title">{property.title}</div>
+        <div className="card-title-row">
+          <span className="card-title">{property.title}</span>
+          {property.reviewCount > 0 && (
+            <span className="card-rating">★ {property.averageRating.toFixed(1)}</span>
+          )}
+        </div>
         <div className="card-meta">
           {property.address.city}, {property.address.country}
         </div>

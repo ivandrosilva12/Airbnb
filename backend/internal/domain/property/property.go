@@ -83,8 +83,19 @@ type Property struct {
 	Bathrooms     int
 	Amenities     []string
 	Photos        []Photo
+	// AverageRating and ReviewCount are a denormalised read-model of the
+	// property's guest reviews, refreshed when a review is published.
+	AverageRating float64
+	ReviewCount   int
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+}
+
+// SetRating updates the cached review aggregates for the listing.
+func (p *Property) SetRating(average float64, count int) {
+	p.AverageRating = average
+	p.ReviewCount = count
+	p.touch()
 }
 
 // NewProperty creates a draft Property aggregate enforcing invariants.

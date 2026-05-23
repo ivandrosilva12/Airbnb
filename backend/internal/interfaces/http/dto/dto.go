@@ -84,6 +84,8 @@ type PropertyView struct {
 	Bathrooms     int         `json:"bathrooms"`
 	Amenities     []string    `json:"amenities"`
 	Photos        []PhotoView `json:"photos"`
+	AverageRating float64     `json:"averageRating"`
+	ReviewCount   int         `json:"reviewCount"`
 	CreatedAt     time.Time   `json:"createdAt"`
 }
 
@@ -116,6 +118,8 @@ func FromProperty(p *property.Property) PropertyView {
 		Bathrooms:     p.Bathrooms,
 		Amenities:     p.Amenities,
 		Photos:        photos,
+		AverageRating: p.AverageRating,
+		ReviewCount:   p.ReviewCount,
 		CreatedAt:     p.CreatedAt,
 	}
 }

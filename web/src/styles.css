@@ -69,6 +69,8 @@ a { color: inherit; text-decoration: none; }
 .heart-on { color: var(--primary); }
 .card-photo-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); background: #f0f0f0; }
 .card-body { padding: 12px 14px; }
+.card-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.card-rating { font-size: .85rem; white-space: nowrap; }
 .card-title { font-weight: 600; }
 .card-meta { color: var(--muted); font-size: .88rem; margin: 4px 0; }
 .card-price { font-size: .92rem; }

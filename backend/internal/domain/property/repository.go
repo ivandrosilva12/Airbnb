@@ -14,6 +14,16 @@ type GeoFilter struct {
 	RadiusKm float64
 }
 
+// Sort selects the ordering of search results.
+type Sort string
+
+const (
+	SortNewest    Sort = "newest" // default: most recently created first
+	SortPriceAsc  Sort = "price_asc"
+	SortPriceDesc Sort = "price_desc"
+	SortRating    Sort = "rating" // highest average rating first
+)
+
 // SearchCriteria expresses the filters available when searching listings.
 type SearchCriteria struct {
 	City      string
@@ -24,6 +34,8 @@ type SearchCriteria struct {
 	Amenities []string
 	// Geo, when non-nil, keeps only listings within the given radius of a point.
 	Geo *GeoFilter
+	// Sort selects the result ordering (defaults to newest).
+	Sort Sort
 	// ExcludeIDs removes specific listings from the results (e.g. those already
 	// booked for a requested date range). Empty means no exclusion.
 	ExcludeIDs []uuid.UUID
@@ -38,4 +50,6 @@ type Repository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*Property, error)
 	ListByHost(ctx context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*Property], error)
 	Search(ctx context.Context, criteria SearchCriteria) (shared.PageResult[*Property], error)
+	// UpdateRating persists the denormalised review aggregates for a listing.
+	UpdateRating(ctx context.Context, id uuid.UUID, average float64, count int) error
 }

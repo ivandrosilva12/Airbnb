@@ -58,7 +58,18 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*review.Review, e
 	if err := s.reviews.Create(ctx, r); err != nil {
 		return nil, err
 	}
+	s.refreshPropertyRating(ctx, b.PropertyID)
 	return r, nil
+}
+
+// refreshPropertyRating recomputes and persists the listing's cached rating.
+// Best-effort: a failure here must not fail the review that was just created.
+func (s *Service) refreshPropertyRating(ctx context.Context, propertyID uuid.UUID) {
+	summary, err := s.reviews.SummaryForProperty(ctx, propertyID)
+	if err != nil {
+		return
+	}
+	_ = s.properties.UpdateRating(ctx, propertyID, summary.AverageRating, int(summary.Count))
 }
 
 // GuestReviewInput carries data for a host's review of the guest.

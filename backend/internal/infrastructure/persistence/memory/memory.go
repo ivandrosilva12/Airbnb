@@ -201,7 +201,42 @@ func (r *PropertyRepository) Search(_ context.Context, c property.SearchCriteria
 		cp := p
 		matched = append(matched, &cp)
 	}
+	sortProperties(matched, c.Sort)
 	return paginate(matched, c.Page), nil
+}
+
+func (r *PropertyRepository) UpdateRating(_ context.Context, id uuid.UUID, average float64, count int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.m[id]
+	if !ok {
+		return shared.ErrNotFound
+	}
+	p.AverageRating = average
+	p.ReviewCount = count
+	r.m[id] = p
+	return nil
+}
+
+func sortProperties(items []*property.Property, sort property.Sort) {
+	switch sort {
+	case property.SortPriceAsc:
+		byField(items, func(a, b *property.Property) bool {
+			return a.PricePerNight.AmountCents() < b.PricePerNight.AmountCents()
+		})
+	case property.SortPriceDesc:
+		byField(items, func(a, b *property.Property) bool {
+			return a.PricePerNight.AmountCents() > b.PricePerNight.AmountCents()
+		})
+	case property.SortRating:
+		byField(items, func(a, b *property.Property) bool { return a.AverageRating > b.AverageRating })
+	default: // newest
+		byField(items, func(a, b *property.Property) bool { return a.CreatedAt.After(b.CreatedAt) })
+	}
+}
+
+func byField(items []*property.Property, less func(a, b *property.Property) bool) {
+	sort.SliceStable(items, func(i, j int) bool { return less(items[i], items[j]) })
 }
 
 // --- Bookings ----------------------------------------------------------------

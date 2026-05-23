@@ -152,9 +152,10 @@ go test ./...
 ## API overview (`/api/v1`)
 
 Public:
-- `GET /properties` — search (`?city=&country=&type=&minGuests=&maxPrice=&amenity=&checkIn=&checkOut=&lat=&lng=&radiusKm=`).
+- `GET /properties` — search (`?city=&country=&type=&minGuests=&maxPrice=&amenity=&checkIn=&checkOut=&lat=&lng=&radiusKm=&sort=`).
   When `checkIn`/`checkOut` (YYYY-MM-DD) are supplied, listings already booked for that window are excluded;
-  when `lat`/`lng`/`radiusKm` are supplied, results are limited to that radius (haversine distance).
+  when `lat`/`lng`/`radiusKm` are supplied, results are limited to that radius (haversine distance);
+  `sort` is one of `newest` (default), `price_asc`, `price_desc`, `rating`.
 - `GET /properties/:id`
 - `GET /properties/:id/availability` — booked date ranges (`?from=YYYY-MM-DD&to=YYYY-MM-DD`)
 - `GET /properties/:id/reviews` · `GET /properties/:id/reviews/summary`
@@ -203,6 +204,8 @@ docker-compose.yml
 | Date-aware search | Complete | `searchapp` query service; covered by the e2e test |
 | Geo radius search | Complete | Haversine distance filter (pg + memory); web "Near me" geolocation; covered by unit + e2e tests |
 | Bidirectional reviews | Complete | Host reviews guest (kind-discriminated, one per direction); guest sees their rating; covered by unit tests |
+| Listing ratings | Complete | Denormalised avg rating/count refreshed on review (migration 0009); shown on cards; covered by unit test |
+| Result sorting | Complete | Sort by newest/price/rating (pg ORDER BY + memory); web sort dropdown; covered by unit test |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |

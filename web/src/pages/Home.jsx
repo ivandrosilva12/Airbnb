@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import PropertyCard from '../components/PropertyCard';
 
 export default function Home() {
-  const [filters, setFilters] = useState({ city: '', type: '', minGuests: '', checkIn: '', checkOut: '' });
+  const [filters, setFilters] = useState({ city: '', type: '', minGuests: '', checkIn: '', checkOut: '', sort: '' });
   const [geo, setGeo] = useState(null); // { lat, lng, radiusKm } | null
   const [results, setResults] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
@@ -94,6 +94,12 @@ export default function Home() {
             value={filters.checkOut}
             onChange={(e) => setFilters({ ...filters, checkOut: e.target.value })}
           />
+          <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })} title="Sort by">
+            <option value="">Newest</option>
+            <option value="price_asc">Price: low to high</option>
+            <option value="price_desc">Price: high to low</option>
+            <option value="rating">Top rated</option>
+          </select>
           <button className="btn btn-primary" type="submit">Search</button>
         </form>
         <div className="geo-row">

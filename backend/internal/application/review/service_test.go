@@ -124,6 +124,27 @@ func TestReview_HappyPathThenNoDuplicates(t *testing.T) {
 	}
 }
 
+func TestReview_RefreshesPropertyRating(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	prop := makeProperty(t, f.properties, uuid.New())
+	guestID := uuid.New()
+	b := makeBooking(t, guestID, prop.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, b)
+
+	if _, err := f.svc.Create(ctx, reviewapp.CreateInput{GuestID: guestID, BookingID: b.ID, Rating: 4, Comment: "Nice"}); err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+
+	updated, err := f.properties.FindByID(ctx, prop.ID)
+	if err != nil {
+		t.Fatalf("find property: %v", err)
+	}
+	if updated.ReviewCount != 1 || updated.AverageRating != 4 {
+		t.Errorf("property rating = %v (%d reviews), want 4.0 (1)", updated.AverageRating, updated.ReviewCount)
+	}
+}
+
 func TestGuestReview_OnlyHostAfterCompletion(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()

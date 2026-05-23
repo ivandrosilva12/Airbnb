@@ -25,19 +25,39 @@ func NewPropertyRepository(pool *pgxpool.Pool) *PropertyRepository {
 const propertyColumns = `id, host_id, title, description, type, status,
 	address_line1, city, country, postal_code, latitude, longitude,
 	price_cents, currency, cleaning_fee_cents, max_guests, bedrooms, beds, bathrooms, amenities,
-	created_at, updated_at`
+	average_rating, review_count, created_at, updated_at`
 
 func (r *PropertyRepository) Create(ctx context.Context, p *property.Property) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO properties (`+propertyColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
 		p.ID, p.HostID, p.Title, p.Description, string(p.Type), string(p.Status),
 		p.Address.Line1, p.Address.City, p.Address.Country, p.Address.PostalCode,
 		p.Address.Latitude, p.Address.Longitude,
 		p.PricePerNight.AmountCents(), p.PricePerNight.Currency(), p.CleaningFee.AmountCents(),
 		p.MaxGuests, p.Bedrooms, p.Beds, p.Bathrooms, p.Amenities,
-		p.CreatedAt, p.UpdatedAt,
+		p.AverageRating, p.ReviewCount, p.CreatedAt, p.UpdatedAt,
 	)
+	return mapError(err)
+}
+
+// orderBy maps a Sort to a safe ORDER BY clause (whitelisted, never user input).
+func orderBy(s property.Sort) string {
+	switch s {
+	case property.SortPriceAsc:
+		return "price_cents ASC, created_at DESC"
+	case property.SortPriceDesc:
+		return "price_cents DESC, created_at DESC"
+	case property.SortRating:
+		return "average_rating DESC, review_count DESC, created_at DESC"
+	default:
+		return "created_at DESC"
+	}
+}
+
+func (r *PropertyRepository) UpdateRating(ctx context.Context, id uuid.UUID, average float64, count int) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE properties SET average_rating=$2, review_count=$3 WHERE id=$1`, id, average, count)
 	return mapError(err)
 }
 
@@ -173,8 +193,8 @@ func (r *PropertyRepository) Search(ctx context.Context, c property.SearchCriter
 	}
 
 	args = append(args, c.Page.Limit, c.Page.Offset)
-	query := fmt.Sprintf(`SELECT %s FROM properties %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
-		propertyColumns, where, len(args)-1, len(args))
+	query := fmt.Sprintf(`SELECT %s FROM properties %s ORDER BY %s LIMIT $%d OFFSET $%d`,
+		propertyColumns, where, orderBy(c.Sort), len(args)-1, len(args))
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return shared.PageResult[*property.Property]{}, mapError(err)
@@ -255,7 +275,7 @@ func scanProperty(row rowScanner) (*property.Property, error) {
 		&p.Address.Line1, &p.Address.City, &p.Address.Country, &p.Address.PostalCode,
 		&p.Address.Latitude, &p.Address.Longitude,
 		&priceCents, &currency, &cleaningCents, &p.MaxGuests, &p.Bedrooms, &p.Beds, &p.Bathrooms, &p.Amenities,
-		&p.CreatedAt, &p.UpdatedAt,
+		&p.AverageRating, &p.ReviewCount, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err

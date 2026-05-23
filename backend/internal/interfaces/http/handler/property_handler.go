@@ -99,6 +99,7 @@ func (h *PropertyHandler) Search(c *gin.Context) {
 		MinGuests: minGuests,
 		MaxPrice:  maxPrice,
 		Amenities: c.QueryArray("amenity"),
+		Sort:      property.Sort(c.Query("sort")),
 		Page:      pageFromQuery(c),
 	}
 
