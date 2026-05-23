@@ -18,11 +18,22 @@ type Config struct {
 	Keycloak KeycloakConfig
 	Storage  StorageConfig
 	Pricing  PricingConfig
+	Email    EmailConfig
 }
 
 // PricingConfig holds platform pricing policy.
 type PricingConfig struct {
 	ServiceFeeRate float64 // platform fee fraction, e.g. 0.12 for 12%
+}
+
+// EmailConfig holds transactional email settings. When SMTPHost is empty, a
+// logging mailer is used instead of sending real email.
+type EmailConfig struct {
+	FromAddress  string
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUser     string
+	SMTPPassword string
 }
 
 // AppConfig holds general application settings.
@@ -117,6 +128,13 @@ func Load() (*Config, error) {
 		},
 		Pricing: PricingConfig{
 			ServiceFeeRate: getFloat("SERVICE_FEE_RATE", 0.12),
+		},
+		Email: EmailConfig{
+			FromAddress:  getEnv("EMAIL_FROM", "no-reply@airhost.dev"),
+			SMTPHost:     getEnv("SMTP_HOST", ""),
+			SMTPPort:     getEnv("SMTP_PORT", "1025"),
+			SMTPUser:     getEnv("SMTP_USER", ""),
+			SMTPPassword: getEnv("SMTP_PASSWORD", ""),
 		},
 	}
 

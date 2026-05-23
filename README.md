@@ -47,7 +47,8 @@ ones:
 
 Bounded contexts: **user**, **property**, **booking**, **review**, **message**
 (host↔guest threads), **favorite** (wishlists), **notification** (in-app),
-**payment**, **block** (host calendar blocks). Read-model query services compose
+**payment**, **block** (host calendar blocks). The **email** application service
+turns the same domain events into transactional email. Read-model query services compose
 multiple contexts without owning data: `searchapp` (property + booking + block,
 for date-aware search) and `analyticsapp` (property + booking + payment, for the
 host dashboard).
@@ -55,7 +56,8 @@ host dashboard).
 Cross-context reactions go through a small synchronous **domain-events** dispatcher
 (`application/event`): booking/message use cases publish events (e.g.
 `booking.requested`, `booking.confirmed`, `message.sent`) and subscribers react —
-the notification context creates notifications, and the payment context authorizes,
+the notification context creates in-app notifications, the email service sends the
+matching transactional email via a `Mailer` port, and the payment context authorizes,
 captures or refunds via a `PaymentGateway` port (a fake in-memory gateway by default).
 Dispatch is best-effort, so a failing subscriber never breaks the publishing use case.
 
@@ -85,6 +87,7 @@ Key domain rules enforced in code:
 - **Auth:** Keycloak 25 (realm `airhost`)
 - **Database:** PostgreSQL 16
 - **Object storage:** MinIO (S3-compatible)
+- **Email:** SMTP (`net/smtp`); MailHog for local capture
 - **Observability:** Prometheus + Grafana
 
 ## Quick start (full stack via Docker)
@@ -112,6 +115,7 @@ docker compose up --build
 | API metrics | http://localhost:8081/metrics | — |
 | Keycloak | http://keycloak:8080 | admin / admin |
 | MinIO console | http://localhost:9001 | minioadmin / minioadmin |
+| MailHog (email inbox) | http://localhost:8025 | — |
 | Prometheus | http://localhost:9090 | — |
 | Grafana | http://localhost:3001 | admin / admin |
 
@@ -226,8 +230,9 @@ docker-compose.yml
 | Host calendar blocks | Complete | New `block` context; blocked ranges reject bookings, show in availability, and exclude from date search; host UI to add/remove; covered by unit + e2e tests |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
-| Domain events | Complete | In-process dispatcher; booking/message publish, notification subscribes |
+| Domain events | Complete | In-process dispatcher; booking/message publish, notification/payment/email subscribe |
 | Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |
+| Email notifications | Complete | Transactional email via a `Mailer` port reacting to booking/message events; SMTP in prod, log mailer when unconfigured, MailHog locally; covered by unit + e2e tests |
 | Payments | Complete | Authorize/capture/refund driven by booking events via a gateway port (fake by default); web shows payment status; covered by unit + e2e tests |
 | Message read-receipts | Complete | Per-participant read markers, per-conversation + total unread counts, navbar/inbox badges; covered by the e2e test |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |

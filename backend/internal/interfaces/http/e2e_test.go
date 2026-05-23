@@ -16,6 +16,7 @@ import (
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	blockapp "github.com/airhost/backend/internal/application/block"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	emailapp "github.com/airhost/backend/internal/application/email"
 	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
 	messageapp "github.com/airhost/backend/internal/application/message"
@@ -27,6 +28,7 @@ import (
 	userapp "github.com/airhost/backend/internal/application/user"
 	"github.com/airhost/backend/internal/config"
 	domainuser "github.com/airhost/backend/internal/domain/user"
+	"github.com/airhost/backend/internal/infrastructure/email"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
@@ -55,6 +57,7 @@ type harness struct {
 	t        *testing.T
 	router   *gin.Engine
 	userRepo *memory.UserRepository
+	mailer   *email.RecordingMailer
 }
 
 func newHarness(t *testing.T) *harness {
@@ -84,8 +87,11 @@ func newHarness(t *testing.T) *harness {
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway(), bookingRepo, propertyRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
+	mailer := email.NewRecordingMailer()
+	emailSvc := emailapp.NewService(userRepo, mailer)
 	dispatcher.Subscribe(notificationSvc.EventHandler())
 	dispatcher.Subscribe(paymentSvc.EventHandler())
+	dispatcher.Subscribe(emailSvc.EventHandler())
 
 	registry := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(registry)
@@ -126,7 +132,7 @@ func newHarness(t *testing.T) *harness {
 		},
 	})
 
-	return &harness{t: t, router: router, userRepo: userRepo}
+	return &harness{t: t, router: router, userRepo: userRepo, mailer: mailer}
 }
 
 func (h *harness) seedUser(role domainuser.Role, email string) *domainuser.User {
@@ -505,6 +511,28 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	// A guest cannot mark the host's notification read (not found for them).
 	if r := h.do(http.MethodPost, "/api/v1/notifications/"+firstID+"/read", guestTok, nil); r.Code != http.StatusNotFound {
 		t.Fatalf("cross-user mark read: status = %d, want 404", r.Code)
+	}
+
+	// 17b. Transactional emails were delivered for the same events: the host got
+	// a booking-request email, the guest a confirmation, and the host the new
+	// message — each to the recipient's seeded address.
+	sent := h.mailer.Sent()
+	gotEmail := func(to, subject string) bool {
+		for _, m := range sent {
+			if m.To == to && m.Subject == subject {
+				return true
+			}
+		}
+		return false
+	}
+	if !gotEmail(host.Email, "New booking request") {
+		t.Fatalf("expected a booking-request email to the host, got %+v", sent)
+	}
+	if !gotEmail(guest.Email, "Booking confirmed") {
+		t.Fatalf("expected a confirmation email to the guest, got %+v", sent)
+	}
+	if !gotEmail(host.Email, "New message") {
+		t.Fatalf("expected a new-message email to the host, got %+v", sent)
 	}
 
 	// 18. Host metrics: one published listing, one confirmed booking worth the
