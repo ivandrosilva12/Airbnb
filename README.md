@@ -94,6 +94,14 @@ Key domain rules enforced in code:
 - Photo uploads are capped at 10 MiB and the content type is detected from the
   bytes (allowlist: JPEG/PNG/WebP/GIF), so the public object URL cannot serve
   attacker-supplied active content.
+- Domain events are published through a durable publisher: each event is recorded
+  in an `outbox` table (migration 0019) before being fanned out to the in-process
+  subscribers, then marked processed. Anything left unprocessed by a crash
+  mid-dispatch is re-delivered at startup and by a periodic relay (at-least-once;
+  subscribers tolerate a rare duplicate). The small window between a domain write
+  committing and the outbox append is not yet covered — fully closing it requires
+  threading a unit-of-work transaction through the repositories (a planned
+  follow-up).
 
 ## Tech stack
 

@@ -2,6 +2,17 @@ package event
 
 import "github.com/google/uuid"
 
+// init registers a JSON decoder for every event type so the outbox can
+// reconstruct persisted records for re-delivery.
+func init() {
+	Register(BookingRequested{}.EventName(), jsonDecoder[BookingRequested]())
+	Register(BookingConfirmed{}.EventName(), jsonDecoder[BookingConfirmed]())
+	Register(BookingCancelled{}.EventName(), jsonDecoder[BookingCancelled]())
+	Register(BookingCompleted{}.EventName(), jsonDecoder[BookingCompleted]())
+	Register(MessageSent{}.EventName(), jsonDecoder[MessageSent]())
+	Register(IdentityVerified{}.EventName(), jsonDecoder[IdentityVerified]())
+}
+
 // BookingRequested is published when a guest creates a booking. The host should
 // be notified, and the payment context authorizes the total.
 type BookingRequested struct {

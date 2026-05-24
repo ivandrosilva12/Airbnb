@@ -113,15 +113,19 @@ func run() error {
 	webhookEventRepo := postgres.NewWebhookEventRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
-	// A synchronous in-process dispatcher fans domain events out to subscribers.
+	// A synchronous in-process dispatcher fans domain events out to subscribers,
+	// wrapped in a durable publisher that records each event in the outbox table
+	// (so an event in flight survives a crash and is re-delivered on recovery).
 	dispatcher := event.NewDispatcher()
+	outboxRepo := postgres.NewOutboxRepository(pool)
+	eventPublisher := event.NewDurablePublisher(outboxRepo, dispatcher)
 
 	// --- Application services ---------------------------------------------
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, objectStore)
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, cfg.Pricing.ServiceFeeRate, dispatcher)
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, cfg.Pricing.ServiceFeeRate, eventPublisher)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
-	messageSvc := messageapp.NewService(messageRepo, propertyRepo, dispatcher)
+	messageSvc := messageapp.NewService(messageRepo, propertyRepo, eventPublisher)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
@@ -130,7 +134,7 @@ func run() error {
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
-	identitySvc := identityapp.NewService(identityRepo, dispatcher)
+	identitySvc := identityapp.NewService(identityRepo, eventPublisher)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
 	alertStateSvc := alertstateapp.NewService()
@@ -202,6 +206,21 @@ func run() error {
 			if err == nil && deleted > 0 {
 				slog.Info("webhook-events cleanup", "deleted", deleted, "cutoff", cutoff)
 			}
+			return err
+		},
+	})
+	// Re-deliver any outbox events left unprocessed by a previous crash, then
+	// keep a periodic relay running as a safety net for transient failures.
+	if n, err := eventPublisher.Recover(ctx, 500); err != nil {
+		slog.Warn("outbox recovery failed at startup", "error", err)
+	} else if n > 0 {
+		slog.Info("outbox recovery re-delivered events", "count", n)
+	}
+	sched.Add(scheduler.Job{
+		Name:     "outbox-relay",
+		Interval: time.Minute,
+		Run: func(ctx context.Context) error {
+			_, err := eventPublisher.Recover(ctx, 500)
 			return err
 		},
 	})
