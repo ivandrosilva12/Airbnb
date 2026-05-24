@@ -33,6 +33,36 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+  integration:
+    name: Integration (real Keycloak)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: backend/go.sum
+      - name: Start Keycloak with the airhost realm
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
+            -v "${{ github.workspace }}/infra/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:25.0 start-dev --import-realm
+      - name: Wait for the realm to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/realms/airhost/.well-known/openid-configuration >/dev/null; then
+              echo "Keycloak ready"; exit 0
+            fi
+            sleep 3
+          done
+          echo "Keycloak did not become ready"; docker logs keycloak; exit 1
+      - name: Run integration tests
+        working-directory: backend
+        env:
+          KEYCLOAK_ISSUER: http://localhost:8080/realms/airhost
+        run: go test -tags=integration ./internal/interfaces/http/ -run Integration -v
+
   web:
     name: Web (React)
     runs-on: ubuntu-latest

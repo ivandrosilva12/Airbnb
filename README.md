@@ -165,6 +165,17 @@ go vet ./...
 go test ./...
 ```
 
+The default suite uses in-memory repositories and a stub auth middleware. A
+build-tagged full-stack test drives the **real** OIDC auth path against a live
+Keycloak; it skips automatically when none is reachable:
+
+```bash
+docker compose up -d keycloak    # serves the airhost realm on :8080
+# compose sets KC_HOSTNAME=keycloak, so add "127.0.0.1 keycloak" to your hosts file, then:
+cd backend && KEYCLOAK_ISSUER=http://keycloak:8080/realms/airhost \
+  go test -tags=integration ./internal/interfaces/http/ -run Integration -v
+```
+
 ## API overview (`/api/v1`)
 
 Public:
@@ -267,7 +278,8 @@ docker-compose.yml
 | Message read-receipts | Complete | Per-participant read markers, per-conversation + total unread counts, navbar/inbox badges; covered by the e2e test |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |
 | E2E HTTP test | Complete | Drives the real router (host→publish→book→confirm→message) |
-| CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build |
+| Keycloak full-stack test | Complete | Build-tagged (`integration`) test minting a real token via the password grant and driving the real OIDC verifier → user provisioning → `/me`; skips when no Keycloak is reachable; CI boots Keycloak with the realm and runs it |
+| CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build + a Keycloak integration job |
 | SQL schema | Complete | Applied by the startup migrator |
 | Web (React) | Complete | `npm run build` passes |
 | Mobile (Expo) | Guest + host | Guest: explore, listing + booking, account hub, trips, saved, notifications, messages, contact host, identity verification. Host: dashboard (metrics + earnings + listings) and per-listing booking management (confirm/complete/cancel). Builds require an emulator/device; not auto-verified |
