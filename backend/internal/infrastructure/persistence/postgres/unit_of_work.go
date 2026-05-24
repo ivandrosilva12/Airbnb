@@ -38,11 +38,12 @@ func (u *UnitOfWork) Run(ctx context.Context, fn func(tx port.Tx) error) error {
 		}
 	}()
 
+	outbox := event.NewRecordingOutbox(NewOutboxRepository(tx))
 	repos := port.Tx{
 		Bookings: NewBookingRepository(tx),
 		Messages: NewMessageRepository(tx),
 		Identity: NewIdentityRepository(tx),
-		Outbox:   NewOutboxRepository(tx),
+		Outbox:   outbox,
 	}
 	if err := fn(repos); err != nil {
 		return err
@@ -52,12 +53,12 @@ func (u *UnitOfWork) Run(ctx context.Context, fn func(tx port.Tx) error) error {
 	}
 	committed = true
 
-	// The write and its events are now durably committed; dispatch them.
+	// The write and its events are now durably committed; dispatch exactly the
+	// events this transaction appended (not a global drain), so concurrent
+	// transactions never re-deliver each other's events. Anything not marked
+	// processed here is retried by the periodic recovery relay.
 	if u.relay != nil {
-		if _, err := u.relay.Recover(ctx, 100); err != nil {
-			// Non-fatal: the periodic relay will retry undispatched events.
-			return nil
-		}
+		u.relay.DispatchRecords(ctx, outbox.Recorded())
 	}
 	return nil
 }

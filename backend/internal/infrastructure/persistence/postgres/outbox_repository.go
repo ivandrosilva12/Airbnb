@@ -32,10 +32,15 @@ func (r *OutboxRepository) FetchUnprocessed(ctx context.Context, limit int) ([]e
 	if limit <= 0 {
 		limit = 100
 	}
+	// Only consider records older than a short grace period: a freshly-committed
+	// event is dispatched synchronously by its own unit of work, so the recovery
+	// relay should pick up only events genuinely left behind, avoiding a race that
+	// would re-deliver an event a unit of work is still dispatching.
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, event_name, payload, created_at, attempts
 		 FROM outbox
 		 WHERE processed_at IS NULL AND failed_at IS NULL
+		   AND created_at < now() - interval '30 seconds'
 		 ORDER BY created_at ASC
 		 LIMIT $1`, limit,
 	)

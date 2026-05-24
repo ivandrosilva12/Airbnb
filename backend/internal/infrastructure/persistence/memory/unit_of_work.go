@@ -32,16 +32,19 @@ func NewUnitOfWork(bookings booking.Repository, messages message.Repository, ide
 // Run executes fn against the shared repositories, then dispatches any recorded
 // events. A failure in fn is returned without dispatching.
 func (u *UnitOfWork) Run(ctx context.Context, fn func(tx port.Tx) error) error {
+	outbox := event.NewRecordingOutbox(u.outbox)
 	if err := fn(port.Tx{
 		Bookings: u.bookings,
 		Messages: u.messages,
 		Identity: u.identity,
-		Outbox:   u.outbox,
+		Outbox:   outbox,
 	}); err != nil {
 		return err
 	}
+	// Dispatch exactly the events appended in this unit of work (matching the
+	// Postgres path), so concurrent units never re-deliver each other's events.
 	if u.relay != nil {
-		_, _ = u.relay.Recover(ctx, 100)
+		u.relay.DispatchRecords(ctx, outbox.Recorded())
 	}
 	return nil
 }

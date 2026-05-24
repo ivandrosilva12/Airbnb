@@ -79,6 +79,37 @@ func TestEventHandler_CreditsHostOnConfirm(t *testing.T) {
 	}
 }
 
+func TestEventHandler_DuplicateConfirmCreditsOnce(t *testing.T) {
+	ctx := context.Background()
+	props := memory.NewPropertyRepository()
+	bookings := memory.NewBookingRepository()
+	payouts := memory.NewPayoutRepository()
+	hostID := uuid.New()
+	b := seed(t, props, bookings, hostID)
+
+	svc := payoutapp.NewService(payouts, bookings, props)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	// At-least-once delivery: the same BookingConfirmed arriving twice must credit
+	// the host only once (idempotency guard), not double the balance.
+	ev := event.BookingConfirmed{BookingID: b.ID, PropertyID: b.PropertyID, GuestID: b.GuestID}
+	dispatcher.Publish(ctx, ev)
+	dispatcher.Publish(ctx, ev)
+
+	page, err := svc.ListEntries(ctx, hostID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("entries after duplicate confirm = %d, want 1", len(page.Items))
+	}
+	balances, _ := svc.Summary(ctx, hostID)
+	if len(balances) != 1 || balances[0].NetCents() != 33000 {
+		t.Fatalf("host balance = %+v, want net 33000 EUR (credited once)", balances)
+	}
+}
+
 func TestEventHandler_DebitsRefundOnCancel(t *testing.T) {
 	ctx := context.Background()
 	props := memory.NewPropertyRepository()

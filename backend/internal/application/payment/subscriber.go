@@ -66,6 +66,15 @@ func (s *Service) EventHandler() event.Handler {
 }
 
 func (s *Service) authorize(ctx context.Context, ev event.BookingRequested) {
+	// Idempotency: BookingRequested may be delivered more than once (at-least-once
+	// outbox). If a payment already exists for the booking it was authorized;
+	// re-authorizing would create a duplicate hold at the gateway, so skip.
+	if _, err := s.repo.FindByBookingID(ctx, ev.BookingID); err == nil {
+		return
+	} else if !errors.Is(err, shared.ErrNotFound) {
+		slog.Error("payment: lookup failed", "booking", ev.BookingID, "error", err)
+		return
+	}
 	amount, err := shared.NewMoney(ev.TotalCents, ev.Currency)
 	if err != nil {
 		slog.Error("payment: invalid amount", "booking", ev.BookingID, "error", err)

@@ -140,7 +140,63 @@ func (p *DurablePublisher) Recover(ctx context.Context, limit int) (int, error) 
 	return delivered, nil
 }
 
+// DispatchRecords delivers a known set of just-committed records — exactly the
+// events appended inside one transaction — fanning each out once and marking it
+// processed. Unlike Recover, it does not scan the whole table, so concurrent
+// transactions never re-dispatch each other's events. Anything whose
+// mark-processed fails is picked up later by the recovery relay (at-least-once).
+func (p *DurablePublisher) DispatchRecords(ctx context.Context, records []Record) {
+	for _, r := range records {
+		e, err := decode(r.Name, r.Payload)
+		if err != nil {
+			slog.Error("outbox: cannot decode record; marking failed", "event", r.Name, "id", r.ID, "error", err)
+			_ = p.store.MarkFailed(ctx, r.ID)
+			continue
+		}
+		p.dispatch.Publish(ctx, e)
+		if err := p.store.MarkProcessed(ctx, r.ID); err != nil {
+			slog.Warn("outbox: mark-processed failed; will be re-delivered on recovery", "id", r.ID, "error", err)
+		}
+	}
+}
+
 var _ Publisher = (*DurablePublisher)(nil)
+
+// RecordingOutbox wraps an OutboxStore and remembers the records appended
+// through it, so a unit of work can dispatch exactly those after the
+// transaction commits (see DurablePublisher.DispatchRecords).
+type RecordingOutbox struct {
+	inner    OutboxStore
+	recorded []Record
+}
+
+// NewRecordingOutbox wraps store to capture appended records.
+func NewRecordingOutbox(store OutboxStore) *RecordingOutbox {
+	return &RecordingOutbox{inner: store}
+}
+
+func (r *RecordingOutbox) Append(ctx context.Context, rec Record) error {
+	if err := r.inner.Append(ctx, rec); err != nil {
+		return err
+	}
+	r.recorded = append(r.recorded, rec)
+	return nil
+}
+
+func (r *RecordingOutbox) FetchUnprocessed(ctx context.Context, limit int) ([]Record, error) {
+	return r.inner.FetchUnprocessed(ctx, limit)
+}
+func (r *RecordingOutbox) MarkProcessed(ctx context.Context, id uuid.UUID) error {
+	return r.inner.MarkProcessed(ctx, id)
+}
+func (r *RecordingOutbox) MarkFailed(ctx context.Context, id uuid.UUID) error {
+	return r.inner.MarkFailed(ctx, id)
+}
+
+// Recorded returns the records appended through this wrapper.
+func (r *RecordingOutbox) Recorded() []Record { return r.recorded }
+
+var _ OutboxStore = (*RecordingOutbox)(nil)
 
 // memoryOutbox is a process-local OutboxStore used in tests and as a fallback.
 type memoryOutbox struct {

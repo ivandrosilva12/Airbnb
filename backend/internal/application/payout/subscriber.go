@@ -27,6 +27,15 @@ func (s *Service) EventHandler() event.Handler {
 }
 
 func (s *Service) recordEarning(ctx context.Context, ev event.BookingConfirmed) {
+	// Idempotency: BookingConfirmed may be delivered more than once (at-least-once
+	// outbox). Recording the earning twice would inflate the host's balance, so
+	// skip if one already exists for this booking.
+	if has, err := s.payouts.HasEarningForBooking(ctx, ev.BookingID); err != nil {
+		slog.Error("payout: earning lookup failed", "booking", ev.BookingID, "error", err)
+		return
+	} else if has {
+		return
+	}
 	prop, err := s.properties.FindByID(ctx, ev.PropertyID)
 	if err != nil {
 		slog.Error("payout: property lookup failed", "booking", ev.BookingID, "error", err)
