@@ -192,12 +192,12 @@ cd backend && KEYCLOAK_ISSUER=http://keycloak:8080/realms/airhost \
 
 Public:
 - `POST /webhooks/payments/:provider` — gateway webhook reconciliation (signed by the provider; enabled per provider when its webhook secret is set)
-- `GET /properties` — search (`?city=&country=&type=&minGuests=&maxPrice=&amenity=&checkIn=&checkOut=&lat=&lng=&radiusKm=&sort=`).
+- `GET /properties` — search (`?q=&city=&country=&type=&minGuests=&maxPrice=&amenity=&checkIn=&checkOut=&lat=&lng=&radiusKm=&sort=`).
+  `q` is a free-text match across listing title, description and city.
   When `checkIn`/`checkOut` (YYYY-MM-DD) are supplied, listings already booked for that window are excluded;
   when `lat`/`lng`/`radiusKm` are supplied, results are limited to that radius (haversine distance);
   `sort` is one of `newest` (default), `price_asc`, `price_desc`, `rating`.
 - `GET /properties/:id`
-- `GET /properties?q=...` — free-text search across listing title, description and city
 - `GET /amenities` — canonical amenity codes (shared by the create form and search filter)
 - `GET /properties/:id/availability` — booked date ranges (`?from=YYYY-MM-DD&to=YYYY-MM-DD`)
 - `GET /properties/:id/calendar.ics` — iCalendar feed of booked + blocked ranges (for external subscription)

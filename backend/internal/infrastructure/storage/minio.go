@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -49,7 +50,11 @@ func NewMinioStorage(ctx context.Context, cfg config.StorageConfig) (*MinioStora
 				"Resource":["arn:aws:s3:::%s/*"]
 			}]
 		}`, cfg.Bucket)
-		_ = client.SetBucketPolicy(ctx, cfg.Bucket, policy)
+		if err := client.SetBucketPolicy(ctx, cfg.Bucket, policy); err != nil {
+			// Not fatal — uploads still succeed — but public object URLs will 403
+			// until the policy is applied, so surface it rather than swallowing.
+			slog.Warn("storage: failed to set public-read bucket policy", "bucket", cfg.Bucket, "error", err)
+		}
 	}
 
 	return &MinioStorage{
