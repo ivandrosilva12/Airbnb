@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"net/http"
@@ -18,15 +20,17 @@ import (
 type PaymentWebhookHandler struct {
 	svc       *paymentapp.Service
 	verifiers map[string]port.WebhookVerifier
+	dedupe    port.WebhookDedupeStore
 	metrics   *observability.Metrics
 }
 
-// NewPaymentWebhookHandler builds a PaymentWebhookHandler.
-func NewPaymentWebhookHandler(svc *paymentapp.Service, verifiers map[string]port.WebhookVerifier, metrics *observability.Metrics) *PaymentWebhookHandler {
+// NewPaymentWebhookHandler builds a PaymentWebhookHandler. dedupe may be nil to
+// disable storage-level de-duplication (reconciliation stays idempotent anyway).
+func NewPaymentWebhookHandler(svc *paymentapp.Service, verifiers map[string]port.WebhookVerifier, dedupe port.WebhookDedupeStore, metrics *observability.Metrics) *PaymentWebhookHandler {
 	if verifiers == nil {
 		verifiers = map[string]port.WebhookVerifier{}
 	}
-	return &PaymentWebhookHandler{svc: svc, verifiers: verifiers, metrics: metrics}
+	return &PaymentWebhookHandler{svc: svc, verifiers: verifiers, dedupe: dedupe, metrics: metrics}
 }
 
 // observe bumps the webhook-events counter (nil-safe for tests without metrics).
@@ -69,11 +73,41 @@ func (h *PaymentWebhookHandler) Handle(c *gin.Context) {
 		return
 	}
 
+	// Storage-level de-duplication: skip a delivery already processed. The key is
+	// the provider's delivery id when present, else a hash of the raw body so
+	// byte-identical replays still collapse.
+	eventID := evt.EventID
+	if eventID == "" {
+		sum := sha256.Sum256(body)
+		eventID = hex.EncodeToString(sum[:])
+	}
+	if h.dedupe != nil {
+		seen, err := h.dedupe.Seen(c.Request.Context(), provider, eventID)
+		if err != nil {
+			h.observe(provider, "error")
+			response.Fail(c, err)
+			return
+		}
+		if seen {
+			h.observe(provider, "duplicate")
+			response.OK(c, gin.H{"status": "duplicate"})
+			return
+		}
+	}
+
 	changed, err := h.svc.ReconcileGatewayEvent(c.Request.Context(), evt)
 	if err != nil {
 		h.observe(provider, "error")
 		response.Fail(c, err)
 		return
+	}
+	// Record only after a successful reconcile, so a failed attempt is retried
+	// rather than silently skipped. The reconcile is idempotent, so the brief
+	// window where a concurrent duplicate also reconciles is harmless.
+	if h.dedupe != nil {
+		if err := h.dedupe.Record(c.Request.Context(), provider, eventID); err != nil {
+			slog.Warn("payment webhook: failed to record dedupe key", "provider", provider, "error", err)
+		}
 	}
 	if changed {
 		h.observe(provider, "reconciled")

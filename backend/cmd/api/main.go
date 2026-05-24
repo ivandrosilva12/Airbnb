@@ -105,6 +105,7 @@ func run() error {
 	blockRepo := postgres.NewBlockRepository(pool)
 	identityRepo := postgres.NewIdentityRepository(pool)
 	reportRepo := postgres.NewReportRepository(pool)
+	webhookEventRepo := postgres.NewWebhookEventRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers.
@@ -174,7 +175,7 @@ func run() error {
 			Realtime:       handler.NewRealtimeHandler(realtimeHub),
 			Identity:       handler.NewIdentityHandler(identitySvc),
 			Report:         handler.NewReportHandler(reportSvc),
-			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(cfg.Payment), metrics),
+			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
 		},
 	})
 

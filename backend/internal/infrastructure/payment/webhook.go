@@ -105,6 +105,7 @@ func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.Ga
 	}
 
 	var evt struct {
+		ID   string `json:"id"`
 		Type string `json:"type"`
 		Data struct {
 			Object struct {
@@ -118,19 +119,24 @@ func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.Ga
 		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: %w", err)
 	}
 	obj := evt.Data.Object
+	base := port.GatewayEvent{Provider: nameStripe, EventID: evt.ID}
 	switch evt.Type {
 	case "payment_intent.succeeded", "payment_intent.amount_capturable_updated":
-		return port.GatewayEvent{Provider: nameStripe, Reference: obj.ID, Type: port.GatewayCaptured}, true, nil
+		base.Reference, base.Type = obj.ID, port.GatewayCaptured
+		return base, true, nil
 	case "charge.refunded":
 		ref := obj.PaymentIntent
 		if ref == "" {
 			ref = obj.ID
 		}
-		return port.GatewayEvent{Provider: nameStripe, Reference: ref, Type: port.GatewayRefunded, AmountCents: obj.AmountRefunded}, true, nil
+		base.Reference, base.Type, base.AmountCents = ref, port.GatewayRefunded, obj.AmountRefunded
+		return base, true, nil
 	case "payment_intent.payment_failed":
-		return port.GatewayEvent{Provider: nameStripe, Reference: obj.ID, Type: port.GatewayFailed, FailureReason: "payment failed"}, true, nil
+		base.Reference, base.Type, base.FailureReason = obj.ID, port.GatewayFailed, "payment failed"
+		return base, true, nil
 	default:
-		return port.GatewayEvent{Provider: nameStripe, Type: port.GatewayIgnored}, false, nil
+		base.Type = port.GatewayIgnored
+		return base, false, nil
 	}
 }
 
@@ -155,15 +161,16 @@ func (v *jsonWebhookVerifier) Verify(header http.Header, body []byte) (port.Gate
 	}
 
 	var evt struct {
-		Event  string  `json:"event"`
-		ID     string  `json:"id"`
-		Amount float64 `json:"amount"`
-		Reason string  `json:"reason"`
+		Event   string  `json:"event"`
+		ID      string  `json:"id"`
+		EventID string  `json:"eventId"`
+		Amount  float64 `json:"amount"`
+		Reason  string  `json:"reason"`
 	}
 	if err := json.Unmarshal(body, &evt); err != nil {
 		return port.GatewayEvent{}, false, fmt.Errorf("%s webhook: %w", v.provider, err)
 	}
-	base := port.GatewayEvent{Provider: v.provider, Reference: evt.ID}
+	base := port.GatewayEvent{Provider: v.provider, EventID: evt.EventID, Reference: evt.ID}
 	switch strings.ToLower(evt.Event) {
 	case "captured", "capture", "succeeded", "paid":
 		base.Type = port.GatewayCaptured

@@ -35,10 +35,21 @@ const (
 // payment with the gateway's authoritative state.
 type GatewayEvent struct {
 	Provider      string
+	EventID       string // provider-native delivery id, for storage-level dedup (may be empty)
 	Reference     string // provider-native payment reference (e.g. pi_… / chg_…)
 	Type          GatewayEventType
 	AmountCents   int64 // refund amount; 0 means "full"
 	FailureReason string
+}
+
+// WebhookDedupeStore records processed webhook deliveries so retried or
+// duplicate deliveries can be skipped at storage level (the reconciliation is
+// already idempotent; this avoids redundant work and gives an audit trail).
+type WebhookDedupeStore interface {
+	// Seen reports whether (provider, eventID) was already recorded.
+	Seen(ctx context.Context, provider, eventID string) (bool, error)
+	// Record persists (provider, eventID); it is idempotent.
+	Record(ctx context.Context, provider, eventID string) error
 }
 
 // WebhookVerifier authenticates and parses a provider's webhook request into a

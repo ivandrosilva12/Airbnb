@@ -73,6 +73,16 @@ func TestEndToEnd_PaymentWebhook(t *testing.T) {
 		t.Fatalf("payment status after webhook = %s, want captured", p.Status)
 	}
 
+	// Re-delivering the identical webhook is de-duplicated at storage level.
+	resp = h.doRaw(http.MethodPost, "/api/v1/webhooks/payments/gpayangola", body, map[string]string{
+		"Content-Type": "application/json",
+		"X-Signature":  sign(webhookSecret, body),
+	})
+	mustStatus(t, resp, http.StatusOK, "replayed webhook")
+	if status := h.decode(resp)["status"].(string); status != "duplicate" {
+		t.Fatalf("replayed webhook status = %q, want duplicate", status)
+	}
+
 	// A bad signature is rejected.
 	if r := h.doRaw(http.MethodPost, "/api/v1/webhooks/payments/gpayangola", body, map[string]string{
 		"Content-Type": "application/json",
