@@ -25,17 +25,25 @@ func NewService(users user.Repository, mailer port.Mailer) *Service {
 	return &Service{users: users, mailer: mailer}
 }
 
+// category groups emails so a recipient can opt out per kind.
+type category int
+
+const (
+	catBookings category = iota
+	catMessages
+)
+
 // EventHandler returns an event.Handler that emails the relevant party. It is
 // best-effort: failures are logged, never propagated to the publishing use case.
 func (s *Service) EventHandler() event.Handler {
 	return func(ctx context.Context, e event.Event) {
 		switch ev := e.(type) {
 		case event.BookingRequested:
-			s.send(ctx, ev.HostID, "New booking request",
+			s.send(ctx, ev.HostID, catBookings, "New booking request",
 				fmt.Sprintf("A guest requested to book %q. Review it in your host dashboard.", ev.PropertyTitle))
 
 		case event.BookingConfirmed:
-			s.send(ctx, ev.GuestID, "Booking confirmed",
+			s.send(ctx, ev.GuestID, catBookings, "Booking confirmed",
 				fmt.Sprintf("Good news — your booking for %q is confirmed.", ev.PropertyTitle))
 
 		case event.BookingCancelled:
@@ -43,27 +51,36 @@ func (s *Service) EventHandler() event.Handler {
 			if ev.CancelledBy == ev.GuestID {
 				recipient = ev.HostID
 			}
-			s.send(ctx, recipient, "Booking cancelled",
+			s.send(ctx, recipient, catBookings, "Booking cancelled",
 				fmt.Sprintf("A booking for %q was cancelled.", ev.PropertyTitle))
 
 		case event.MessageSent:
-			s.send(ctx, ev.RecipientID, "New message",
+			s.send(ctx, ev.RecipientID, catMessages, "New message",
 				"You have a new message on AirHost. Open the app to reply.")
 		}
 	}
 }
 
-func (s *Service) send(ctx context.Context, userID uuid.UUID, subject, body string) {
+func (s *Service) send(ctx context.Context, userID uuid.UUID, cat category, subject, body string) {
 	u, err := s.users.FindByID(ctx, userID)
 	if err != nil {
 		slog.Error("email: recipient lookup failed", "user", userID, "error", err)
 		return
 	}
-	if u.Email == "" {
+	if u.Email == "" || !optedIn(u.EmailPrefs, cat) {
 		return
 	}
 	msg := port.Email{To: u.Email, Subject: subject, Text: body, HTML: renderHTML(subject, body)}
 	if err := s.mailer.Send(ctx, msg); err != nil {
 		slog.Error("email: send failed", "to", u.Email, "subject", subject, "error", err)
+	}
+}
+
+func optedIn(prefs user.EmailPreferences, cat category) bool {
+	switch cat {
+	case catMessages:
+		return prefs.Messages
+	default:
+		return prefs.Bookings
 	}
 }

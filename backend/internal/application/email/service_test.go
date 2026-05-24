@@ -93,6 +93,29 @@ func TestEventHandler_CancellationEmailsTheOtherParty(t *testing.T) {
 	}
 }
 
+func TestEventHandler_RespectsEmailOptOut(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	host := mustUser(t, users, "host@test.dev", user.RoleHost)
+	// Opt the host out of booking emails but keep message emails.
+	host.SetEmailPreferences(user.EmailPreferences{Bookings: false, Messages: true})
+	if err := users.Update(ctx, host); err != nil {
+		t.Fatalf("update prefs: %v", err)
+	}
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	dispatcher.Publish(ctx, event.BookingRequested{PropertyTitle: "Loft", HostID: host.ID})
+	dispatcher.Publish(ctx, event.MessageSent{RecipientID: host.ID})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 || sent[0].Subject != "New message" {
+		t.Fatalf("opt-out: sent = %+v, want only the new-message email", sent)
+	}
+}
+
 func mustUser(t *testing.T, repo *memory.UserRepository, email string, role user.Role) *user.User {
 	t.Helper()
 	u, err := user.NewUser("sub-"+email, email, "Test User", role)

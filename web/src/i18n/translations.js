@@ -13,6 +13,13 @@ export const translations = {
     'nav.signOut': 'Sign out',
     'nav.account': 'Account',
 
+    'settings.title': 'Account settings',
+    'settings.emailTitle': 'Email notifications',
+    'settings.emailHint': 'In-app notifications are always on; these only control email.',
+    'settings.emailBookings': 'Booking updates (requests, confirmations, cancellations)',
+    'settings.emailMessages': 'New messages',
+    'settings.saved': 'Saved.',
+
     'common.loading': 'Loading…',
     'common.perNight': '/ night',
     'common.noPhoto': 'No photo',
@@ -186,6 +193,13 @@ export const translations = {
     'nav.signUp': 'Registar',
     'nav.signOut': 'Sair',
     'nav.account': 'Conta',
+
+    'settings.title': 'Definições da conta',
+    'settings.emailTitle': 'Notificações por email',
+    'settings.emailHint': 'As notificações na app estão sempre ativas; isto controla apenas o email.',
+    'settings.emailBookings': 'Atualizações de reservas (pedidos, confirmações, cancelamentos)',
+    'settings.emailMessages': 'Novas mensagens',
+    'settings.saved': 'Guardado.',
 
     'common.loading': 'A carregar…',
     'common.perNight': '/ noite',

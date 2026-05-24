@@ -76,6 +76,7 @@ func NewRouter(d Deps) *gin.Engine {
 		// Profile.
 		auth.GET("/me", h.User.Me)
 		auth.PATCH("/me", h.User.UpdateMe)
+		auth.PATCH("/me/preferences", h.User.UpdatePreferences)
 		auth.POST("/me/become-host", h.User.BecomeHost)
 
 		// Bookings.

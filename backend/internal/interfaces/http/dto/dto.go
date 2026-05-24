@@ -20,14 +20,21 @@ import (
 	"github.com/google/uuid"
 )
 
+// EmailPreferencesView renders a user's transactional email opt-ins.
+type EmailPreferencesView struct {
+	Bookings bool `json:"bookings"`
+	Messages bool `json:"messages"`
+}
+
 // UserView is the public representation of a user.
 type UserView struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	FullName  string    `json:"fullName"`
-	Role      string    `json:"role"`
-	AvatarURL string    `json:"avatarUrl"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID               uuid.UUID            `json:"id"`
+	Email            string               `json:"email"`
+	FullName         string               `json:"fullName"`
+	Role             string               `json:"role"`
+	AvatarURL        string               `json:"avatarUrl"`
+	EmailPreferences EmailPreferencesView `json:"emailPreferences"`
+	CreatedAt        time.Time            `json:"createdAt"`
 }
 
 // FromUser maps a user aggregate to its view.
@@ -38,6 +45,10 @@ func FromUser(u *user.User) UserView {
 		FullName:  u.FullName,
 		Role:      string(u.Role),
 		AvatarURL: u.AvatarURL,
+		EmailPreferences: EmailPreferencesView{
+			Bookings: u.EmailPrefs.Bookings,
+			Messages: u.EmailPrefs.Messages,
+		},
 		CreatedAt: u.CreatedAt,
 	}
 }

@@ -30,6 +30,18 @@ func (r Role) Valid() bool {
 	}
 }
 
+// EmailPreferences controls which transactional emails a user receives. In-app
+// notifications are always delivered; these toggles only gate email delivery.
+type EmailPreferences struct {
+	Bookings bool // booking lifecycle emails (requests, confirmations, cancellations)
+	Messages bool // new-message emails
+}
+
+// DefaultEmailPreferences opts a user in to all transactional emails.
+func DefaultEmailPreferences() EmailPreferences {
+	return EmailPreferences{Bookings: true, Messages: true}
+}
+
 // User is the aggregate root for an application identity.
 type User struct {
 	ID          uuid.UUID
@@ -39,6 +51,7 @@ type User struct {
 	Role        Role
 	AvatarURL   string
 	IsActive    bool
+	EmailPrefs  EmailPreferences
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -70,9 +83,16 @@ func NewUser(keycloakSub, email, fullName string, role Role) (*User, error) {
 		FullName:    fullName,
 		Role:        role,
 		IsActive:    true,
+		EmailPrefs:  DefaultEmailPreferences(),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}, nil
+}
+
+// SetEmailPreferences updates which transactional emails the user receives.
+func (u *User) SetEmailPreferences(prefs EmailPreferences) {
+	u.EmailPrefs = prefs
+	u.touch()
 }
 
 // PromoteToHost upgrades a guest to host so they can publish listings.

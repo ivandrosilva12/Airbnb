@@ -74,6 +74,19 @@ func (s *Service) UpdateProfile(ctx context.Context, id uuid.UUID, in UpdateProf
 	return u, nil
 }
 
+// UpdateEmailPreferences sets which transactional emails the user receives.
+func (s *Service) UpdateEmailPreferences(ctx context.Context, id uuid.UUID, prefs user.EmailPreferences) (*user.User, error) {
+	u, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	u.SetEmailPreferences(prefs)
+	if err := s.repo.Update(ctx, u); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
 // BecomeHost promotes the user to host.
 func (s *Service) BecomeHost(ctx context.Context, id uuid.UUID) (*user.User, error) {
 	u, err := s.repo.FindByID(ctx, id)

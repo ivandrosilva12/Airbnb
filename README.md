@@ -175,7 +175,7 @@ Public:
 - `GET /properties/:id/reviews` · `GET /properties/:id/reviews/summary`
 
 Authenticated (Bearer token):
-- `GET /me` · `PATCH /me` · `POST /me/become-host`
+- `GET /me` · `PATCH /me` · `PATCH /me/preferences` (email opt-outs) · `POST /me/become-host`
 - `POST /bookings` · `GET /bookings/me` · `GET /bookings/:id` · `POST /bookings/:id/cancel`
 - `POST /reviews` (guest → property) · `POST /reviews/guest` (host → guest) · `GET /me/guest-reviews`
 - `GET /conversations` (each with the viewer's `unreadCount`) · `POST /conversations` (start/get a thread)
@@ -238,6 +238,7 @@ docker-compose.yml
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification/payment/email subscribe |
 | Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |
 | Email notifications | Complete | Transactional HTML email (multipart/alternative with text fallback) via a `Mailer` port reacting to booking/message events; templated with `html/template` (auto-escaped); SMTP in prod, log mailer when unconfigured, MailHog locally; covered by unit + e2e tests |
+| Email preferences | Complete | Per-user opt-outs for booking/message emails (`PATCH /me/preferences`, migration 0013); the email subscriber honours them; web account settings page; covered by unit + e2e tests |
 | Payments | Complete | Authorize/capture/refund driven by booking events via a gateway port (fake by default); web shows payment status; covered by unit + e2e tests |
 | Host payouts | Complete | New `payout` context: an earnings ledger credited on confirmation (total minus the platform fee) and debited on refund; `GET /host/earnings` balance + ledger; dashboard card; covered by unit + e2e tests |
 | Message read-receipts | Complete | Per-participant read markers, per-conversation + total unread counts, navbar/inbox badges; covered by the e2e test |

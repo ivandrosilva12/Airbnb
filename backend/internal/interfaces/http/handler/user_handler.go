@@ -55,6 +55,39 @@ func (h *UserHandler) UpdateMe(c *gin.Context) {
 	response.OK(c, dto.FromUser(u))
 }
 
+type emailPreferencesRequest struct {
+	Bookings *bool `json:"bookings"`
+	Messages *bool `json:"messages"`
+}
+
+// UpdatePreferences sets the authenticated user's transactional email opt-ins.
+// Omitted fields keep their current value.
+func (h *UserHandler) UpdatePreferences(c *gin.Context) {
+	u, ok := middleware.CurrentUser(c)
+	if !ok {
+		response.FailMessage(c, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	var req emailPreferencesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	prefs := u.EmailPrefs
+	if req.Bookings != nil {
+		prefs.Bookings = *req.Bookings
+	}
+	if req.Messages != nil {
+		prefs.Messages = *req.Messages
+	}
+	updated, err := h.svc.UpdateEmailPreferences(c.Request.Context(), u.ID, prefs)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromUser(updated))
+}
+
 // BecomeHost promotes the authenticated user to host.
 func (h *UserHandler) BecomeHost(c *gin.Context) {
 	id, ok := requireUser(c)

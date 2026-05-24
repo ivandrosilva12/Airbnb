@@ -41,7 +41,7 @@ export default function Navbar() {
           )}
           {authenticated ? (
             <>
-              <span className="nav-user">{profile?.fullName || t('nav.account')}</span>
+              <Link to="/settings" className="nav-user">{profile?.fullName || t('nav.account')}</Link>
               <button className="btn btn-ghost" onClick={logout}>{t('nav.signOut')}</button>
             </>
           ) : (

@@ -551,6 +551,19 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 		t.Fatalf("expected a new-message email to the host, got %+v", sent)
 	}
 
+	// 17c. Email preferences round-trip: opted-in by default; a PATCH can opt out
+	// of one category without affecting the other.
+	rec = h.do(http.MethodGet, "/api/v1/me", guestTok, nil)
+	mustStatus(t, rec, http.StatusOK, "get me")
+	if p := h.decode(rec)["emailPreferences"].(map[string]any); p["bookings"] != true || p["messages"] != true {
+		t.Fatalf("default email prefs = %v, want both true", p)
+	}
+	rec = h.do(http.MethodPatch, "/api/v1/me/preferences", guestTok, map[string]any{"messages": false})
+	mustStatus(t, rec, http.StatusOK, "update prefs")
+	if p := h.decode(rec)["emailPreferences"].(map[string]any); p["bookings"] != true || p["messages"] != false {
+		t.Fatalf("updated email prefs = %v, want bookings=true messages=false", p)
+	}
+
 	// 18. Host metrics: one published listing, one confirmed booking worth the
 	// captured total, with an upcoming check-in.
 	rec = h.do(http.MethodGet, "/api/v1/host/metrics", hostTok, nil)

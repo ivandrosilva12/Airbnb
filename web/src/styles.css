@@ -170,6 +170,12 @@ a { color: inherit; text-decoration: none; }
 .badge-pay-refunded { background: #f0f0f0; color: #555; }
 .badge-pay-failed { background: #fde8e8; color: #c0392b; }
 .muted-text { color: var(--muted); }
+.muted { color: var(--muted); font-size: .9rem; }
+.settings-list { display: flex; flex-direction: column; gap: 12px; max-width: 560px; }
+.settings-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.settings-row input { width: 18px; height: 18px; }
+.nav-user { color: inherit; text-decoration: none; }
+.nav-user:hover { text-decoration: underline; }
 .link-btn { background: none; border: none; color: var(--primary); cursor: pointer; font-size: .8rem; padding: 0 0 0 8px; text-decoration: underline; }
 .error { color: #c0392b; }
 .success { color: #1a7f47; }
