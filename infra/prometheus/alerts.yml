@@ -1,0 +1,53 @@
+groups:
+  - name: airhost-api
+    rules:
+      # The API stopped being scraped (crashed / unreachable).
+      - alert: AirhostApiDown
+        expr: up{job="airhost-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AirHost API is down"
+          description: "Prometheus has not scraped the AirHost API for over 1 minute."
+
+      # Sustained 5xx error rate.
+      - alert: AirhostHighErrorRate
+        expr: sum(rate(airhost_http_requests_total{status=~"5.."}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated 5xx error rate"
+          description: "The API is returning more than 1 server error per second (5m avg) for over 5 minutes."
+
+      # A spike in webhooks rejected for a bad signature suggests a
+      # misconfigured secret or a forgery/replay attempt.
+      - alert: AirhostWebhookRejectionSpike
+        expr: sum(rate(airhost_webhook_events_total{outcome="rejected"}[5m])) by (provider) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Webhook signature rejections spiking for {{ $labels.provider }}"
+          description: "More than 0.2 rejected webhook events/s (5m avg) for {{ $labels.provider }} — check the webhook secret or investigate a possible attack."
+
+      # Sustained rate-limiting means a client is hammering a route (or a flood).
+      - alert: AirhostRateLimitingSustained
+        expr: sum(rate(airhost_rate_limited_total[5m])) by (route) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sustained rate limiting on {{ $labels.route }}"
+          description: "More than 0.5 requests/s have been rate-limited on {{ $labels.route }} for over 10 minutes."
+
+      # Webhook processing errors (gateway event reconciliation failures).
+      - alert: AirhostWebhookProcessingErrors
+        expr: sum(rate(airhost_webhook_events_total{outcome="error"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Webhook reconciliation errors"
+          description: "The API is failing to reconcile gateway webhook events; inspect the logs."

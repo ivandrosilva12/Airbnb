@@ -287,6 +287,7 @@ docker-compose.yml
 | Mobile (Expo) | Guest + host | Guest: explore, listing + booking, account hub, trips (with payment status + an in-app receipt breakdown), saved, notifications, messages, contact host, report a listing, identity verification. Host: dashboard (metrics + earnings + listings) and per-listing booking management (confirm/complete/cancel). Builds require an emulator/device; not auto-verified |
 | Infra (compose) | Complete | Config authored; bring up with `docker compose up` |
 | Observability | Complete | `/metrics` endpoint + Prometheus scrape + Grafana dashboard (incl. webhook-events-by-outcome and rate-limited-per-minute panels) |
+| Alerting | Complete | Prometheus alert rules (`infra/prometheus/alerts.yml`): API down, 5xx error rate, webhook signature-rejection / processing-error spikes, sustained rate limiting |
 
 ### Notes & next steps
 
