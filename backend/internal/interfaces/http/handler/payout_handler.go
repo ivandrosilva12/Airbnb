@@ -1,6 +1,11 @@
 package handler
 
 import (
+	"encoding/csv"
+	"fmt"
+	"net/http"
+	"strconv"
+
 	payoutapp "github.com/airhost/backend/internal/application/payout"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
@@ -46,4 +51,42 @@ func (h *PayoutHandler) ListEntries(c *gin.Context) {
 		items = append(items, dto.FromPayoutEntry(e))
 	}
 	response.OK(c, dto.PageView[dto.PayoutEntryView]{Items: items, Total: res.Total, Limit: page.Limit, Offset: page.Offset})
+}
+
+// ExportCSV streams the authenticated host's full earnings ledger as a CSV
+// statement (amounts in major currency units; refunds are negative).
+func (h *PayoutHandler) ExportCSV(c *gin.Context) {
+	hostID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	rows, err := h.svc.ExportEntries(c.Request.Context(), hostID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="airhost-earnings.csv"`)
+	c.Status(http.StatusOK)
+
+	w := csv.NewWriter(c.Writer)
+	_ = w.Write([]string{"date", "type", "listing", "listing_id", "booking_id", "currency", "amount"})
+	for _, r := range rows {
+		amount := strconv.FormatFloat(float64(r.SignedCents)/100, 'f', 2, 64)
+		_ = w.Write([]string{
+			r.CreatedAt.Format("2006-01-02"),
+			r.Kind,
+			r.PropertyTitle,
+			r.PropertyID.String(),
+			r.BookingID.String(),
+			r.Currency,
+			amount,
+		})
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		// Headers/rows may already be partly written; just log via the framework.
+		_ = c.Error(fmt.Errorf("csv export: %w", err))
+	}
 }

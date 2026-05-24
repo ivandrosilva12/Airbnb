@@ -107,6 +107,55 @@ func TestEventHandler_DebitsRefundOnCancel(t *testing.T) {
 	}
 }
 
+func TestExportEntries_FlattensLedgerWithTitlesAndSign(t *testing.T) {
+	ctx := context.Background()
+	props := memory.NewPropertyRepository()
+	bookings := memory.NewBookingRepository()
+	payouts := memory.NewPayoutRepository()
+	hostID := uuid.New()
+	b := seed(t, props, bookings, hostID)
+
+	svc := payoutapp.NewService(payouts, bookings, props)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	// One earning (+330.00) and one half refund (−165.00).
+	dispatcher.Publish(ctx, event.BookingConfirmed{BookingID: b.ID, PropertyID: b.PropertyID, GuestID: b.GuestID})
+	dispatcher.Publish(ctx, event.BookingCancelled{
+		BookingID: b.ID, PropertyID: b.PropertyID, HostID: hostID, GuestID: b.GuestID,
+		CancelledBy: b.GuestID, RefundFraction: 0.5,
+	})
+
+	rows, err := svc.ExportEntries(ctx, hostID)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	var earning, refund *payoutapp.ExportRow
+	for i := range rows {
+		switch rows[i].Kind {
+		case "earning":
+			earning = &rows[i]
+		case "refund":
+			refund = &rows[i]
+		}
+	}
+	if earning == nil || refund == nil {
+		t.Fatalf("expected one earning and one refund, got %+v", rows)
+	}
+	if earning.SignedCents != 33000 {
+		t.Fatalf("earning signed = %d, want 33000", earning.SignedCents)
+	}
+	if refund.SignedCents != -16500 {
+		t.Fatalf("refund signed = %d, want -16500", refund.SignedCents)
+	}
+	if earning.PropertyTitle != "Loft" || earning.Currency != "EUR" {
+		t.Fatalf("enrichment wrong: %+v", earning)
+	}
+}
+
 func TestEventHandler_NoRefundWithoutPriorEarning(t *testing.T) {
 	ctx := context.Background()
 	props := memory.NewPropertyRepository()

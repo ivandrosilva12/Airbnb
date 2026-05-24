@@ -40,13 +40,26 @@ export default function HostEarnings() {
     })();
   }, [isHost]);
 
+  async function exportCsv() {
+    try {
+      await api.downloadEarningsCsv();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   if (!isHost) return <div className="container"><p>{t('host.becomeText')}</p></div>;
 
   return (
     <div className="container">
       <div className="row-between">
         <h1>{t('earnings.title')}</h1>
-        <Link to="/host" className="btn btn-ghost">{t('host.backDashboard')}</Link>
+        <div className="actions">
+          {entries.length > 0 && (
+            <button className="btn btn-ghost" onClick={exportCsv}>{t('earnings.exportCsv')}</button>
+          )}
+          <Link to="/host" className="btn btn-ghost">{t('host.backDashboard')}</Link>
+        </div>
       </div>
       {error && <p className="error">{error}</p>}
       {loading ? (

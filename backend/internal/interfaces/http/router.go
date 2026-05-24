@@ -141,6 +141,7 @@ func NewRouter(d Deps) *gin.Engine {
 			host.GET("/host/metrics", h.Analytics.HostMetrics)
 			host.GET("/host/earnings", h.Payout.Summary)
 			host.GET("/host/earnings/entries", h.Payout.ListEntries)
+			host.GET("/host/earnings/export.csv", h.Payout.ExportCSV)
 			host.POST("/properties", h.Property.Create)
 			host.PATCH("/properties/:id", h.Property.Update)
 			host.DELETE("/properties/:id", h.Property.Delete)

@@ -121,6 +121,7 @@ export const api = {
   hostMetrics: () => request('GET', '/host/metrics', { auth: true }),
   hostEarnings: () => request('GET', '/host/earnings', { auth: true }),
   hostEarningEntries: () => request('GET', '/host/earnings/entries', { auth: true }),
+  downloadEarningsCsv: () => downloadFile('/host/earnings/export.csv', 'airhost-earnings.csv'),
   myProperties: () => request('GET', '/host/properties', { auth: true }),
   createProperty: (body) => request('POST', '/properties', { body, auth: true }),
   publishProperty: (id) => request('POST', `/properties/${id}/publish`, { auth: true }),
