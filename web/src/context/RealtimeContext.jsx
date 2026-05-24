@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef } from 'react';
 import keycloak from '../keycloak';
 import { useAuth } from './AuthContext';
 import { useNotifications } from './NotificationsContext';
@@ -6,15 +6,32 @@ import { useMessages } from './MessagesContext';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081/api/v1';
 
+const RealtimeContext = createContext({ subscribe: () => () => {} });
+
+// useRealtime lets a component react to live server events. subscribe(cb) calls
+// cb with each parsed update ({ type, conversationId? }) and returns an
+// unsubscribe function — used by the chat thread to append inbound messages the
+// instant they arrive instead of polling.
+export function useRealtime() {
+  return useContext(RealtimeContext);
+}
+
 // RealtimeProvider opens a Server-Sent Events stream and refreshes the
 // notification/message views the moment the server signals a change, giving
-// near-instant badge updates. The 30s polling in those contexts remains as a
-// fallback if the stream drops. The token travels as a query parameter because
-// the browser EventSource API cannot set an Authorization header.
+// near-instant badge updates and live chat. The polling in those contexts
+// remains as a fallback if the stream drops. The token travels as a query
+// parameter because the browser EventSource API cannot set an Authorization
+// header.
 export function RealtimeProvider({ children }) {
   const { authenticated } = useAuth();
   const { refresh: refreshNotifications } = useNotifications();
   const { refresh: refreshMessages } = useMessages();
+  const listenersRef = useRef(new Set());
+
+  const subscribe = useCallback((cb) => {
+    listenersRef.current.add(cb);
+    return () => listenersRef.current.delete(cb);
+  }, []);
 
   useEffect(() => {
     if (!authenticated) return undefined;
@@ -43,6 +60,14 @@ export function RealtimeProvider({ children }) {
           const update = JSON.parse(e.data);
           if (update.type === 'message') refreshMessages();
           else refreshNotifications();
+          // Fan the raw update out to subscribers (e.g. an open chat thread).
+          listenersRef.current.forEach((cb) => {
+            try {
+              cb(update);
+            } catch {
+              /* a listener error must not break the stream */
+            }
+          });
         } catch {
           /* ignore malformed payloads */
         }
@@ -63,5 +88,5 @@ export function RealtimeProvider({ children }) {
     };
   }, [authenticated, refreshNotifications, refreshMessages]);
 
-  return children;
+  return <RealtimeContext.Provider value={{ subscribe }}>{children}</RealtimeContext.Provider>;
 }

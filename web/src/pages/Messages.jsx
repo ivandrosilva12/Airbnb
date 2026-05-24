@@ -3,11 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useMessages } from '../context/MessagesContext';
+import { useRealtime } from '../context/RealtimeContext';
 import { useT } from '../i18n/I18nContext';
 
 export default function Messages() {
   const { profile } = useAuth();
   const { markRead } = useMessages();
+  const { subscribe } = useRealtime();
   const { t } = useT();
   const [searchParams, setSearchParams] = useSearchParams();
   const [conversations, setConversations] = useState([]);
@@ -16,6 +18,8 @@ export default function Messages() {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState(null);
   const endRef = useRef(null);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
 
   async function loadConversations() {
     try {
@@ -50,11 +54,26 @@ export default function Messages() {
     // Opening a thread clears its unread count locally and on the server.
     setConversations((prev) => prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)));
     markRead(activeId);
-    // Poll the open thread so inbound messages appear without a manual reload
-    // (the SSE stream refreshes the unread badge, not the message list).
-    const id = setInterval(() => loadMessages(activeId), 8000);
+    // A slow safety poll in case the realtime stream is down; inbound messages
+    // normally arrive instantly via the SSE subscription below.
+    const id = setInterval(() => loadMessages(activeId), 30000);
     return () => clearInterval(id);
   }, [activeId]);
+
+  // Live updates: when the server pushes a "message" event for the open thread,
+  // refresh it immediately (truly realtime, no polling lag). Any message event
+  // also refreshes the conversation list so its preview/unread stay current.
+  useEffect(
+    () =>
+      subscribe((update) => {
+        if (update.type !== 'message') return;
+        loadConversations();
+        if (update.conversationId && update.conversationId === activeIdRef.current) {
+          loadMessages(activeIdRef.current);
+        }
+      }),
+    [subscribe],
+  );
 
   // Refresh the conversation list periodically so last-message time and unread
   // counts stay current.

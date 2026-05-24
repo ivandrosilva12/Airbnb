@@ -34,15 +34,16 @@ func TestEventHandler_PushesToAffectedUser(t *testing.T) {
 
 	host := uuid.New()
 	guest := uuid.New()
+	conv := uuid.New()
 
 	dispatcher.Publish(ctx, event.BookingRequested{HostID: host, GuestID: guest})
 	dispatcher.Publish(ctx, event.BookingConfirmed{GuestID: guest})
-	dispatcher.Publish(ctx, event.MessageSent{SenderID: guest, RecipientID: host})
+	dispatcher.Publish(ctx, event.MessageSent{ConversationID: conv, SenderID: guest, RecipientID: host})
 
 	want := []capture{
 		{UserID: host, Payload: `{"type":"notification"}`},
 		{UserID: guest, Payload: `{"type":"notification"}`},
-		{UserID: host, Payload: `{"type":"message"}`},
+		{UserID: host, Payload: `{"type":"message","conversationId":"` + conv.String() + `"}`},
 	}
 	if len(hub.sent) != len(want) {
 		t.Fatalf("sent %d updates, want %d (%+v)", len(hub.sent), len(want), hub.sent)

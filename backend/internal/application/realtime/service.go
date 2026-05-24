@@ -27,8 +27,11 @@ func NewService(hub Broadcaster) *Service { return &Service{hub: hub} }
 
 // Update is the payload pushed to clients. Type tells the client which view to
 // refresh ("notification" or "message"); it intentionally carries no PII.
+// ConversationID is set on message updates so an open chat thread can refresh
+// itself the instant a message for it arrives (rather than polling).
 type Update struct {
-	Type string `json:"type"`
+	Type           string `json:"type"`
+	ConversationID string `json:"conversationId,omitempty"`
 }
 
 // EventHandler returns an event.Handler that pushes a hint to the user affected
@@ -37,25 +40,25 @@ func (s *Service) EventHandler() event.Handler {
 	return func(_ context.Context, e event.Event) {
 		switch ev := e.(type) {
 		case event.BookingRequested:
-			s.push(ev.HostID, "notification")
+			s.push(ev.HostID, Update{Type: "notification"})
 		case event.BookingConfirmed:
-			s.push(ev.GuestID, "notification")
+			s.push(ev.GuestID, Update{Type: "notification"})
 		case event.BookingCancelled:
 			recipient := ev.GuestID
 			if ev.CancelledBy == ev.GuestID {
 				recipient = ev.HostID
 			}
-			s.push(recipient, "notification")
+			s.push(recipient, Update{Type: "notification"})
 		case event.MessageSent:
-			s.push(ev.RecipientID, "message")
+			s.push(ev.RecipientID, Update{Type: "message", ConversationID: ev.ConversationID.String()})
 		case event.IdentityVerified:
-			s.push(ev.UserID, "notification")
+			s.push(ev.UserID, Update{Type: "notification"})
 		}
 	}
 }
 
-func (s *Service) push(userID uuid.UUID, typ string) {
-	payload, err := json.Marshal(Update{Type: typ})
+func (s *Service) push(userID uuid.UUID, update Update) {
+	payload, err := json.Marshal(update)
 	if err != nil {
 		return
 	}
