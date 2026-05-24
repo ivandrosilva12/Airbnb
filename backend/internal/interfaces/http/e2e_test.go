@@ -168,7 +168,7 @@ func newHarness(t *testing.T) *harness {
 			Identity:       handler.NewIdentityHandler(identitySvc),
 			Report:         handler.NewReportHandler(reportSvc),
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(config.PaymentConfig{GPayAngola: config.GPayAngolaConfig{WebhookSecret: webhookSecret}}), memory.NewWebhookEventRepository(), metrics),
-			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc),
+			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc, ""),
 		},
 	})
 

@@ -57,11 +57,24 @@ export function AuthProvider({ children }) {
     exchange();
   }, [response, discovery, request]);
 
-  // Returns a valid access token, refreshing if it is close to expiry.
+  // clearSession drops the stored tokens so the app falls back to the sign-in
+  // screen instead of retrying with credentials that will keep returning 401.
+  async function clearSession() {
+    setTokens(null);
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+  }
+
+  // Returns a valid access token, refreshing if it is close to expiry. When the
+  // refresh token is rejected (expired/revoked) the session is cleared and null
+  // is returned, so callers stop sending a dead token.
   async function getAccessToken() {
     if (!tokens) return null;
     if (Date.now() < tokens.expiresAt - 30_000) return tokens.accessToken;
-    if (!discovery || !tokens.refreshToken) return tokens.accessToken;
+    if (!discovery) return tokens.accessToken; // discovery not ready yet; transient
+    if (!tokens.refreshToken) {
+      await clearSession();
+      return null;
+    }
     try {
       const refreshed = await AuthSession.refreshAsync(
         { clientId: KEYCLOAK_CLIENT_ID, refreshToken: tokens.refreshToken },
@@ -76,13 +89,13 @@ export function AuthProvider({ children }) {
       await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(stored));
       return stored.accessToken;
     } catch {
-      return tokens.accessToken;
+      await clearSession();
+      return null;
     }
   }
 
   async function logout() {
-    setTokens(null);
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await clearSession();
   }
 
   const value = useMemo(

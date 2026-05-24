@@ -125,6 +125,13 @@ services:
       # Alertmanager base URL: enables the admin silence endpoints
       # (/api/v1/admin/alerts/silences). Leave empty to disable.
       ALERTMANAGER_URL: "${ALERTMANAGER_URL:-http://alertmanager:9093}"
+      # Shared token required on POST /webhooks/alerts (Alertmanager → API). When
+      # empty the route is open (trusted by the internal network).
+      ALERT_WEBHOOK_TOKEN: "${ALERT_WEBHOOK_TOKEN:-}"
+      # Request hardening: cap non-multipart bodies and per-IP API rate limit.
+      MAX_REQUEST_BODY_BYTES: "${MAX_REQUEST_BODY_BYTES:-1048576}"
+      API_RATE_RPS: "${API_RATE_RPS:-30}"
+      API_RATE_BURST: "${API_RATE_BURST:-60}"
     ports:
       - "8081:8081"
 
@@ -144,12 +151,17 @@ services:
     environment:
       # Set this to forward critical alerts to Slack; leave empty to email only.
       SLACK_WEBHOOK_URL: "${SLACK_WEBHOOK_URL:-}"
-    # Alertmanager does not expand env vars in its config file, so write the
-    # Slack webhook URL to the path the config reads via api_url_file, then exec.
+      # Bearer token sent to the API's /webhooks/alerts receiver. Must match the
+      # api service's ALERT_WEBHOOK_TOKEN when that is set; harmless otherwise.
+      ALERT_WEBHOOK_TOKEN: "${ALERT_WEBHOOK_TOKEN:-}"
+    # Alertmanager does not expand env vars in its config file, so write the Slack
+    # webhook URL and the API webhook token to the paths the config reads
+    # (api_url_file / credentials_file), then exec. The token file is kept
+    # non-empty so the credentials_file always loads.
     entrypoint:
       - /bin/sh
       - -c
-      - 'echo "${SLACK_WEBHOOK_URL:-https://hooks.slack.invalid/disabled}" > /tmp/slack_url && exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager'
+      - 'echo "${SLACK_WEBHOOK_URL:-https://hooks.slack.invalid/disabled}" > /tmp/slack_url && echo "${ALERT_WEBHOOK_TOKEN:-airhost-local-alerts}" > /tmp/alert_token && exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager'
     volumes:
       - ./infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     ports:

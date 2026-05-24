@@ -17,19 +17,50 @@ export function RealtimeProvider({ children }) {
   const { refresh: refreshMessages } = useMessages();
 
   useEffect(() => {
-    if (!authenticated || !keycloak.token) return undefined;
-    const url = `${BASE_URL}/realtime?access_token=${encodeURIComponent(keycloak.token)}`;
-    const es = new EventSource(url);
-    es.onmessage = (e) => {
+    if (!authenticated) return undefined;
+
+    let es;
+    let retry;
+    let stopped = false;
+
+    // (re)connect with a freshly-refreshed token. The server closes the stream
+    // when the access token expires (~minutes); onerror then reconnects with a
+    // new token, so realtime updates keep flowing across token rotation.
+    async function connect() {
+      if (stopped) return;
       try {
-        const update = JSON.parse(e.data);
-        if (update.type === 'message') refreshMessages();
-        else refreshNotifications();
+        await keycloak.updateToken(30);
       } catch {
-        /* ignore malformed payloads */
+        /* token refresh failed; retry below */
       }
+      if (stopped || !keycloak.token) {
+        if (!stopped) retry = setTimeout(connect, 5000);
+        return;
+      }
+      es = new EventSource(`${BASE_URL}/realtime?access_token=${encodeURIComponent(keycloak.token)}`);
+      es.onmessage = (e) => {
+        try {
+          const update = JSON.parse(e.data);
+          if (update.type === 'message') refreshMessages();
+          else refreshNotifications();
+        } catch {
+          /* ignore malformed payloads */
+        }
+      };
+      es.onerror = () => {
+        es.close();
+        if (stopped) return;
+        clearTimeout(retry);
+        retry = setTimeout(connect, 5000); // reconnect with a fresh token
+      };
+    }
+
+    connect();
+    return () => {
+      stopped = true;
+      clearTimeout(retry);
+      if (es) es.close();
     };
-    return () => es.close();
   }, [authenticated, refreshNotifications, refreshMessages]);
 
   return children;

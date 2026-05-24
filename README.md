@@ -304,7 +304,7 @@ docker-compose.yml
 | Mobile (Expo) | Guest + host | Guest: explore, listing + booking, account hub, trips (with payment status, an in-app receipt breakdown, and a post-stay review prompt), saved, notifications, messages, contact host, report a listing, identity verification. Host: dashboard (metrics + earnings + listings) and per-listing booking management (confirm/complete/cancel). Builds require an emulator/device; not auto-verified |
 | Infra (compose) | Complete | Config authored; bring up with `docker compose up` |
 | Observability | Complete | `/metrics` endpoint + Prometheus scrape (api, prometheus, alertmanager) + Grafana dashboard (incl. webhook-events-by-outcome, rate-limited-per-minute, active-alerts table, and Alertmanager notification/held-alert panels) |
-| Alerting | Complete | Prometheus alert rules (`infra/prometheus/alerts.yml`): API down, 5xx error rate, webhook signature-rejection / processing-error spikes, sustained rate limiting. Routed by Alertmanager to email (MailHog locally) and Slack for critical (`SLACK_WEBHOOK_URL`); resolved notifications go to a separate channel/mailbox (templated on `.Status`). Each alert carries a `runbook_url` annotation linking to a per-alert page in [`docs/runbooks/`](docs/runbooks/), rendered as a clickable link in Slack and listed in the e-mail. Admins can mute alerts during maintenance via the silence API (`/admin/alerts/silences`, backed by Alertmanager `ALERTMANAGER_URL`) and a panel in the web Moderation console. Alertmanager also pushes every firing/resolved notification to the API (`POST /webhooks/alerts`), which keeps an in-memory alert-state view exposed at `GET /admin/alerts` and rendered as a live "Alerts" panel (firing + recently resolved) in the console — so resolved state shows in-app, not just email/Slack |
+| Alerting | Complete | Prometheus alert rules (`infra/prometheus/alerts.yml`): API down, 5xx error rate, webhook signature-rejection / processing-error spikes, sustained rate limiting. Routed by Alertmanager to email (MailHog locally) and Slack for critical (`SLACK_WEBHOOK_URL`); resolved notifications go to a separate channel/mailbox (templated on `.Status`). Each alert carries a `runbook_url` annotation linking to a per-alert page in [`docs/runbooks/`](docs/runbooks/), rendered as a clickable link in Slack and listed in the e-mail. Admins can mute alerts during maintenance via the silence API (`/admin/alerts/silences`, backed by Alertmanager `ALERTMANAGER_URL`) and a panel in the web Moderation console. Alertmanager also pushes every firing/resolved notification to the API (`POST /webhooks/alerts`), which keeps an in-memory alert-state view exposed at `GET /admin/alerts` and rendered as a live "Alerts" panel (firing + recently resolved) in the console — so resolved state shows in-app, not just email/Slack. The webhook receiver can require a bearer token (`ALERT_WEBHOOK_TOKEN`) |
 
 ### Notes & next steps
 
@@ -336,4 +336,14 @@ docker-compose.yml
   only mounted when its webhook secret is configured. The webhook route is
   rate-limited per IP (token bucket) and Stripe signatures are rejected outside a
   5-minute timestamp window to blunt replay/flood attacks.
+- Request hardening: non-multipart request bodies are capped
+  (`MAX_REQUEST_BODY_BYTES`, default 1 MiB) and the whole `/api/v1` surface is
+  rate-limited per IP (`API_RATE_RPS`/`API_RATE_BURST`, default 30/60; disabled
+  when set to 0). The Alertmanager webhook receiver (`POST /webhooks/alerts`)
+  can require a bearer token via `ALERT_WEBHOOK_TOKEN` (Alertmanager sends it
+  through a `credentials_file`); when unset the route is open on the internal
+  network only.
+- Realtime: the web SSE stream reconnects with a freshly-refreshed token when it
+  drops, and the mobile client clears its session on a failed token refresh so a
+  dead token does not loop 401s.
 ```

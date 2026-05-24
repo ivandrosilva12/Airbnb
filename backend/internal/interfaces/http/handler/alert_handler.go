@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"crypto/subtle"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	alertingapp "github.com/airhost/backend/internal/application/alerting"
@@ -20,14 +22,16 @@ import (
 // receiver that records the latest alert states, and an admin read of those
 // states so the internal UI can reflect firing/resolved (not just e-mail/Slack).
 type AlertHandler struct {
-	svc   *alertingapp.Service
-	state *alertstateapp.Service
+	svc          *alertingapp.Service
+	state        *alertstateapp.Service
+	webhookToken string
 }
 
 // NewAlertHandler builds an AlertHandler. state may be nil to disable the
-// alert-state view (the silence endpoints still work).
-func NewAlertHandler(svc *alertingapp.Service, state *alertstateapp.Service) *AlertHandler {
-	return &AlertHandler{svc: svc, state: state}
+// alert-state view (the silence endpoints still work). webhookToken, when
+// non-empty, is required as a bearer on the Alertmanager webhook receiver.
+func NewAlertHandler(svc *alertingapp.Service, state *alertstateapp.Service, webhookToken string) *AlertHandler {
+	return &AlertHandler{svc: svc, state: state, webhookToken: webhookToken}
 }
 
 type silenceMatcherRequest struct {
@@ -132,6 +136,10 @@ type alertmanagerNotification struct {
 // does not retry. This route is authenticated by network placement (internal),
 // not a user token, so it lives outside the auth group.
 func (h *AlertHandler) IngestNotification(c *gin.Context) {
+	if !h.authorizeWebhook(c) {
+		response.FailMessage(c, http.StatusUnauthorized, "invalid alert webhook token")
+		return
+	}
 	if h.state == nil {
 		response.OK(c, gin.H{"status": "ignored"})
 		return
@@ -169,6 +177,17 @@ func (h *AlertHandler) ListAlerts(c *gin.Context) {
 		items = append(items, dto.FromAlertState(s))
 	}
 	response.OK(c, gin.H{"items": items})
+}
+
+// authorizeWebhook reports whether the alert-webhook request carries the
+// configured bearer token. When no token is configured the route is open
+// (trusted by network placement).
+func (h *AlertHandler) authorizeWebhook(c *gin.Context) bool {
+	if h.webhookToken == "" {
+		return true
+	}
+	got := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+	return subtle.ConstantTimeCompare([]byte(got), []byte(h.webhookToken)) == 1
 }
 
 // currentActor returns a human label for who performed the action, preferring

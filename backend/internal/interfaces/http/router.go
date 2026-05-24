@@ -50,6 +50,7 @@ func NewRouter(d Deps) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(middleware.Metrics(d.Metrics))
+	r.Use(middleware.MaxBody(d.Config.Security.MaxRequestBodyBytes))
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     d.Config.HTTP.AllowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
@@ -65,6 +66,15 @@ func NewRouter(d Deps) *gin.Engine {
 	r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(d.Registry, promhttp.HandlerOpts{})))
 
 	api := r.Group("/api/v1")
+
+	// Coarse per-IP rate limit over the whole API surface (blunts floods/brute
+	// force). Disabled when APIRateRPS <= 0 (the default in tests).
+	if d.Config.Security.APIRateRPS > 0 {
+		api.Use(middleware.RateLimit(
+			d.Config.Security.APIRateRPS, d.Config.Security.APIRateBurst,
+			func() { d.Metrics.RateLimitedTotal.WithLabelValues("api").Inc() },
+		))
+	}
 
 	// Public listing & review reads.
 	api.GET("/amenities", h.Property.Amenities)

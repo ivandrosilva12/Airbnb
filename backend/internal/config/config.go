@@ -29,6 +29,10 @@ type Config struct {
 // the feature as unavailable rather than calling out).
 type AlertingConfig struct {
 	AlertmanagerURL string // e.g. http://alertmanager:9093
+	// WebhookToken, when set, is required as a bearer on POST /webhooks/alerts so
+	// only Alertmanager can push alert state. Empty disables the check (the
+	// internal-network default).
+	WebhookToken string
 }
 
 // PricingConfig holds platform pricing policy.
@@ -46,6 +50,14 @@ type SecurityConfig struct {
 	// WebhookCleanupInterval is how often the scheduled cleanup runs.
 	WebhookRetentionDays   int
 	WebhookCleanupInterval time.Duration
+	// MaxRequestBodyBytes caps non-multipart request bodies (file uploads manage
+	// their own, larger limit). Guards against memory-amplification DoS.
+	MaxRequestBodyBytes int64
+	// APIRateRPS / APIRateBurst configure a per-IP token bucket over the whole
+	// /api/v1 surface. When APIRateRPS is <= 0 the limiter is disabled (the
+	// default in tests); production sets a sane positive default.
+	APIRateRPS   float64
+	APIRateBurst int
 }
 
 // PaymentConfig selects and configures the payment gateway. Provider is one of
@@ -221,9 +233,13 @@ func Load() (*Config, error) {
 			WebhookRateBurst:       getInt("WEBHOOK_RATE_BURST", 20),
 			WebhookRetentionDays:   getInt("WEBHOOK_RETENTION_DAYS", 30),
 			WebhookCleanupInterval: getDuration("WEBHOOK_CLEANUP_INTERVAL", 24*time.Hour),
+			MaxRequestBodyBytes:    int64(getInt("MAX_REQUEST_BODY_BYTES", 1<<20)),
+			APIRateRPS:             getFloat("API_RATE_RPS", 30),
+			APIRateBurst:           getInt("API_RATE_BURST", 60),
 		},
 		Alerting: AlertingConfig{
 			AlertmanagerURL: getEnv("ALERTMANAGER_URL", ""),
+			WebhookToken:    getEnv("ALERT_WEBHOOK_TOKEN", ""),
 		},
 	}
 

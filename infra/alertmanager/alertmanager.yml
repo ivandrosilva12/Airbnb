@@ -46,6 +46,10 @@ receivers:
     webhook_configs:
       - url: 'http://api:8081/api/v1/webhooks/alerts'
         send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /tmp/alert_token
 
   - name: critical
     email_configs:
@@ -57,6 +61,10 @@ receivers:
     webhook_configs:
       - url: 'http://api:8081/api/v1/webhooks/alerts'
         send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /tmp/alert_token
     slack_configs:
       - api_url_file: /tmp/slack_url
         channel: '{{ if eq .Status "resolved" }}#airhost-resolved{{ else }}#airhost-alerts{{ end }}'
