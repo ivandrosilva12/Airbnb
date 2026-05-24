@@ -35,21 +35,34 @@ type DateWindow struct {
 
 // Search runs a filtered listing search. When window is non-nil, listings that
 // are booked or host-blocked over the window are excluded.
+//
+// When the property repository can filter availability in the data store
+// (property.AvailabilitySearcher) the window is pushed down into the query — a
+// single SQL statement with NOT EXISTS subqueries — avoiding a scan that
+// materialises every occupied listing id. Repositories without that capability
+// (e.g. the in-memory store used in tests) fall back to computing the occupied
+// set here and passing it as ExcludeIDs.
 func (s *Service) Search(ctx context.Context, criteria property.SearchCriteria, window *DateWindow) (shared.PageResult[*property.Property], error) {
-	if window != nil {
-		if !window.CheckOut.After(window.CheckIn) {
-			return shared.PageResult[*property.Property]{}, shared.NewValidationError("checkOut must be after checkIn")
-		}
-		booked, err := s.bookings.BookedPropertyIDs(ctx, window.CheckIn, window.CheckOut)
-		if err != nil {
-			return shared.PageResult[*property.Property]{}, err
-		}
-		blocked, err := s.blocks.BlockedPropertyIDs(ctx, window.CheckIn, window.CheckOut)
-		if err != nil {
-			return shared.PageResult[*property.Property]{}, err
-		}
-		criteria.ExcludeIDs = dedupeIDs(append(booked, blocked...))
+	if window == nil {
+		return s.properties.Search(ctx, criteria)
 	}
+	if !window.CheckOut.After(window.CheckIn) {
+		return shared.PageResult[*property.Property]{}, shared.NewValidationError("checkOut must be after checkIn")
+	}
+
+	if af, ok := s.properties.(property.AvailabilitySearcher); ok {
+		return af.SearchAvailable(ctx, criteria, window.CheckIn, window.CheckOut)
+	}
+
+	booked, err := s.bookings.BookedPropertyIDs(ctx, window.CheckIn, window.CheckOut)
+	if err != nil {
+		return shared.PageResult[*property.Property]{}, err
+	}
+	blocked, err := s.blocks.BlockedPropertyIDs(ctx, window.CheckIn, window.CheckOut)
+	if err != nil {
+		return shared.PageResult[*property.Property]{}, err
+	}
+	criteria.ExcludeIDs = dedupeIDs(append(booked, blocked...))
 	return s.properties.Search(ctx, criteria)
 }
 

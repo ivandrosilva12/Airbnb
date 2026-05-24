@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -163,6 +164,20 @@ func (r *PropertyRepository) ListByHost(ctx context.Context, hostID uuid.UUID, p
 }
 
 func (r *PropertyRepository) Search(ctx context.Context, c property.SearchCriteria) (shared.PageResult[*property.Property], error) {
+	return r.search(ctx, c, nil)
+}
+
+type availabilityWindow struct{ checkIn, checkOut time.Time }
+
+// SearchAvailable runs Search and additionally excludes listings booked or
+// host-blocked over [checkIn, checkOut), pushing that filter into the database
+// as NOT EXISTS subqueries instead of materialising the occupied id set in the
+// application. It implements property.AvailabilitySearcher.
+func (r *PropertyRepository) SearchAvailable(ctx context.Context, c property.SearchCriteria, checkIn, checkOut time.Time) (shared.PageResult[*property.Property], error) {
+	return r.search(ctx, c, &availabilityWindow{checkIn: checkIn, checkOut: checkOut})
+}
+
+func (r *PropertyRepository) search(ctx context.Context, c property.SearchCriteria, win *availabilityWindow) (shared.PageResult[*property.Property], error) {
 	var (
 		conds = []string{"status = 'published'"}
 		args  []any
@@ -211,6 +226,21 @@ func (r *PropertyRepository) Search(ctx context.Context, c property.SearchCriter
 				`cos(radians($%d)) * cos(radians(latitude)) * cos(radians(longitude) - radians($%d)) `+
 				`+ sin(radians($%d)) * sin(radians(latitude))))) <= $%d`,
 			lat, lng, lat, radius))
+	}
+	if win != nil {
+		// Push availability filtering into the query: keep only listings with no
+		// active booking and no host block overlapping [checkIn, checkOut). The
+		// half-open overlap test (check_in < end AND start < check_out) matches the
+		// booking/block availability queries and the no-overlap DB constraint.
+		args = append(args, win.checkIn, win.checkOut)
+		ci := len(args) - 1
+		co := len(args)
+		conds = append(conds, fmt.Sprintf(
+			`NOT EXISTS (SELECT 1 FROM bookings b WHERE b.property_id = properties.id `+
+				`AND b.status IN ('pending','confirmed') AND b.check_in < $%d AND $%d < b.check_out)`, co, ci))
+		conds = append(conds, fmt.Sprintf(
+			`NOT EXISTS (SELECT 1 FROM property_blocks pb WHERE pb.property_id = properties.id `+
+				`AND pb.check_in < $%d AND $%d < pb.check_out)`, co, ci))
 	}
 	where := "WHERE " + strings.Join(conds, " AND ")
 

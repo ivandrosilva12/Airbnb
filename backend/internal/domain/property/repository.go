@@ -2,6 +2,7 @@ package property
 
 import (
 	"context"
+	"time"
 
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
@@ -58,4 +59,14 @@ type Repository interface {
 	Search(ctx context.Context, criteria SearchCriteria) (shared.PageResult[*Property], error)
 	// UpdateRating persists the denormalised review aggregates for a listing.
 	UpdateRating(ctx context.Context, id uuid.UUID, average float64, count int) error
+}
+
+// AvailabilitySearcher is an optional Repository capability: it runs a search
+// while excluding listings that are booked or host-blocked over [checkIn,
+// checkOut), filtering inside the data store rather than having the caller
+// materialise the occupied id set. The search service prefers this push-down
+// when the backing repository implements it, falling back to ExcludeIDs
+// otherwise.
+type AvailabilitySearcher interface {
+	SearchAvailable(ctx context.Context, criteria SearchCriteria, checkIn, checkOut time.Time) (shared.PageResult[*Property], error)
 }
