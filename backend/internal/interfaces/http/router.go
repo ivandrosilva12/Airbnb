@@ -26,6 +26,7 @@ type Handlers struct {
 	Block        *handler.BlockHandler
 	Payout       *handler.PayoutHandler
 	Realtime     *handler.RealtimeHandler
+	Identity     *handler.IdentityHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -80,6 +81,10 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.PATCH("/me", h.User.UpdateMe)
 		auth.PATCH("/me/preferences", h.User.UpdatePreferences)
 		auth.POST("/me/become-host", h.User.BecomeHost)
+
+		// KYC identity verification (user-facing submit/status).
+		auth.GET("/me/verification", h.Identity.GetMine)
+		auth.POST("/me/verification", h.Identity.Submit)
 
 		// Bookings.
 		auth.POST("/bookings", h.Booking.Create)
@@ -152,6 +157,11 @@ func NewRouter(d Deps) *gin.Engine {
 		{
 			admin.POST("/properties/:id/suspend", h.Property.AdminSuspend)
 			admin.POST("/properties/:id/unsuspend", h.Property.AdminUnsuspend)
+
+			// KYC review queue.
+			admin.GET("/verifications", h.Identity.ListPending)
+			admin.POST("/verifications/:id/approve", h.Identity.Approve)
+			admin.POST("/verifications/:id/reject", h.Identity.Reject)
 		}
 	}
 

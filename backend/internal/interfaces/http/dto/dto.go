@@ -9,6 +9,7 @@ import (
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/payment"
@@ -456,6 +457,34 @@ func FromBlock(b *block.Block) BlockView {
 		CheckOut:  b.Dates.CheckOut.Format("2006-01-02"),
 		Reason:    b.Reason,
 		CreatedAt: b.CreatedAt,
+	}
+}
+
+// VerificationView is the public representation of a KYC identity-verification
+// request. The document reference is intentionally omitted from the view to
+// avoid echoing potentially sensitive data back to clients.
+type VerificationView struct {
+	ID              uuid.UUID  `json:"id"`
+	UserID          uuid.UUID  `json:"userId"`
+	Status          string     `json:"status"`
+	DocumentType    string     `json:"documentType"`
+	LegalName       string     `json:"legalName"`
+	RejectionReason string     `json:"rejectionReason,omitempty"`
+	ReviewedAt      *time.Time `json:"reviewedAt,omitempty"`
+	CreatedAt       time.Time  `json:"createdAt"`
+}
+
+// FromVerification maps a verification aggregate to its view.
+func FromVerification(v *identity.Verification) VerificationView {
+	return VerificationView{
+		ID:              v.ID,
+		UserID:          v.UserID,
+		Status:          string(v.Status),
+		DocumentType:    string(v.DocumentType),
+		LegalName:       v.LegalName,
+		RejectionReason: v.RejectionReason,
+		ReviewedAt:      v.ReviewedAt,
+		CreatedAt:       v.CreatedAt,
 	}
 }
 

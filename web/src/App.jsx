@@ -12,6 +12,7 @@ import HostBookings from './pages/HostBookings';
 import CreateListing from './pages/CreateListing';
 import HostPhotos from './pages/HostPhotos';
 import Settings from './pages/Settings';
+import Admin from './pages/Admin';
 
 function Protected({ children }) {
   const { ready, authenticated, login } = useAuth();
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="/messages" element={<Protected><Messages /></Protected>} />
             <Route path="/notifications" element={<Protected><Notifications /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
+            <Route path="/admin" element={<Protected><Admin /></Protected>} />
             <Route path="/host" element={<Protected><HostDashboard /></Protected>} />
             <Route path="/host/new" element={<Protected><CreateListing /></Protected>} />
             <Route path="/host/properties/:id/bookings" element={<Protected><HostBookings /></Protected>} />

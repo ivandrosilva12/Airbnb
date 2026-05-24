@@ -14,6 +14,7 @@ import (
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/favorite"
+	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/payment"
@@ -37,6 +38,7 @@ var (
 	_ payment.Repository      = (*PaymentRepository)(nil)
 	_ payout.Repository       = (*PayoutRepository)(nil)
 	_ block.Repository        = (*BlockRepository)(nil)
+	_ identity.Repository     = (*IdentityRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -961,6 +963,79 @@ func (r *BlockRepository) BlockedPropertyIDs(_ context.Context, from, to time.Ti
 		}
 	}
 	return ids, nil
+}
+
+// --- Identity verifications --------------------------------------------------
+
+// IdentityRepository is an in-memory identity.Repository.
+type IdentityRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]identity.Verification
+}
+
+// NewIdentityRepository builds an empty in-memory identity repository.
+func NewIdentityRepository() *IdentityRepository {
+	return &IdentityRepository{m: map[uuid.UUID]identity.Verification{}}
+}
+
+func (r *IdentityRepository) Create(_ context.Context, v *identity.Verification) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.m[v.ID] = *v
+	return nil
+}
+
+func (r *IdentityRepository) Update(_ context.Context, v *identity.Verification) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[v.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[v.ID] = *v
+	return nil
+}
+
+func (r *IdentityRepository) FindByID(_ context.Context, id uuid.UUID) (*identity.Verification, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if v, ok := r.m[id]; ok {
+		c := v
+		return &c, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *IdentityRepository) FindLatestByUser(_ context.Context, userID uuid.UUID) (*identity.Verification, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var latest *identity.Verification
+	for _, v := range r.m {
+		if v.UserID != userID {
+			continue
+		}
+		if latest == nil || v.CreatedAt.After(latest.CreatedAt) {
+			c := v
+			latest = &c
+		}
+	}
+	if latest == nil {
+		return nil, shared.ErrNotFound
+	}
+	return latest, nil
+}
+
+func (r *IdentityRepository) ListByStatus(_ context.Context, status identity.Status, page shared.Page) (shared.PageResult[*identity.Verification], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*identity.Verification
+	for _, v := range r.m {
+		if v.Status == status {
+			c := v
+			all = append(all, &c)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
+	return paginate(all, page), nil
 }
 
 // --- helpers -----------------------------------------------------------------

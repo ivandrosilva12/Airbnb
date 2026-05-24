@@ -31,6 +31,7 @@ type category int
 const (
 	catBookings category = iota
 	catMessages
+	catAccount // account/security emails — always delivered, not opt-out
 )
 
 // EventHandler returns an event.Handler that emails the relevant party. It is
@@ -57,6 +58,10 @@ func (s *Service) EventHandler() event.Handler {
 		case event.MessageSent:
 			s.send(ctx, ev.RecipientID, catMessages, "New message",
 				"You have a new message on AirHost. Open the app to reply.")
+
+		case event.IdentityVerified:
+			s.send(ctx, ev.UserID, catAccount, "Identity verified",
+				"Your identity has been verified. Your account now shows a verified badge.")
 		}
 	}
 }
@@ -78,6 +83,8 @@ func (s *Service) send(ctx context.Context, userID uuid.UUID, cat category, subj
 
 func optedIn(prefs user.EmailPreferences, cat category) bool {
 	switch cat {
+	case catAccount:
+		return true // account/security emails cannot be opted out of
 	case catMessages:
 		return prefs.Messages
 	default:

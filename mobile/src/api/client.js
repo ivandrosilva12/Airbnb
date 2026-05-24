@@ -31,6 +31,11 @@ export function createApi(getAccessToken) {
     },
     getProperty: (id) => request('GET', `/properties/${id}`),
     me: () => request('GET', '/me', { auth: true }),
+
+    // Identity verification (KYC)
+    getVerification: () => request('GET', '/me/verification', { auth: true }),
+    submitVerification: (body) => request('POST', '/me/verification', { body, auth: true }),
+
     createBooking: (body) => request('POST', '/bookings', { body, auth: true }),
     myBookings: () => request('GET', '/bookings/me', { auth: true }),
     cancelBooking: (id) => request('POST', `/bookings/${id}/cancel`, { auth: true }),

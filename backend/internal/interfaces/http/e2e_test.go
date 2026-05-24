@@ -19,6 +19,7 @@ import (
 	emailapp "github.com/airhost/backend/internal/application/email"
 	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
+	identityapp "github.com/airhost/backend/internal/application/identity"
 	messageapp "github.com/airhost/backend/internal/application/message"
 	notificationapp "github.com/airhost/backend/internal/application/notification"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
@@ -77,6 +78,7 @@ func newHarness(t *testing.T) *harness {
 	paymentRepo := memory.NewPaymentRepository()
 	payoutRepo := memory.NewPayoutRepository()
 	blockRepo := memory.NewBlockRepository()
+	identityRepo := memory.NewIdentityRepository()
 
 	dispatcher := event.NewDispatcher()
 
@@ -94,6 +96,7 @@ func newHarness(t *testing.T) *harness {
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
+	identitySvc := identityapp.NewService(identityRepo, dispatcher)
 	realtimeHub := realtime.NewHub()
 	realtimeSvc := realtimeapp.NewService(realtimeHub)
 	dispatcher.Subscribe(notificationSvc.EventHandler())
@@ -143,6 +146,7 @@ func newHarness(t *testing.T) *harness {
 			Block:        handler.NewBlockHandler(blockSvc),
 			Payout:       handler.NewPayoutHandler(payoutSvc),
 			Realtime:     handler.NewRealtimeHandler(realtimeHub),
+			Identity:     handler.NewIdentityHandler(identitySvc),
 		},
 	})
 

@@ -50,3 +50,12 @@ type MessageSent struct {
 }
 
 func (MessageSent) EventName() string { return "message.sent" }
+
+// IdentityVerified is published when an administrator approves a user's KYC
+// identity-verification request. The user is notified and emailed.
+type IdentityVerified struct {
+	VerificationID uuid.UUID
+	UserID         uuid.UUID
+}
+
+func (IdentityVerified) EventName() string { return "identity.verified" }

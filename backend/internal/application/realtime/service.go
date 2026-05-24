@@ -48,6 +48,8 @@ func (s *Service) EventHandler() event.Handler {
 			s.push(recipient, "notification")
 		case event.MessageSent:
 			s.push(ev.RecipientID, "message")
+		case event.IdentityVerified:
+			s.push(ev.UserID, "notification")
 		}
 	}
 }

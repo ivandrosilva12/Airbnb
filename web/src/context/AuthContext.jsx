@@ -36,6 +36,7 @@ export function AuthProvider({ children }) {
     authenticated,
     profile,
     isHost: profile?.role === 'host' || profile?.role === 'admin',
+    isAdmin: profile?.role === 'admin',
     login: () => keycloak.login(),
     register: () => keycloak.register(),
     logout: () => keycloak.logout({ redirectUri: window.location.origin }),

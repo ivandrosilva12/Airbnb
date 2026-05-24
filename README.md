@@ -47,7 +47,8 @@ ones:
 
 Bounded contexts: **user**, **property**, **booking**, **review**, **message**
 (host↔guest threads), **favorite** (wishlists), **notification** (in-app),
-**payment**, **block** (host calendar blocks), **payout** (host earnings ledger).
+**payment**, **block** (host calendar blocks), **payout** (host earnings ledger),
+**identity** (KYC identity verification).
 The **email** application service turns the same domain events into transactional
 email. Read-model query services compose
 multiple contexts without owning data: `searchapp` (property + booking + block,
@@ -180,6 +181,7 @@ Public:
 
 Authenticated (Bearer token):
 - `GET /me` · `PATCH /me` · `PATCH /me/preferences` (email opt-outs) · `POST /me/become-host`
+- `GET /me/verification` · `POST /me/verification` — submit / read KYC identity verification
 - `POST /bookings` · `GET /bookings/me` · `GET /bookings/:id` · `POST /bookings/:id/cancel`
 - `POST /reviews` (guest → property) · `POST /reviews/guest` (host → guest) · `GET /me/guest-reviews`
 - `GET /conversations` (each with the viewer's `unreadCount`) · `POST /conversations` (start/get a thread)
@@ -205,6 +207,7 @@ Host only:
 
 Admin only:
 - `POST /admin/properties/:id/suspend` · `POST /admin/properties/:id/unsuspend`
+- `GET /admin/verifications` (review queue) · `POST /admin/verifications/:id/approve` · `POST /admin/verifications/:id/reject`
 
 The stay lifecycle is: `pending → confirmed → completed`, with `cancelled` reachable
 from pending/confirmed. A guest can only review a **completed** booking, so the host
@@ -245,7 +248,8 @@ docker-compose.yml
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Advanced pricing | Complete | Per-listing weekly/monthly length-of-stay discounts + occupancy tax (migration 0014); derived in the domain and stored on the booking; create-listing form + detail/receipt breakdown; covered by unit + e2e tests |
 | Photo management | Complete | Reorder (first photo = cover), set-cover and delete on the property aggregate; host-only `PATCH /photos/order` + `DELETE /photos/:photoId`; web photo manager page; covered by an e2e test |
-| Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
+| Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; KYC review queue; web `/admin` console; covered by the e2e test |
+| Identity verification (KYC) | Complete | New `identity` context: users submit a document, admins approve/reject (migration 0015); approval publishes an `IdentityVerified` event → notification + account email; web settings panel + admin queue, mobile submit/status screen; covered by unit + e2e tests |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification/payment/email subscribe |
 | Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |
 | Real-time updates | Complete | SSE endpoint + in-process fan-out hub pushing live notification/message hints; web `EventSource` refreshes badges instantly (polling kept as fallback); covered by hub/service unit tests + a streaming e2e test |
@@ -259,7 +263,7 @@ docker-compose.yml
 | CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build |
 | SQL schema | Complete | Applied by the startup migrator |
 | Web (React) | Complete | `npm run build` passes |
-| Mobile (Expo) | Guest + host | Guest: explore, listing + booking, account hub, trips, saved, notifications, messages, contact host. Host: dashboard (metrics + earnings + listings) and per-listing booking management (confirm/complete/cancel). Builds require an emulator/device; not auto-verified |
+| Mobile (Expo) | Guest + host | Guest: explore, listing + booking, account hub, trips, saved, notifications, messages, contact host, identity verification. Host: dashboard (metrics + earnings + listings) and per-listing booking management (confirm/complete/cancel). Builds require an emulator/device; not auto-verified |
 | Infra (compose) | Complete | Config authored; bring up with `docker compose up` |
 | Observability | Complete | `/metrics` endpoint + Prometheus scrape + Grafana dashboard |
 
@@ -269,7 +273,11 @@ docker-compose.yml
 - Real-time delivery uses an in-process SSE hub; horizontal scaling would put an
   external bus (e.g. Redis pub/sub) behind the same `Broadcaster` interface. The
   SSE token travels as a query parameter because `EventSource` cannot set headers.
+- KYC identity verification: users submit a document reference + legal name; in
+  production `documentRef` would be an object-storage key for an uploaded scan
+  held by a KYC provider, never raw PII. Account/security emails (e.g. the
+  verified confirmation) are always delivered and cannot be opted out of.
 - Suggested follow-ups: a real payment gateway (Stripe) behind the existing
-  `PaymentGateway` port, identity verification (KYC), listing/abuse reporting with
-  an admin moderation UI, and full-stack e2e tests against a live Keycloak.
+  `PaymentGateway` port, listing/abuse reporting with an admin moderation UI, and
+  full-stack e2e tests against a live Keycloak.
 ```

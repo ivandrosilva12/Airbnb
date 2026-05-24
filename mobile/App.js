@@ -10,6 +10,7 @@ import FavoritesScreen from './src/screens/FavoritesScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import MessagesScreen from './src/screens/MessagesScreen';
 import ConversationScreen from './src/screens/ConversationScreen';
+import VerificationScreen from './src/screens/VerificationScreen';
 import HostListingsScreen from './src/screens/HostListingsScreen';
 import HostPropertyBookingsScreen from './src/screens/HostPropertyBookingsScreen';
 import { HeaderAuthButton } from './src/screens/HeaderAuthButton';
@@ -34,6 +35,7 @@ export default function App() {
           <Stack.Screen name="Trips" component={TripsScreen} options={{ title: 'My trips' }} />
           <Stack.Screen name="Saved" component={FavoritesScreen} options={{ title: 'Saved listings' }} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+          <Stack.Screen name="Verification" component={VerificationScreen} options={{ title: 'Identity verification' }} />
           <Stack.Screen name="Messages" component={MessagesScreen} options={{ title: 'Messages' }} />
           <Stack.Screen name="Conversation" component={ConversationScreen} options={{ title: 'Conversation' }} />
           <Stack.Screen name="HostListings" component={HostListingsScreen} options={{ title: 'Host dashboard' }} />

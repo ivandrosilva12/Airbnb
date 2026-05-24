@@ -90,6 +90,15 @@ export const api = {
   updatePreferences: (prefs) => request('PATCH', '/me/preferences', { body: prefs, auth: true }),
   becomeHost: () => request('POST', '/me/become-host', { auth: true }),
 
+  // Identity verification (KYC)
+  getVerification: () => request('GET', '/me/verification', { auth: true }),
+  submitVerification: (body) => request('POST', '/me/verification', { body, auth: true }),
+
+  // Admin moderation
+  adminListVerifications: () => request('GET', '/admin/verifications', { auth: true }),
+  adminApproveVerification: (id) => request('POST', `/admin/verifications/${id}/approve`, { auth: true }),
+  adminRejectVerification: (id, reason) => request('POST', `/admin/verifications/${id}/reject`, { body: { reason }, auth: true }),
+
   // Bookings
   createBooking: (body) => request('POST', '/bookings', { body, auth: true }),
   myBookings: () => request('GET', '/bookings/me', { auth: true }),

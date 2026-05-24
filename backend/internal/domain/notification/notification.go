@@ -19,6 +19,7 @@ const (
 	TypeBookingConfirmed Type = "booking_confirmed"
 	TypeBookingCancelled Type = "booking_cancelled"
 	TypeMessageReceived  Type = "message_received"
+	TypeIdentityVerified Type = "identity_verified"
 )
 
 // Notification is the aggregate root for a single in-app notification.

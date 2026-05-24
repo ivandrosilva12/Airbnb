@@ -39,6 +39,11 @@ func (s *Service) EventHandler() event.Handler {
 			err = s.create(ctx, ev.RecipientID, notification.TypeMessageReceived,
 				"New message",
 				"You have a new message.", ev.ConversationID)
+
+		case event.IdentityVerified:
+			err = s.create(ctx, ev.UserID, notification.TypeIdentityVerified,
+				"Identity verified",
+				"Your identity has been verified. You now have a verified badge.", ev.VerificationID)
 		}
 		if err != nil {
 			slog.Error("failed to create notification", "event", e.EventName(), "error", err)

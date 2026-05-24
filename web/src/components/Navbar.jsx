@@ -16,7 +16,7 @@ function LanguageSwitcher() {
 }
 
 export default function Navbar() {
-  const { authenticated, profile, isHost, login, register, logout } = useAuth();
+  const { authenticated, profile, isHost, isAdmin, login, register, logout } = useAuth();
   const { unread } = useNotifications();
   const { unread: msgUnread } = useMessages();
   const { t } = useT();
@@ -34,6 +34,7 @@ export default function Navbar() {
             </Link>
           )}
           {authenticated && isHost && <Link to="/host">{t('nav.host')}</Link>}
+          {authenticated && isAdmin && <Link to="/admin">{t('nav.admin')}</Link>}
           {authenticated && (
             <Link to="/notifications" className="bell" aria-label={t('nav.notifications')}>
               🔔{unread > 0 && <span className="bell-badge">{unread > 9 ? '9+' : unread}</span>}
