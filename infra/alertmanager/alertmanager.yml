@@ -14,6 +14,12 @@
 # The Slack `text` renders it as a clickable link; the default e-mail template
 # lists all annotations (including runbook_url) automatically, so on-call can jump
 # straight from the notification to docs/runbooks/<Alert>.md.
+#
+# Both receivers also push every notification (firing and resolved) to the API's
+# internal webhook (POST /api/v1/webhooks/alerts) so the admin console can show
+# live alert state — not just e-mail/Slack. Each alert reaches exactly one
+# receiver (warnings → team-email, criticals → critical), so the webhook fires
+# once per alert.
 global:
   resolve_timeout: 5m
 
@@ -37,6 +43,9 @@ receivers:
         smarthost: 'mailhog:1025'
         require_tls: false
         send_resolved: true
+    webhook_configs:
+      - url: 'http://api:8081/api/v1/webhooks/alerts'
+        send_resolved: true
 
   - name: critical
     email_configs:
@@ -44,6 +53,9 @@ receivers:
         from: 'alertmanager@airhost.dev'
         smarthost: 'mailhog:1025'
         require_tls: false
+        send_resolved: true
+    webhook_configs:
+      - url: 'http://api:8081/api/v1/webhooks/alerts'
         send_resolved: true
     slack_configs:
       - api_url_file: /tmp/slack_url

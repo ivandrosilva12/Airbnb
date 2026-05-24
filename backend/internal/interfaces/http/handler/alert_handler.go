@@ -6,6 +6,7 @@ import (
 	"time"
 
 	alertingapp "github.com/airhost/backend/internal/application/alerting"
+	alertstateapp "github.com/airhost/backend/internal/application/alertstate"
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
@@ -14,15 +15,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AlertHandler exposes admin endpoints to manage Alertmanager silences —
-// maintenance windows that mute matching alerts.
+// AlertHandler exposes endpoints around alerting: admin management of
+// Alertmanager silences (maintenance mute windows), an Alertmanager webhook
+// receiver that records the latest alert states, and an admin read of those
+// states so the internal UI can reflect firing/resolved (not just e-mail/Slack).
 type AlertHandler struct {
-	svc *alertingapp.Service
+	svc   *alertingapp.Service
+	state *alertstateapp.Service
 }
 
-// NewAlertHandler builds an AlertHandler.
-func NewAlertHandler(svc *alertingapp.Service) *AlertHandler {
-	return &AlertHandler{svc: svc}
+// NewAlertHandler builds an AlertHandler. state may be nil to disable the
+// alert-state view (the silence endpoints still work).
+func NewAlertHandler(svc *alertingapp.Service, state *alertstateapp.Service) *AlertHandler {
+	return &AlertHandler{svc: svc, state: state}
 }
 
 type silenceMatcherRequest struct {
@@ -104,6 +109,66 @@ func (h *AlertHandler) DeleteSilence(c *gin.Context) {
 		return
 	}
 	response.NoContent(c)
+}
+
+// --- Alertmanager webhook receiver + alert-state view -----------------------
+
+type alertmanagerAlert struct {
+	Status      string            `json:"status"`
+	Fingerprint string            `json:"fingerprint"`
+	Labels      map[string]string `json:"labels"`
+	Annotations map[string]string `json:"annotations"`
+	StartsAt    time.Time         `json:"startsAt"`
+	EndsAt      time.Time         `json:"endsAt"`
+}
+
+type alertmanagerNotification struct {
+	Status string              `json:"status"`
+	Alerts []alertmanagerAlert `json:"alerts"`
+}
+
+// IngestNotification receives an Alertmanager webhook (firing or resolved) and
+// records the latest state of each alert. It always answers 200 so Alertmanager
+// does not retry. This route is authenticated by network placement (internal),
+// not a user token, so it lives outside the auth group.
+func (h *AlertHandler) IngestNotification(c *gin.Context) {
+	if h.state == nil {
+		response.OK(c, gin.H{"status": "ignored"})
+		return
+	}
+	var req alertmanagerNotification
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailMessage(c, http.StatusBadRequest, "invalid alert payload")
+		return
+	}
+	n := alertstateapp.Notification{Status: req.Status, Alerts: make([]alertstateapp.Alert, 0, len(req.Alerts))}
+	for _, a := range req.Alerts {
+		n.Alerts = append(n.Alerts, alertstateapp.Alert{
+			Status:      a.Status,
+			Fingerprint: a.Fingerprint,
+			Labels:      a.Labels,
+			Annotations: a.Annotations,
+			StartsAt:    a.StartsAt,
+			EndsAt:      a.EndsAt,
+		})
+	}
+	h.state.Ingest(n)
+	response.OK(c, gin.H{"status": "ok", "received": len(n.Alerts)})
+}
+
+// ListAlerts returns the latest alert states (firing + recently resolved) so the
+// admin console can reflect them. Admin only.
+func (h *AlertHandler) ListAlerts(c *gin.Context) {
+	if h.state == nil {
+		response.OK(c, gin.H{"items": []dto.AlertStateView{}})
+		return
+	}
+	states := h.state.List()
+	items := make([]dto.AlertStateView, 0, len(states))
+	for _, s := range states {
+		items = append(items, dto.FromAlertState(s))
+	}
+	response.OK(c, gin.H{"items": items})
 }
 
 // currentActor returns a human label for who performed the action, preferring

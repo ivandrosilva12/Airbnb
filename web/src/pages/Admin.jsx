@@ -10,10 +10,95 @@ export default function Admin() {
   return (
     <div className="container">
       <h1>{t('admin.title')}</h1>
+      <ActiveAlertsPanel />
       <VerificationQueue />
       <ReportQueue />
       <SilencesPanel />
     </div>
+  );
+}
+
+// ActiveAlertsPanel reflects the live alert state pushed by Alertmanager —
+// firing alerts and recently resolved ones — so ops can see status in-app, not
+// just via email/Slack. It polls so a resolve shows up without a manual reload.
+function ActiveAlertsPanel() {
+  const { t } = useT();
+  const [items, setItems] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function load() {
+    try {
+      const res = await api.adminListAlerts();
+      setItems(res.items || []);
+      setError(null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoaded(true);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 15000);
+    return () => clearInterval(id);
+  }, []);
+
+  const firing = items.filter((a) => a.status === 'firing').length;
+
+  return (
+    <section>
+      <h2>
+        {t('admin.alertsTitle')}{' '}
+        {loaded && (
+          <span className={`badge ${firing ? 'badge-firing' : 'badge-ok'}`}>
+            {firing ? t('admin.alertsFiringCount', { n: firing }) : t('admin.alertsAllClear')}
+          </span>
+        )}
+      </h2>
+      {error && <p className="error">{error}</p>}
+      {!loaded ? (
+        <p>{t('common.loading')}</p>
+      ) : items.length === 0 ? (
+        <p className="muted">{t('admin.alertsEmpty')}</p>
+      ) : (
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>{t('admin.alertName')}</th>
+              <th>{t('admin.alertSeverity')}</th>
+              <th>{t('admin.silenceStatus')}</th>
+              <th>{t('admin.alertSummary')}</th>
+              <th>{t('admin.alertSince')}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((a) => (
+              <tr key={a.fingerprint} className={a.status === 'resolved' ? 'row-muted' : ''}>
+                <td>{a.alertName}</td>
+                <td>{a.severity}</td>
+                <td>
+                  <span className={`badge ${a.status === 'firing' ? 'badge-firing' : 'badge-ok'}`}>
+                    {t(`admin.alertState.${a.status}`)}
+                  </span>
+                </td>
+                <td>{a.summary}</td>
+                <td>{a.startsAt ? new Date(a.startsAt).toLocaleString() : ''}</td>
+                <td>
+                  {a.runbookUrl && (
+                    <a href={a.runbookUrl} target="_blank" rel="noreferrer">
+                      {t('admin.alertRunbook')}
+                    </a>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
 

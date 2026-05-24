@@ -148,3 +148,77 @@ func TestEndToEnd_AlertSilences(t *testing.T) {
 		t.Fatalf("silences after delete = %d, want 0", len(items))
 	}
 }
+
+// TestEndToEnd_AlertState covers the Alertmanager webhook receiver feeding the
+// admin alert-state view: a firing notification appears, then a resolved one
+// flips its status (so the internal UI reflects resolved, not just email/Slack).
+func TestEndToEnd_AlertState(t *testing.T) {
+	h := newHarness(t)
+	guest := h.seedUser(domainuser.RoleGuest, "as-guest@test.dev")
+	admin := h.seedUser(domainuser.RoleAdmin, "as-admin@test.dev")
+
+	// Initially there are no alerts.
+	rec := h.do(http.MethodGet, "/api/v1/admin/alerts", admin.ID.String(), nil)
+	mustStatus(t, rec, http.StatusOK, "list alerts (empty)")
+	if items := h.decode(rec)["items"].([]any); len(items) != 0 {
+		t.Fatalf("alerts initially = %d, want 0", len(items))
+	}
+
+	// Alertmanager posts a firing notification (no user token — internal route).
+	firing := map[string]any{
+		"status": "firing",
+		"alerts": []map[string]any{{
+			"status":      "firing",
+			"fingerprint": "fp-1",
+			"labels":      map[string]string{"alertname": "AirhostApiDown", "severity": "critical"},
+			"annotations": map[string]string{"summary": "AirHost API is down", "runbook_url": "http://rb/AirhostApiDown"},
+			"startsAt":    "2026-05-24T12:00:00Z",
+		}},
+	}
+	rec = h.do(http.MethodPost, "/api/v1/webhooks/alerts", "", firing)
+	mustStatus(t, rec, http.StatusOK, "ingest firing")
+
+	// The admin sees it as firing, with the runbook link.
+	rec = h.do(http.MethodGet, "/api/v1/admin/alerts", admin.ID.String(), nil)
+	items := h.decode(rec)["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("alerts after firing = %d, want 1", len(items))
+	}
+	first := items[0].(map[string]any)
+	if first["status"].(string) != "firing" || first["alertName"].(string) != "AirhostApiDown" {
+		t.Fatalf("unexpected alert: %+v", first)
+	}
+	if first["runbookUrl"].(string) != "http://rb/AirhostApiDown" {
+		t.Fatalf("runbookUrl = %v", first["runbookUrl"])
+	}
+
+	// A non-admin cannot read the alert-state view.
+	if r := h.do(http.MethodGet, "/api/v1/admin/alerts", guest.ID.String(), nil); r.Code != http.StatusForbidden {
+		t.Fatalf("guest list alerts: status = %d, want 403", r.Code)
+	}
+
+	// Alertmanager posts the resolved notification for the same fingerprint.
+	resolved := map[string]any{
+		"status": "resolved",
+		"alerts": []map[string]any{{
+			"status":      "resolved",
+			"fingerprint": "fp-1",
+			"labels":      map[string]string{"alertname": "AirhostApiDown", "severity": "critical"},
+			"annotations": map[string]string{"summary": "AirHost API is down"},
+			"startsAt":    "2026-05-24T12:00:00Z",
+			"endsAt":      "2026-05-24T12:05:00Z",
+		}},
+	}
+	rec = h.do(http.MethodPost, "/api/v1/webhooks/alerts", "", resolved)
+	mustStatus(t, rec, http.StatusOK, "ingest resolved")
+
+	// The state flips to resolved (still one entry, not duplicated).
+	rec = h.do(http.MethodGet, "/api/v1/admin/alerts", admin.ID.String(), nil)
+	items = h.decode(rec)["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("alerts after resolve = %d, want 1", len(items))
+	}
+	if status := items[0].(map[string]any)["status"].(string); status != "resolved" {
+		t.Fatalf("status = %q, want resolved", status)
+	}
+}

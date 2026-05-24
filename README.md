@@ -224,6 +224,7 @@ Admin only:
 - `GET /admin/reports` (moderation queue) · `POST /admin/reports/:id/resolve` · `POST /admin/reports/:id/dismiss`
 - `POST /admin/webhooks/events/cleanup?olderThanDays=` — prune processed-webhook records (retention)
 - `GET /admin/alerts/silences` · `POST /admin/alerts/silences` · `DELETE /admin/alerts/silences/:id` — manage Alertmanager silences (maintenance mute windows)
+- `GET /admin/alerts` — live alert state (firing + recently resolved); fed by `POST /webhooks/alerts` (Alertmanager receiver)
 
 The stay lifecycle is: `pending → confirmed → completed`, with `cancelled` reachable
 from pending/confirmed. A guest can only review a **completed** booking, so the host
@@ -290,7 +291,7 @@ docker-compose.yml
 | Mobile (Expo) | Guest + host | Guest: explore, listing + booking, account hub, trips (with payment status + an in-app receipt breakdown), saved, notifications, messages, contact host, report a listing, identity verification. Host: dashboard (metrics + earnings + listings) and per-listing booking management (confirm/complete/cancel). Builds require an emulator/device; not auto-verified |
 | Infra (compose) | Complete | Config authored; bring up with `docker compose up` |
 | Observability | Complete | `/metrics` endpoint + Prometheus scrape (api, prometheus, alertmanager) + Grafana dashboard (incl. webhook-events-by-outcome, rate-limited-per-minute, active-alerts table, and Alertmanager notification/held-alert panels) |
-| Alerting | Complete | Prometheus alert rules (`infra/prometheus/alerts.yml`): API down, 5xx error rate, webhook signature-rejection / processing-error spikes, sustained rate limiting. Routed by Alertmanager to email (MailHog locally) and Slack for critical (`SLACK_WEBHOOK_URL`); resolved notifications go to a separate channel/mailbox (templated on `.Status`). Each alert carries a `runbook_url` annotation linking to a per-alert page in [`docs/runbooks/`](docs/runbooks/), rendered as a clickable link in Slack and listed in the e-mail. Admins can mute alerts during maintenance via the silence API (`/admin/alerts/silences`, backed by Alertmanager `ALERTMANAGER_URL`) and a panel in the web Moderation console |
+| Alerting | Complete | Prometheus alert rules (`infra/prometheus/alerts.yml`): API down, 5xx error rate, webhook signature-rejection / processing-error spikes, sustained rate limiting. Routed by Alertmanager to email (MailHog locally) and Slack for critical (`SLACK_WEBHOOK_URL`); resolved notifications go to a separate channel/mailbox (templated on `.Status`). Each alert carries a `runbook_url` annotation linking to a per-alert page in [`docs/runbooks/`](docs/runbooks/), rendered as a clickable link in Slack and listed in the e-mail. Admins can mute alerts during maintenance via the silence API (`/admin/alerts/silences`, backed by Alertmanager `ALERTMANAGER_URL`) and a panel in the web Moderation console. Alertmanager also pushes every firing/resolved notification to the API (`POST /webhooks/alerts`), which keeps an in-memory alert-state view exposed at `GET /admin/alerts` and rendered as a live "Alerts" panel (firing + recently resolved) in the console — so resolved state shows in-app, not just email/Slack |
 
 ### Notes & next steps
 

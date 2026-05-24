@@ -85,6 +85,11 @@ func NewRouter(d Deps) *gin.Engine {
 	)
 	api.POST("/webhooks/payments/:provider", webhookLimiter, h.PaymentWebhook.Handle)
 
+	// Alertmanager pushes firing/resolved notifications here so the internal UI
+	// can reflect alert state. Authenticated by network placement (internal),
+	// not a user token; rate-limited like the other webhook route.
+	api.POST("/webhooks/alerts", webhookLimiter, h.Alert.IngestNotification)
+
 	// Authenticated routes.
 	auth := api.Group("")
 	auth.Use(d.Auth)
@@ -187,6 +192,9 @@ func NewRouter(d Deps) *gin.Engine {
 
 			// Webhook dedupe-table retention/cleanup.
 			admin.POST("/webhooks/events/cleanup", h.PaymentWebhook.Cleanup)
+
+			// Live alert states (firing + recently resolved) for the console.
+			admin.GET("/alerts", h.Alert.ListAlerts)
 
 			// Alertmanager silences (maintenance windows that mute alerts).
 			admin.GET("/alerts/silences", h.Alert.ListSilences)

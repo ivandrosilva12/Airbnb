@@ -14,6 +14,7 @@ import (
 	"time"
 
 	alertingapp "github.com/airhost/backend/internal/application/alerting"
+	alertstateapp "github.com/airhost/backend/internal/application/alertstate"
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	blockapp "github.com/airhost/backend/internal/application/block"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
@@ -109,6 +110,7 @@ func newHarness(t *testing.T) *harness {
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
 	silencer := newMemSilencer()
 	alertingSvc := alertingapp.NewService(silencer)
+	alertStateSvc := alertstateapp.NewService()
 	realtimeHub := realtime.NewHub()
 	realtimeSvc := realtimeapp.NewService(realtimeHub)
 	dispatcher.Subscribe(notificationSvc.EventHandler())
@@ -165,7 +167,7 @@ func newHarness(t *testing.T) *harness {
 			Identity:       handler.NewIdentityHandler(identitySvc),
 			Report:         handler.NewReportHandler(reportSvc),
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(config.PaymentConfig{GPayAngola: config.GPayAngolaConfig{WebhookSecret: webhookSecret}}), memory.NewWebhookEventRepository(), metrics),
-			Alert:          handler.NewAlertHandler(alertingSvc),
+			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc),
 		},
 	})
 

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	alertingapp "github.com/airhost/backend/internal/application/alerting"
+	alertstateapp "github.com/airhost/backend/internal/application/alertstate"
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	blockapp "github.com/airhost/backend/internal/application/block"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
@@ -132,6 +133,7 @@ func run() error {
 	identitySvc := identityapp.NewService(identityRepo, dispatcher)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
+	alertStateSvc := alertstateapp.NewService()
 	realtimeHub := realtime.NewHub()
 	realtimeSvc := realtimeapp.NewService(realtimeHub)
 
@@ -181,7 +183,7 @@ func run() error {
 			Identity:       handler.NewIdentityHandler(identitySvc),
 			Report:         handler.NewReportHandler(reportSvc),
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
-			Alert:          handler.NewAlertHandler(alertingSvc),
+			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc),
 		},
 	})
 

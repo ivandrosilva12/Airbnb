@@ -107,6 +107,9 @@ export const api = {
   adminSuspendProperty: (id) => request('POST', `/admin/properties/${id}/suspend`, { auth: true }),
   adminUnsuspendProperty: (id) => request('POST', `/admin/properties/${id}/unsuspend`, { auth: true }),
 
+  // Live alert state (firing + recently resolved), pushed by Alertmanager
+  adminListAlerts: () => request('GET', '/admin/alerts', { auth: true }),
+
   // Alertmanager silences (maintenance windows that mute alerts)
   adminListSilences: () => request('GET', '/admin/alerts/silences', { auth: true }),
   adminCreateSilence: (body) => request('POST', '/admin/alerts/silences', { body, auth: true }),

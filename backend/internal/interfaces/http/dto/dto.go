@@ -5,6 +5,7 @@ package dto
 import (
 	"time"
 
+	alertstateapp "github.com/airhost/backend/internal/application/alertstate"
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/application/port"
@@ -553,6 +554,37 @@ type SilenceView struct {
 	CreatedBy string               `json:"createdBy"`
 	Comment   string               `json:"comment"`
 	Status    string               `json:"status"`
+}
+
+// AlertStateView renders the latest known state of an alert (firing/resolved)
+// for the internal console.
+type AlertStateView struct {
+	Fingerprint string    `json:"fingerprint"`
+	AlertName   string    `json:"alertName"`
+	Severity    string    `json:"severity"`
+	Status      string    `json:"status"`
+	Summary     string    `json:"summary"`
+	Description string    `json:"description"`
+	RunbookURL  string    `json:"runbookUrl"`
+	StartsAt    time.Time `json:"startsAt"`
+	EndsAt      time.Time `json:"endsAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+// FromAlertState maps an alert-state record to its view.
+func FromAlertState(s alertstateapp.State) AlertStateView {
+	return AlertStateView{
+		Fingerprint: s.Fingerprint,
+		AlertName:   s.AlertName,
+		Severity:    s.Severity,
+		Status:      s.Status,
+		Summary:     s.Summary,
+		Description: s.Description,
+		RunbookURL:  s.RunbookURL,
+		StartsAt:    s.StartsAt,
+		EndsAt:      s.EndsAt,
+		UpdatedAt:   s.UpdatedAt,
+	}
 }
 
 // FromSilence maps a silence (from the AlertSilencer port) to its view.
