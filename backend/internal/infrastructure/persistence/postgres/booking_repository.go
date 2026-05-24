@@ -69,7 +69,7 @@ func (r *BookingRepository) list(ctx context.Context, where string, arg any, pag
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+bookingColumns+` FROM bookings WHERE `+where+`
-		ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		arg, page.Limit, page.Offset,
 	)
 	if err != nil {

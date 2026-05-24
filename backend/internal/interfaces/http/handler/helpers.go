@@ -2,6 +2,8 @@
 package handler
 
 import (
+	"errors"
+	"net/http"
 	"strconv"
 
 	"github.com/airhost/backend/internal/domain/shared"
@@ -39,7 +41,14 @@ func pageFromQuery(c *gin.Context) shared.Page {
 // false so the caller can return early.
 func bindJSON(c *gin.Context, dst any) bool {
 	if err := c.ShouldBindJSON(dst); err != nil {
-		response.FailMessage(c, 400, "invalid or malformed request body")
+		// An oversized body (capped by the MaxBody middleware) is a 413, not a
+		// generic 400, so clients can distinguish "too large" from "malformed".
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			response.FailMessage(c, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
+		response.FailMessage(c, http.StatusBadRequest, "invalid or malformed request body")
 		return false
 	}
 	return true

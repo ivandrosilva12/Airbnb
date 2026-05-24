@@ -37,7 +37,7 @@ func (r *NotificationRepository) ListByUser(ctx context.Context, userID uuid.UUI
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, user_id, type, title, body, related_id, read_at, created_at
-		FROM notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		FROM notifications WHERE user_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		userID, page.Limit, page.Offset,
 	)
 	if err != nil {

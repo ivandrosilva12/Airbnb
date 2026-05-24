@@ -35,8 +35,15 @@ func NewDateRange(checkIn, checkOut time.Time) (DateRange, error) {
 	if ci.Before(truncateDay(time.Now().UTC())) {
 		return DateRange{}, shared.NewValidationError("check-in cannot be in the past")
 	}
+	if int(co.Sub(ci).Hours()/24) > maxStayNights {
+		return DateRange{}, shared.NewValidationError("a stay may not exceed 365 nights")
+	}
 	return DateRange{CheckIn: ci, CheckOut: co}, nil
 }
+
+// maxStayNights caps a single reservation length, guarding against absurd ranges
+// (and any pricing overflow they would cause).
+const maxStayNights = 365
 
 // Nights returns the number of nights in the range.
 func (d DateRange) Nights() int {

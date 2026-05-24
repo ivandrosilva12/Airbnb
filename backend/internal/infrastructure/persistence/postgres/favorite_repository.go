@@ -53,7 +53,7 @@ func (r *FavoriteRepository) ListPropertyIDs(ctx context.Context, userID uuid.UU
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT property_id FROM favorites WHERE user_id=$1
-		ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		ORDER BY created_at DESC, property_id DESC LIMIT $2 OFFSET $3`,
 		userID, page.Limit, page.Offset,
 	)
 	if err != nil {

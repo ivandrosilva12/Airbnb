@@ -52,7 +52,7 @@ func (r *ReviewRepository) list(ctx context.Context, where string, arg any, page
 		return shared.PageResult[*review.Review]{}, mapError(err)
 	}
 	rows, err := r.pool.Query(ctx,
-		`SELECT `+reviewColumns+` FROM reviews WHERE `+where+` ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		`SELECT `+reviewColumns+` FROM reviews WHERE `+where+` ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		arg, page.Limit, page.Offset,
 	)
 	if err != nil {

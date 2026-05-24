@@ -138,7 +138,7 @@ func (r *PropertyRepository) ListByHost(ctx context.Context, hostID uuid.UUID, p
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+propertyColumns+` FROM properties
-		WHERE host_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		WHERE host_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		hostID, page.Limit, page.Offset,
 	)
 	if err != nil {

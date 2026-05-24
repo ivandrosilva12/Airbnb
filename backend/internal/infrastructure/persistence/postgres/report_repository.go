@@ -62,7 +62,7 @@ func (r *ReportRepository) ListByStatus(ctx context.Context, status report.Statu
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+reportColumns+` FROM reports WHERE status=$1
-		ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		string(status), page.Limit, page.Offset,
 	)
 	if err != nil {

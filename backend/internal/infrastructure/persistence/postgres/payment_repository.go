@@ -65,7 +65,7 @@ func (r *PaymentRepository) ListByGuest(ctx context.Context, guestID uuid.UUID, 
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+paymentColumns+` FROM payments WHERE guest_id=$1
-		ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		guestID, page.Limit, page.Offset,
 	)
 	if err != nil {

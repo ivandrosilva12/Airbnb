@@ -95,6 +95,10 @@ services:
       APP_ENV: production
       HTTP_PORT: "8081"
       HTTP_ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:3000"
+      # Proxy IPs/CIDRs whose X-Forwarded-For is trusted for the client IP (rate
+      # limiting). Empty = trust none (use the direct peer); set to your LB range
+      # behind a reverse proxy.
+      HTTP_TRUSTED_PROXIES: "${HTTP_TRUSTED_PROXIES:-}"
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_USER: airhost

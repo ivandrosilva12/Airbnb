@@ -58,7 +58,7 @@ func (r *IdentityRepository) FindByID(ctx context.Context, id uuid.UUID) (*ident
 func (r *IdentityRepository) FindLatestByUser(ctx context.Context, userID uuid.UUID) (*identity.Verification, error) {
 	row := r.pool.QueryRow(ctx, `
 		SELECT `+identityColumns+` FROM identity_verifications
-		WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`, userID)
+		WHERE user_id=$1 ORDER BY created_at DESC, id DESC LIMIT 1`, userID)
 	return scanVerification(row)
 }
 
@@ -71,7 +71,7 @@ func (r *IdentityRepository) ListByStatus(ctx context.Context, status identity.S
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+identityColumns+` FROM identity_verifications WHERE status=$1
-		ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		string(status), page.Limit, page.Offset,
 	)
 	if err != nil {

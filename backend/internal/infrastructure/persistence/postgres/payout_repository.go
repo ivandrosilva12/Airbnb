@@ -40,7 +40,7 @@ func (r *PayoutRepository) ListByHost(ctx context.Context, hostID uuid.UUID, pag
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+payoutColumns+` FROM payouts WHERE host_id=$1
-		ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		hostID, page.Limit, page.Offset,
 	)
 	if err != nil {

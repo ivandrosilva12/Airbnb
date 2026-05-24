@@ -48,6 +48,9 @@ func NewRouter(d Deps) *gin.Engine {
 	}
 
 	r := gin.New()
+	// Trust only the configured proxies for X-Forwarded-For (empty = trust none),
+	// so a client cannot spoof its source IP to evade the per-IP rate limiter.
+	_ = r.SetTrustedProxies(d.Config.HTTP.TrustedProxies)
 	r.Use(gin.Recovery())
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.Metrics(d.Metrics))

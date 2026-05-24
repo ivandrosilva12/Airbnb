@@ -122,6 +122,10 @@ type HTTPConfig struct {
 	WriteTimeout    time.Duration
 	ShutdownTimeout time.Duration
 	AllowedOrigins  []string
+	// TrustedProxies is the list of proxy IPs/CIDRs whose X-Forwarded-For is
+	// honoured for the client IP (used by the rate limiter). Empty means trust
+	// none — the direct peer address is used, so clients cannot spoof their IP.
+	TrustedProxies []string
 }
 
 // DatabaseConfig holds PostgreSQL connection settings.
@@ -176,6 +180,7 @@ func Load() (*Config, error) {
 			WriteTimeout:    getDuration("HTTP_WRITE_TIMEOUT", 15*time.Second),
 			ShutdownTimeout: getDuration("HTTP_SHUTDOWN_TIMEOUT", 10*time.Second),
 			AllowedOrigins:  getSlice("HTTP_ALLOWED_ORIGINS", []string{"http://localhost:5173", "http://localhost:3000"}),
+			TrustedProxies:  getSlice("HTTP_TRUSTED_PROXIES", nil),
 		},
 		Database: DatabaseConfig{
 			Host:           getEnv("DB_HOST", "localhost"),
