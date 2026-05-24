@@ -282,7 +282,7 @@ docker-compose.yml
 | CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build + a Keycloak integration job |
 | SQL schema | Complete | Applied by the startup migrator |
 | Web (React) | Complete | `npm run build` passes |
-| Mobile (Expo) | Guest + host | Guest: explore, listing + booking, account hub, trips, saved, notifications, messages, contact host, identity verification. Host: dashboard (metrics + earnings + listings) and per-listing booking management (confirm/complete/cancel). Builds require an emulator/device; not auto-verified |
+| Mobile (Expo) | Guest + host | Guest: explore, listing + booking, account hub, trips (with payment status + an in-app receipt breakdown), saved, notifications, messages, contact host, report a listing, identity verification. Host: dashboard (metrics + earnings + listings) and per-listing booking management (confirm/complete/cancel). Builds require an emulator/device; not auto-verified |
 | Infra (compose) | Complete | Config authored; bring up with `docker compose up` |
 | Observability | Complete | `/metrics` endpoint + Prometheus scrape + Grafana dashboard |
 

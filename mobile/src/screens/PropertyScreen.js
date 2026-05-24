@@ -14,6 +14,10 @@ export default function PropertyScreen({ route, navigation }) {
   const [message, setMessage] = useState(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('inappropriate');
+  const [reportNote, setReportNote] = useState('');
+  const [reported, setReported] = useState(false);
 
   useEffect(() => {
     api.getProperty(id).then(setProperty).catch((e) => setError(e.message));
@@ -40,6 +44,21 @@ export default function PropertyScreen({ route, navigation }) {
     try {
       const conv = await api.startConversation(id);
       navigation.navigate('Conversation', { id: conv.id, title: property?.title || 'Conversation' });
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function submitReport() {
+    if (!authenticated) {
+      login();
+      return;
+    }
+    setError(null);
+    try {
+      await api.reportListing(id, { reason: reportReason, note: reportNote });
+      setReported(true);
+      setReportOpen(false);
     } catch (e) {
       setError(e.message);
     }
@@ -93,10 +112,56 @@ export default function PropertyScreen({ route, navigation }) {
             <Text style={styles.secondaryText}>Contact host</Text>
           </Pressable>
         </View>
+
+        {reported ? (
+          <Text style={styles.reportDone}>Thanks — our team will review this listing.</Text>
+        ) : !reportOpen ? (
+          <Pressable onPress={() => setReportOpen(true)}>
+            <Text style={styles.reportLink}>⚑ Report listing</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.reportBox}>
+            <Text style={styles.bookTitle}>Report this listing</Text>
+            <View style={styles.reasonRow}>
+              {REPORT_REASONS.map((r) => (
+                <Pressable
+                  key={r.value}
+                  style={[styles.reasonChip, reportReason === r.value && styles.reasonChipActive]}
+                  onPress={() => setReportReason(r.value)}
+                >
+                  <Text style={reportReason === r.value ? styles.reasonChipTextActive : styles.reasonChipText}>{r.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <TextInput
+              style={[styles.input, { marginTop: 10 }]}
+              placeholder="Details (optional)"
+              value={reportNote}
+              onChangeText={setReportNote}
+              multiline
+            />
+            <View style={styles.secondaryActions}>
+              <Pressable style={styles.btn} onPress={submitReport}>
+                <Text style={styles.btnText}>Submit report</Text>
+              </Pressable>
+              <Pressable style={styles.secondaryBtn} onPress={() => setReportOpen(false)}>
+                <Text style={styles.secondaryText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
       </View>
     </ScrollView>
   );
 }
+
+const REPORT_REASONS = [
+  { value: 'spam', label: 'Spam' },
+  { value: 'inappropriate', label: 'Inappropriate' },
+  { value: 'scam', label: 'Scam' },
+  { value: 'inaccurate', label: 'Inaccurate' },
+  { value: 'other', label: 'Other' },
+];
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
@@ -116,4 +181,12 @@ const styles = StyleSheet.create({
   secondaryActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   secondaryBtn: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
   secondaryText: { fontWeight: '600', color: '#222' },
+  reportLink: { color: '#c0392b', textDecorationLine: 'underline', marginTop: 16 },
+  reportDone: { color: '#1a7f47', marginTop: 16 },
+  reportBox: { borderWidth: 1, borderColor: '#eee', borderRadius: 12, padding: 16, marginTop: 16 },
+  reasonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  reasonChip: { borderWidth: 1, borderColor: '#ddd', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  reasonChipActive: { backgroundColor: '#ff385c', borderColor: '#ff385c' },
+  reasonChipText: { color: '#222', fontSize: 13 },
+  reasonChipTextActive: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });

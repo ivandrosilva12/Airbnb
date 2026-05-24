@@ -40,6 +40,12 @@ export function createApi(getAccessToken) {
     myBookings: () => request('GET', '/bookings/me', { auth: true }),
     cancelBooking: (id) => request('POST', `/bookings/${id}/cancel`, { auth: true }),
 
+    // Payments (guest-facing reads)
+    listPayments: () => request('GET', '/payments/me', { auth: true }),
+
+    // Report a listing for moderation
+    reportListing: (propertyId, body) => request('POST', `/properties/${propertyId}/reports`, { body, auth: true }),
+
     // Host
     hostMetrics: () => request('GET', '/host/metrics', { auth: true }),
     hostEarnings: () => request('GET', '/host/earnings', { auth: true }),
