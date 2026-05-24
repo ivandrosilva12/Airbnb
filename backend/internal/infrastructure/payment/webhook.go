@@ -67,7 +67,8 @@ func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.Ga
 	if sig == "" {
 		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: missing signature")
 	}
-	var timestamp, v1 string
+	var timestamp string
+	var v1s []string
 	for _, part := range strings.Split(sig, ",") {
 		k, val, ok := strings.Cut(strings.TrimSpace(part), "=")
 		if !ok {
@@ -77,14 +78,23 @@ func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.Ga
 		case "t":
 			timestamp = val
 		case "v1":
-			v1 = val
+			// Stripe may include several v1 signatures during a secret rotation;
+			// accept the delivery if any of them matches.
+			v1s = append(v1s, val)
 		}
 	}
-	if timestamp == "" || v1 == "" {
+	if timestamp == "" || len(v1s) == 0 {
 		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: malformed signature")
 	}
 	signedPayload := append([]byte(timestamp+"."), body...)
-	if !hmacHexEqual(v.secret, v1, signedPayload) {
+	matched := false
+	for _, v1 := range v1s {
+		if hmacHexEqual(v.secret, v1, signedPayload) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
 		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: signature mismatch")
 	}
 	// Anti-replay: reject timestamps outside the tolerance window.

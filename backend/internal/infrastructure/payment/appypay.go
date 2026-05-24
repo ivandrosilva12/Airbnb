@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -62,7 +63,7 @@ func (g *AppyPayGateway) Authorize(ctx context.Context, amount shared.Money, ide
 
 // Capture captures a previously authorized charge in full.
 func (g *AppyPayGateway) Capture(ctx context.Context, ref string) error {
-	return g.do(ctx, http.MethodPost, "/charges/"+ref+"/capture", map[string]any{}, nil)
+	return g.do(ctx, http.MethodPost, "/charges/"+url.PathEscape(ref)+"/capture", map[string]any{}, nil)
 }
 
 // Refund refunds amountCents against the charge.
@@ -71,7 +72,7 @@ func (g *AppyPayGateway) Refund(ctx context.Context, ref string, amountCents int
 	if amountCents > 0 {
 		payload["amount"] = float64(amountCents) / 100
 	}
-	return g.do(ctx, http.MethodPost, "/charges/"+ref+"/refunds", payload, nil)
+	return g.do(ctx, http.MethodPost, "/charges/"+url.PathEscape(ref)+"/refunds", payload, nil)
 }
 
 // do performs a JSON request against the AppyPay API, decoding a successful body

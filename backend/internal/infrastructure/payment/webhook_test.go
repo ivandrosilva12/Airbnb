@@ -58,6 +58,14 @@ func TestStripeWebhookVerifier(t *testing.T) {
 		t.Fatal("expected stale-timestamp rejection")
 	}
 
+	// Multiple v1 signatures (as sent during a secret rotation) are accepted if
+	// any one matches — here a bogus signature followed by the valid one.
+	good := hexHMAC("whsec_test", append([]byte(strconv.FormatInt(ts, 10)+"."), body...))
+	h.Set("Stripe-Signature", "t="+strconv.FormatInt(ts, 10)+",v1=deadbeef,v1="+good)
+	if _, ok, err := v.Verify(h, body); err != nil || !ok {
+		t.Fatalf("verify with rotated signatures: ok=%v err=%v", ok, err)
+	}
+
 	// A charge.refunded maps to a refund against the payment intent.
 	rbody := []byte(`{"type":"charge.refunded","data":{"object":{"id":"ch_1","payment_intent":"pi_42","amount_refunded":1500}}}`)
 	h.Set("Stripe-Signature", stripeSignature("whsec_test", ts, rbody))

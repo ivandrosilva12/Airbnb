@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -61,7 +62,7 @@ func (g *GPayAngolaGateway) Authorize(ctx context.Context, amount shared.Money, 
 
 // Capture captures a previously authorized payment in full.
 func (g *GPayAngolaGateway) Capture(ctx context.Context, ref string) error {
-	return g.do(ctx, http.MethodPost, "/payments/"+ref+"/capture", map[string]any{}, nil)
+	return g.do(ctx, http.MethodPost, "/payments/"+url.PathEscape(ref)+"/capture", map[string]any{}, nil)
 }
 
 // Refund refunds amountCents against the payment.
@@ -70,7 +71,7 @@ func (g *GPayAngolaGateway) Refund(ctx context.Context, ref string, amountCents 
 	if amountCents > 0 {
 		payload["amount"] = float64(amountCents) / 100
 	}
-	return g.do(ctx, http.MethodPost, "/payments/"+ref+"/refund", payload, nil)
+	return g.do(ctx, http.MethodPost, "/payments/"+url.PathEscape(ref)+"/refund", payload, nil)
 }
 
 // do performs a JSON request against the GPay Angola API, decoding a successful
