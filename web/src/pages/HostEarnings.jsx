@@ -10,35 +10,53 @@ export default function HostEarnings() {
   const { t } = useT();
   const { isHost } = useAuth();
   const [balances, setBalances] = useState([]);
+  const [available, setAvailable] = useState([]);
+  const [disbursements, setDisbursements] = useState([]);
   const [entries, setEntries] = useState([]);
   const [titles, setTitles] = useState({});
   const [loading, setLoading] = useState(true);
+  const [payingOut, setPayingOut] = useState(null); // currency in flight
   const [error, setError] = useState(null);
+
+  async function refresh() {
+    const [summary, avail, payouts, ledger, props] = await Promise.all([
+      api.hostEarnings(),
+      api.payoutAvailable(),
+      api.listDisbursements(),
+      api.hostEarningEntries(),
+      api.myProperties(),
+    ]);
+    setBalances(summary.balances || []);
+    setAvailable(avail.available || []);
+    setDisbursements(payouts.items || []);
+    setEntries(ledger.items || []);
+    const byId = {};
+    for (const p of props.items || []) byId[p.id] = p.title;
+    setTitles(byId);
+  }
 
   useEffect(() => {
     if (!isHost) {
       setLoading(false);
       return;
     }
-    (async () => {
-      try {
-        const [summary, ledger, props] = await Promise.all([
-          api.hostEarnings(),
-          api.hostEarningEntries(),
-          api.myProperties(),
-        ]);
-        setBalances(summary.balances || []);
-        setEntries(ledger.items || []);
-        const byId = {};
-        for (const p of props.items || []) byId[p.id] = p.title;
-        setTitles(byId);
-      } catch (e) {
-        setError(e.message);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    refresh()
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, [isHost]);
+
+  async function requestPayout(currency) {
+    setError(null);
+    setPayingOut(currency);
+    try {
+      await api.requestPayout(currency);
+      await refresh();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPayingOut(null);
+    }
+  }
 
   async function exportCsv() {
     try {
@@ -82,6 +100,53 @@ export default function HostEarnings() {
                 </div>
               ))}
             </div>
+          )}
+
+          <h2>{t('earnings.payoutsTitle')}</h2>
+          {available.length === 0 ? (
+            <p className="muted">{t('earnings.noAvailable')}</p>
+          ) : (
+            <div className="balance-grid">
+              {available.map((a) => (
+                <div key={a.currency} className="balance-card">
+                  <div className="balance-currency">{a.currency}</div>
+                  <div className="balance-net">{a.available.display}</div>
+                  <div className="balance-breakdown">
+                    <span>{t('earnings.availableLabel')}</span>
+                  </div>
+                  <button
+                    className="btn btn-primary block"
+                    disabled={a.available.amountCents <= 0 || payingOut === a.currency}
+                    onClick={() => requestPayout(a.currency)}
+                  >
+                    {payingOut === a.currency ? t('earnings.payingOut') : t('earnings.requestPayout')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {disbursements.length > 0 && (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('earnings.date')}</th>
+                  <th>{t('earnings.amount')}</th>
+                  <th>{t('earnings.payoutStatus')}</th>
+                  <th>{t('earnings.payoutRef')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {disbursements.map((d) => (
+                  <tr key={d.id}>
+                    <td>{new Date(d.createdAt).toLocaleDateString()}</td>
+                    <td>{d.amount.display}</td>
+                    <td><span className={`badge badge-payout-${d.status}`}>{t(`earnings.payoutState.${d.status}`)}</span></td>
+                    <td className="muted">{d.gatewayRef || d.failure || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
 
           <h2>{t('earnings.ledgerTitle')}</h2>

@@ -8,6 +8,7 @@ import (
 	alertstateapp "github.com/airhost/backend/internal/application/alertstate"
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	payoutapp "github.com/airhost/backend/internal/application/payout"
 	"github.com/airhost/backend/internal/application/port"
 	reportapp "github.com/airhost/backend/internal/application/report"
 	reviewapp "github.com/airhost/backend/internal/application/review"
@@ -445,6 +446,45 @@ func FromBalances(balances []payout.Balance) EarningsSummaryView {
 		})
 	}
 	return EarningsSummaryView{Balances: out}
+}
+
+// AvailableBalanceView renders a host's withdrawable balance in one currency.
+type AvailableBalanceView struct {
+	Currency  string    `json:"currency"`
+	Available MoneyView `json:"available"`
+}
+
+// FromAvailableBalances maps the available-balance read-model to its view.
+func FromAvailableBalances(balances []payoutapp.AvailableBalance) []AvailableBalanceView {
+	out := make([]AvailableBalanceView, 0, len(balances))
+	for _, b := range balances {
+		amount, _ := shared.NewMoney(b.AvailableCents, b.Currency)
+		out = append(out, AvailableBalanceView{Currency: b.Currency, Available: fromMoney(amount)})
+	}
+	return out
+}
+
+// DisbursementView is the public representation of a host payout.
+type DisbursementView struct {
+	ID         uuid.UUID `json:"id"`
+	Amount     MoneyView `json:"amount"`
+	Status     string    `json:"status"`
+	GatewayRef string    `json:"gatewayRef,omitempty"`
+	Failure    string    `json:"failure,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+// FromDisbursement maps a disbursement aggregate to its view.
+func FromDisbursement(d *payout.Disbursement) DisbursementView {
+	amount, _ := shared.NewMoney(d.AmountCents, d.Currency)
+	return DisbursementView{
+		ID:         d.ID,
+		Amount:     fromMoney(amount),
+		Status:     string(d.Status),
+		GatewayRef: d.GatewayRef,
+		Failure:    d.Failure,
+		CreatedAt:  d.CreatedAt,
+	}
 }
 
 // BlockView is the public representation of a host calendar block.

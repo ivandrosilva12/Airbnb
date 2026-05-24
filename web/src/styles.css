@@ -230,6 +230,10 @@ a { color: inherit; text-decoration: none; }
 .amount-debit { color: #c0392b; font-weight: 600; }
 .badge-payout-earning { background: #e6f7ee; color: #1a7f47; }
 .badge-payout-refund { background: #fdecea; color: #c0392b; }
+.badge-payout-paid { background: #e6f7ee; color: #1a7f47; }
+.badge-payout-pending { background: #fff4e5; color: #b26a00; }
+.badge-payout-failed { background: #fdecea; color: #c0392b; }
+.balance-card .btn { margin-top: 12px; }
 
 /* Admin moderation tables */
 .admin-table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }

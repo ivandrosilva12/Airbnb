@@ -126,6 +126,10 @@ services:
       PAYMENT_PROVIDER: "${PAYMENT_PROVIDER:-fake}"
       PAYMENT_DOMESTIC_CURRENCY: "${PAYMENT_DOMESTIC_CURRENCY:-AOA}"
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
+      # Stripe Connect connected-account (acct_…) used as the destination for host
+      # payout transfers. When set with provider=stripe, payouts hit the real
+      # Stripe transfers API; otherwise payouts use the fake rail.
+      STRIPE_CONNECT_ACCOUNT: "${STRIPE_CONNECT_ACCOUNT:-}"
       APPYPAY_TOKEN: "${APPYPAY_TOKEN:-}"
       GPAYANGOLA_API_KEY: "${GPAYANGOLA_API_KEY:-}"
       # Webhook signing secrets. A provider's webhook route is only enabled when

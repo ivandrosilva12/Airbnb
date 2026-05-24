@@ -842,11 +842,12 @@ func (r *PaymentRepository) ListByGuest(_ context.Context, guestID uuid.UUID, pa
 type PayoutRepository struct {
 	mu sync.RWMutex
 	m  map[uuid.UUID]payout.Entry
+	d  map[uuid.UUID]payout.Disbursement
 }
 
 // NewPayoutRepository builds an empty in-memory payout repository.
 func NewPayoutRepository() *PayoutRepository {
-	return &PayoutRepository{m: map[uuid.UUID]payout.Entry{}}
+	return &PayoutRepository{m: map[uuid.UUID]payout.Entry{}, d: map[uuid.UUID]payout.Disbursement{}}
 }
 
 func (r *PayoutRepository) Create(_ context.Context, e *payout.Entry) error {
@@ -906,6 +907,54 @@ func (r *PayoutRepository) BalancesByHost(_ context.Context, hostID uuid.UUID) (
 		out = append(out, *b)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Currency < out[j].Currency })
+	return out, nil
+}
+
+func (r *PayoutRepository) CreateDisbursement(_ context.Context, d *payout.Disbursement) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.d[d.ID] = *d
+	return nil
+}
+
+func (r *PayoutRepository) UpdateDisbursement(_ context.Context, d *payout.Disbursement) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.d[d.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.d[d.ID] = *d
+	return nil
+}
+
+func (r *PayoutRepository) ListDisbursementsByHost(_ context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*payout.Disbursement], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*payout.Disbursement
+	for _, d := range r.d {
+		if d.HostID == hostID {
+			c := d
+			all = append(all, &c)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].CreatedAt.Equal(all[j].CreatedAt) {
+			return all[i].ID.String() > all[j].ID.String()
+		}
+		return all[i].CreatedAt.After(all[j].CreatedAt)
+	})
+	return paginate(all, page), nil
+}
+
+func (r *PayoutRepository) DisbursedCentsByHost(_ context.Context, hostID uuid.UUID) (map[string]int64, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := map[string]int64{}
+	for _, d := range r.d {
+		if d.HostID == hostID && d.Committed() {
+			out[d.Currency] += d.AmountCents
+		}
+	}
 	return out, nil
 }
 

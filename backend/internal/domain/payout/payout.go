@@ -72,5 +72,69 @@ type Balance struct {
 	RefundedCents int64
 }
 
-// NetCents is the amount currently owed to the host (earnings minus refunds).
+// NetCents is the host's lifetime net earnings (earnings minus refunds), before
+// any payouts have been disbursed.
 func (b Balance) NetCents() int64 { return b.EarnedCents - b.RefundedCents }
+
+// DisbursementStatus tracks a payout's lifecycle: pending while the transfer is
+// in flight, paid once the rail confirms it, failed if the rail rejected it.
+type DisbursementStatus string
+
+const (
+	DisbursementPending DisbursementStatus = "pending"
+	DisbursementPaid    DisbursementStatus = "paid"
+	DisbursementFailed  DisbursementStatus = "failed"
+)
+
+// Disbursement is a payout of a host's available balance to their external
+// account. The available balance is the net ledger minus amounts already
+// committed to pending/paid disbursements, so funds cannot be paid out twice.
+type Disbursement struct {
+	ID         uuid.UUID
+	HostID     uuid.UUID
+	Currency   string
+	AmountCents int64
+	Status     DisbursementStatus
+	GatewayRef string // reference returned by the payout rail (e.g. a Stripe transfer id)
+	Failure    string // failure reason when Status is failed
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// NewDisbursement creates a pending payout for a positive amount.
+func NewDisbursement(hostID uuid.UUID, currency string, amountCents int64) (*Disbursement, error) {
+	if amountCents <= 0 {
+		return nil, shared.NewValidationError("a payout amount must be positive")
+	}
+	now := time.Now().UTC()
+	return &Disbursement{
+		ID:          uuid.New(),
+		HostID:      hostID,
+		Currency:    currency,
+		AmountCents: amountCents,
+		Status:      DisbursementPending,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}, nil
+}
+
+// MarkPaid records a successful payout with the rail's reference.
+func (d *Disbursement) MarkPaid(ref string) {
+	d.Status = DisbursementPaid
+	d.GatewayRef = ref
+	d.Failure = ""
+	d.UpdatedAt = time.Now().UTC()
+}
+
+// MarkFailed records a rejected payout with a reason.
+func (d *Disbursement) MarkFailed(reason string) {
+	d.Status = DisbursementFailed
+	d.Failure = reason
+	d.UpdatedAt = time.Now().UTC()
+}
+
+// Committed reports whether the disbursement still ties up funds — pending and
+// paid payouts both reduce the available balance; a failed one releases it.
+func (d *Disbursement) Committed() bool {
+	return d.Status == DisbursementPending || d.Status == DisbursementPaid
+}

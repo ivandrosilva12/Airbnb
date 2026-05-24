@@ -6,8 +6,11 @@ package payoutapp
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
@@ -20,13 +23,15 @@ type Service struct {
 	payouts    payout.Repository
 	bookings   booking.Repository
 	properties property.Repository
+	disburser  port.Disburser
 }
 
 // NewService wires the payout application service. The booking and property
 // repositories are read-only dependencies used to resolve the host and the net
-// payout amount when reacting to booking events.
-func NewService(payouts payout.Repository, bookings booking.Repository, properties property.Repository) *Service {
-	return &Service{payouts: payouts, bookings: bookings, properties: properties}
+// payout amount when reacting to booking events; the disburser is the rail that
+// pays out a host's available balance.
+func NewService(payouts payout.Repository, bookings booking.Repository, properties property.Repository, disburser port.Disburser) *Service {
+	return &Service{payouts: payouts, bookings: bookings, properties: properties, disburser: disburser}
 }
 
 // Summary returns the host's balance per currency.
@@ -37,6 +42,93 @@ func (s *Service) Summary(ctx context.Context, hostID uuid.UUID) ([]payout.Balan
 // ListEntries returns the host's ledger entries, newest first.
 func (s *Service) ListEntries(ctx context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*payout.Entry], error) {
 	return s.payouts.ListByHost(ctx, hostID, page)
+}
+
+// AvailableBalance is a host's withdrawable balance in one currency: lifetime
+// net earnings minus amounts already committed to pending/paid payouts.
+type AvailableBalance struct {
+	Currency       string
+	AvailableCents int64
+}
+
+// AvailableBalances returns the host's withdrawable balance per currency.
+func (s *Service) AvailableBalances(ctx context.Context, hostID uuid.UUID) ([]AvailableBalance, error) {
+	balances, err := s.payouts.BalancesByHost(ctx, hostID)
+	if err != nil {
+		return nil, err
+	}
+	disbursed, err := s.payouts.DisbursedCentsByHost(ctx, hostID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AvailableBalance, 0, len(balances))
+	for _, b := range balances {
+		out = append(out, AvailableBalance{Currency: b.Currency, AvailableCents: b.NetCents() - disbursed[b.Currency]})
+	}
+	return out, nil
+}
+
+// ListDisbursements returns the host's payouts, newest first.
+func (s *Service) ListDisbursements(ctx context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*payout.Disbursement], error) {
+	return s.payouts.ListDisbursementsByHost(ctx, hostID, page)
+}
+
+// RequestDisbursement pays out the host's entire available balance in the given
+// currency. It records a pending payout, calls the rail, then marks the payout
+// paid (persisting the rail's reference) or failed. Funds in flight are excluded
+// from the available balance, so a repeat request cannot pay out twice.
+//
+// Note: the available check and the pending insert are not one atomic step, so
+// two truly-concurrent requests for the same host+currency could both pass. A
+// production deployment would serialise per host (advisory lock / SELECT … FOR
+// UPDATE); for this system the window is small and the ledger stays auditable.
+func (s *Service) RequestDisbursement(ctx context.Context, hostID uuid.UUID, currency string) (*payout.Disbursement, error) {
+	currency = strings.ToUpper(strings.TrimSpace(currency))
+	if currency == "" {
+		return nil, shared.NewValidationError("a currency is required")
+	}
+	avail, err := s.AvailableBalances(ctx, hostID)
+	if err != nil {
+		return nil, err
+	}
+	var cents int64 = -1
+	for _, a := range avail {
+		if a.Currency == currency {
+			cents = a.AvailableCents
+			break
+		}
+	}
+	if cents <= 0 {
+		return nil, shared.NewValidationError("no funds available to pay out in " + currency)
+	}
+	amount, err := shared.NewMoney(cents, currency)
+	if err != nil {
+		return nil, err
+	}
+
+	d, err := payout.NewDisbursement(hostID, currency, cents)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.payouts.CreateDisbursement(ctx, d); err != nil {
+		return nil, err
+	}
+
+	// The disbursement id is the idempotency key, so a retried rail call for the
+	// same payout never transfers twice.
+	ref, err := s.disburser.Disburse(ctx, hostID, amount, d.ID.String())
+	if err != nil {
+		d.MarkFailed(err.Error())
+		if uerr := s.payouts.UpdateDisbursement(ctx, d); uerr != nil {
+			return nil, uerr
+		}
+		return nil, fmt.Errorf("disbursement failed: %w", err)
+	}
+	d.MarkPaid(ref)
+	if err := s.payouts.UpdateDisbursement(ctx, d); err != nil {
+		return nil, err
+	}
+	return d, nil
 }
 
 // ExportRow is a flattened ledger line for a CSV/statement export, enriched with

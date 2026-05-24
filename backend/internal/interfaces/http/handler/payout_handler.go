@@ -53,6 +53,62 @@ func (h *PayoutHandler) ListEntries(c *gin.Context) {
 	response.OK(c, dto.PageView[dto.PayoutEntryView]{Items: items, Total: res.Total, Limit: page.Limit, Offset: page.Offset})
 }
 
+// Available returns the authenticated host's withdrawable balance per currency
+// (net earnings minus payouts already in flight or completed).
+func (h *PayoutHandler) Available(c *gin.Context) {
+	hostID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	balances, err := h.svc.AvailableBalances(c.Request.Context(), hostID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"available": dto.FromAvailableBalances(balances)})
+}
+
+// ListDisbursements returns the authenticated host's payouts, newest first.
+func (h *PayoutHandler) ListDisbursements(c *gin.Context) {
+	hostID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	page := pageFromQuery(c)
+	res, err := h.svc.ListDisbursements(c.Request.Context(), hostID, page)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	items := make([]dto.DisbursementView, 0, len(res.Items))
+	for _, d := range res.Items {
+		items = append(items, dto.FromDisbursement(d))
+	}
+	response.OK(c, dto.PageView[dto.DisbursementView]{Items: items, Total: res.Total, Limit: page.Limit, Offset: page.Offset})
+}
+
+type requestDisbursementRequest struct {
+	Currency string `json:"currency" binding:"required"`
+}
+
+// RequestDisbursement pays out the host's available balance in a currency.
+func (h *PayoutHandler) RequestDisbursement(c *gin.Context) {
+	hostID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	var req requestDisbursementRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	d, err := h.svc.RequestDisbursement(c.Request.Context(), hostID, req.Currency)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.Created(c, dto.FromDisbursement(d))
+}
+
 // ExportCSV streams the authenticated host's full earnings ledger as a CSV
 // statement (amounts in major currency units; refunds are negative).
 func (h *PayoutHandler) ExportCSV(c *gin.Context) {

@@ -11,6 +11,7 @@ import (
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
+	infrapayment "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 	"github.com/google/uuid"
 )
@@ -56,7 +57,7 @@ func TestEventHandler_CreditsHostOnConfirm(t *testing.T) {
 	hostID := uuid.New()
 	b := seed(t, props, bookings, hostID)
 
-	svc := payoutapp.NewService(payouts, bookings, props)
+	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())
 
@@ -87,7 +88,7 @@ func TestEventHandler_DuplicateConfirmCreditsOnce(t *testing.T) {
 	hostID := uuid.New()
 	b := seed(t, props, bookings, hostID)
 
-	svc := payoutapp.NewService(payouts, bookings, props)
+	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())
 
@@ -118,7 +119,7 @@ func TestEventHandler_DebitsRefundOnCancel(t *testing.T) {
 	hostID := uuid.New()
 	b := seed(t, props, bookings, hostID)
 
-	svc := payoutapp.NewService(payouts, bookings, props)
+	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())
 
@@ -146,7 +147,7 @@ func TestExportEntries_FlattensLedgerWithTitlesAndSign(t *testing.T) {
 	hostID := uuid.New()
 	b := seed(t, props, bookings, hostID)
 
-	svc := payoutapp.NewService(payouts, bookings, props)
+	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())
 
@@ -187,6 +188,45 @@ func TestExportEntries_FlattensLedgerWithTitlesAndSign(t *testing.T) {
 	}
 }
 
+func TestRequestDisbursement_PaysAvailableThenExhausts(t *testing.T) {
+	ctx := context.Background()
+	props := memory.NewPropertyRepository()
+	bookings := memory.NewBookingRepository()
+	payouts := memory.NewPayoutRepository()
+	hostID := uuid.New()
+	b := seed(t, props, bookings, hostID)
+
+	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+	dispatcher.Publish(ctx, event.BookingConfirmed{BookingID: b.ID, PropertyID: b.PropertyID, GuestID: b.GuestID})
+
+	// Net earning is 330.00 EUR; pay it all out.
+	d, err := svc.RequestDisbursement(ctx, hostID, "EUR")
+	if err != nil {
+		t.Fatalf("request disbursement: %v", err)
+	}
+	if d.Status != payout.DisbursementPaid || d.AmountCents != 33000 || d.GatewayRef == "" {
+		t.Fatalf("disbursement = %+v, want paid 33000 EUR with a reference", d)
+	}
+
+	// The available balance is now exhausted (the paid payout is committed).
+	avail, err := svc.AvailableBalances(ctx, hostID)
+	if err != nil {
+		t.Fatalf("available: %v", err)
+	}
+	for _, a := range avail {
+		if a.Currency == "EUR" && a.AvailableCents != 0 {
+			t.Fatalf("available EUR = %d, want 0 after payout", a.AvailableCents)
+		}
+	}
+
+	// A second request finds nothing to pay out.
+	if _, err := svc.RequestDisbursement(ctx, hostID, "EUR"); err == nil {
+		t.Fatal("expected second payout to fail with no available funds")
+	}
+}
+
 func TestEventHandler_NoRefundWithoutPriorEarning(t *testing.T) {
 	ctx := context.Background()
 	props := memory.NewPropertyRepository()
@@ -195,7 +235,7 @@ func TestEventHandler_NoRefundWithoutPriorEarning(t *testing.T) {
 	hostID := uuid.New()
 	b := seed(t, props, bookings, hostID)
 
-	svc := payoutapp.NewService(payouts, bookings, props)
+	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())
 

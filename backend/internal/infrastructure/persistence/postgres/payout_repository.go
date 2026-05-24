@@ -91,6 +91,97 @@ func (r *PayoutRepository) BalancesByHost(ctx context.Context, hostID uuid.UUID)
 	return out, mapError(rows.Err())
 }
 
+const disbursementColumns = `id, host_id, currency, amount_cents, status, gateway_ref, failure, created_at, updated_at`
+
+func (r *PayoutRepository) CreateDisbursement(ctx context.Context, d *payout.Disbursement) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO disbursements (`+disbursementColumns+`)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		d.ID, d.HostID, d.Currency, d.AmountCents, string(d.Status), d.GatewayRef, d.Failure, d.CreatedAt, d.UpdatedAt,
+	)
+	return mapError(err)
+}
+
+func (r *PayoutRepository) UpdateDisbursement(ctx context.Context, d *payout.Disbursement) error {
+	ct, err := r.pool.Exec(ctx, `
+		UPDATE disbursements SET status=$2, gateway_ref=$3, failure=$4, updated_at=$5 WHERE id=$1`,
+		d.ID, string(d.Status), d.GatewayRef, d.Failure, d.UpdatedAt,
+	)
+	if err != nil {
+		return mapError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
+func (r *PayoutRepository) ListDisbursementsByHost(ctx context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*payout.Disbursement], error) {
+	var total int64
+	if err := r.pool.QueryRow(ctx,
+		`SELECT count(*) FROM disbursements WHERE host_id=$1`, hostID,
+	).Scan(&total); err != nil {
+		return shared.PageResult[*payout.Disbursement]{}, mapError(err)
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+disbursementColumns+` FROM disbursements WHERE host_id=$1
+		ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
+		hostID, page.Limit, page.Offset,
+	)
+	if err != nil {
+		return shared.PageResult[*payout.Disbursement]{}, mapError(err)
+	}
+	defer rows.Close()
+
+	var items []*payout.Disbursement
+	for rows.Next() {
+		d, err := scanDisbursement(rows)
+		if err != nil {
+			return shared.PageResult[*payout.Disbursement]{}, err
+		}
+		items = append(items, d)
+	}
+	return shared.PageResult[*payout.Disbursement]{Items: items, Total: total}, mapError(rows.Err())
+}
+
+func (r *PayoutRepository) DisbursedCentsByHost(ctx context.Context, hostID uuid.UUID) (map[string]int64, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT currency, COALESCE(SUM(amount_cents), 0)
+		FROM disbursements WHERE host_id=$1 AND status IN ('pending','paid')
+		GROUP BY currency`, hostID)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+
+	out := map[string]int64{}
+	for rows.Next() {
+		var (
+			currency string
+			cents    int64
+		)
+		if err := rows.Scan(&currency, &cents); err != nil {
+			return nil, mapError(err)
+		}
+		out[currency] = cents
+	}
+	return out, mapError(rows.Err())
+}
+
+func scanDisbursement(row rowScanner) (*payout.Disbursement, error) {
+	var (
+		d      payout.Disbursement
+		status string
+	)
+	if err := row.Scan(
+		&d.ID, &d.HostID, &d.Currency, &d.AmountCents, &status, &d.GatewayRef, &d.Failure, &d.CreatedAt, &d.UpdatedAt,
+	); err != nil {
+		return nil, mapError(err)
+	}
+	d.Status = payout.DisbursementStatus(status)
+	return &d, nil
+}
+
 func scanPayout(row rowScanner) (*payout.Entry, error) {
 	var (
 		e           payout.Entry

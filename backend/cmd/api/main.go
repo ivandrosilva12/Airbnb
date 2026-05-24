@@ -136,7 +136,7 @@ func run() error {
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
-	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
+	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, paymentgw.NewDisburser(cfg.Payment))
 	identitySvc := identityapp.NewService(identityRepo, uow)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
