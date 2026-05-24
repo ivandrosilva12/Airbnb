@@ -101,12 +101,16 @@ services:
       EMAIL_FROM: no-reply@airhost.dev
       SMTP_HOST: mailhog
       SMTP_PORT: "1025"
-      # Payment gateway: "fake" (default), "stripe" or "appypay". Supply the
-      # matching secret via the environment (never commit real keys); when the
-      # secret is missing the app falls back to the fake gateway.
+      # Payment gateway: "fake" (default), "stripe", "appypay", "gpayangola" or
+      # "auto" (route by currency: domestic AOA → GPay Angola with AppyPay
+      # failover; foreign → Stripe). Supply the matching secret via the
+      # environment (never commit real keys); a missing secret falls back to the
+      # fake gateway.
       PAYMENT_PROVIDER: "${PAYMENT_PROVIDER:-fake}"
+      PAYMENT_DOMESTIC_CURRENCY: "${PAYMENT_DOMESTIC_CURRENCY:-AOA}"
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
       APPYPAY_TOKEN: "${APPYPAY_TOKEN:-}"
+      GPAYANGOLA_API_KEY: "${GPAYANGOLA_API_KEY:-}"
     ports:
       - "8081:8081"
 

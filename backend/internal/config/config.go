@@ -28,12 +28,18 @@ type PricingConfig struct {
 }
 
 // PaymentConfig selects and configures the payment gateway. Provider is one of
-// "fake" (default; no external calls), "stripe" or "appypay". Secrets come from
-// the environment and must never be committed.
+// "fake" (default; no external calls), "stripe", "appypay", "gpayangola", or
+// "auto" (route by currency: domestic → GPay Angola with AppyPay failover,
+// foreign → Stripe). Secrets come from the environment and must never be
+// committed.
 type PaymentConfig struct {
 	Provider string
-	Stripe   StripeConfig
-	AppyPay  AppyPayConfig
+	// DomesticCurrency is the ISO currency treated as a domestic (Angola)
+	// payment in "auto" routing; anything else routes to the foreign gateway.
+	DomesticCurrency string
+	Stripe           StripeConfig
+	AppyPay          AppyPayConfig
+	GPayAngola       GPayAngolaConfig
 }
 
 // StripeConfig holds Stripe REST API settings.
@@ -48,6 +54,13 @@ type StripeConfig struct {
 type AppyPayConfig struct {
 	Token   string
 	BaseURL string // e.g. https://api.appypay.co.ao/v2.0
+}
+
+// GPayAngolaConfig holds GPay Angola (gpayangola.com) REST API settings. APIKey
+// authenticates as a bearer token.
+type GPayAngolaConfig struct {
+	APIKey  string
+	BaseURL string // e.g. https://api.gpayangola.com
 }
 
 // EmailConfig holds transactional email settings. When SMTPHost is empty, a
@@ -161,7 +174,8 @@ func Load() (*Config, error) {
 			SMTPPassword: getEnv("SMTP_PASSWORD", ""),
 		},
 		Payment: PaymentConfig{
-			Provider: getEnv("PAYMENT_PROVIDER", "fake"),
+			Provider:         getEnv("PAYMENT_PROVIDER", "fake"),
+			DomesticCurrency: getEnv("PAYMENT_DOMESTIC_CURRENCY", "AOA"),
 			Stripe: StripeConfig{
 				SecretKey: getEnv("STRIPE_SECRET_KEY", ""),
 				BaseURL:   getEnv("STRIPE_BASE_URL", "https://api.stripe.com"),
@@ -169,6 +183,10 @@ func Load() (*Config, error) {
 			AppyPay: AppyPayConfig{
 				Token:   getEnv("APPYPAY_TOKEN", ""),
 				BaseURL: getEnv("APPYPAY_BASE_URL", "https://api.appypay.co.ao/v2.0"),
+			},
+			GPayAngola: GPayAngolaConfig{
+				APIKey:  getEnv("GPAYANGOLA_API_KEY", ""),
+				BaseURL: getEnv("GPAYANGOLA_BASE_URL", "https://api.gpayangola.com"),
 			},
 		},
 	}
