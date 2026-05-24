@@ -91,6 +91,47 @@
           "legendFormat": "{{route}}"
         }
       ]
+    },
+    {
+      "id": 8,
+      "title": "Active alerts (firing)",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "instant": true,
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Alertmanager notifications (req/s) & failures",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "sum(rate(alertmanager_notifications_total[5m])) by (integration)",
+          "legendFormat": "{{integration}} sent"
+        },
+        {
+          "expr": "sum(rate(alertmanager_notifications_failed_total[5m])) by (integration)",
+          "legendFormat": "{{integration}} failed"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Alerts held by Alertmanager",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "expr": "sum(alertmanager_alerts) by (state)", "legendFormat": "{{state}}" }
+      ]
     }
   ],
   "templating": {
