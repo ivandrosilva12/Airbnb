@@ -228,6 +228,7 @@ docker-compose.yml
 | Date-aware search | Complete | `searchapp` query service; covered by the e2e test |
 | Keyword search | Complete | Free-text `?q=` matched against title/description/city (pg ILIKE + memory substring); web keyword box; covered by unit + e2e tests |
 | Geo radius search | Complete | Haversine distance filter (pg + memory); web "Near me" geolocation; covered by unit + e2e tests |
+| Map search (web) | Complete | List/Map toggle on the home page; Leaflet + OpenStreetMap plots results as markers (vector, no API key) and fits bounds; markers link to the listing |
 | Bidirectional reviews | Complete | Host reviews guest (kind-discriminated, one per direction); guest sees their rating; covered by unit tests |
 | Listing ratings | Complete | Denormalised avg rating/count refreshed on review (migration 0009); shown on cards; covered by unit test |
 | Result sorting | Complete | Sort by newest/price/rating (pg ORDER BY + memory); web sort dropdown; covered by unit test |

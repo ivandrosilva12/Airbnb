@@ -38,6 +38,9 @@ export const translations = {
 
     'home.title': 'Find your next stay',
     'home.keyword': 'Search by keyword',
+    'home.results': '{n} listing(s)',
+    'home.viewList': 'List',
+    'home.viewMap': 'Map',
     'home.city': 'City',
     'home.search': 'Search',
     'home.sort.newest': 'Newest',
@@ -231,6 +234,9 @@ export const translations = {
 
     'home.title': 'Encontre a sua próxima estadia',
     'home.keyword': 'Pesquisar por palavra-chave',
+    'home.results': '{n} alojamento(s)',
+    'home.viewList': 'Lista',
+    'home.viewMap': 'Mapa',
     'home.city': 'Cidade',
     'home.search': 'Pesquisar',
     'home.sort.newest': 'Mais recentes',

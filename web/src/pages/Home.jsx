@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import PropertyCard from '../components/PropertyCard';
+import MapView from '../components/MapView';
 import { useT } from '../i18n/I18nContext';
 import { AMENITY_CODES } from '../amenities';
 
 export default function Home() {
   const { t } = useT();
+  const navigate = useNavigate();
+  const [view, setView] = useState('list');
   const [amenityOptions, setAmenityOptions] = useState(AMENITY_CODES);
   const [filters, setFilters] = useState({ q: '', city: '', type: '', minGuests: '', checkIn: '', checkOut: '', sort: '', amenities: [] });
   const [geo, setGeo] = useState(null); // { lat, lng, radiusKm } | null
@@ -150,11 +154,21 @@ export default function Home() {
         </div>
       </section>
 
+      <div className="results-bar">
+        {!loading && <span className="results-count">{t('home.results', { n: results.total })}</span>}
+        <div className="view-toggle">
+          <button type="button" className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>{t('home.viewList')}</button>
+          <button type="button" className={view === 'map' ? 'on' : ''} onClick={() => setView('map')}>{t('home.viewMap')}</button>
+        </div>
+      </div>
+
       {error && <p className="error">{error}</p>}
       {loading ? (
         <p>{t('home.loading')}</p>
       ) : results.items.length === 0 ? (
         <p>{t('home.empty')}</p>
+      ) : view === 'map' ? (
+        <MapView properties={results.items} onSelect={(id) => navigate(`/properties/${id}`)} />
       ) : (
         <div className="grid">
           {results.items.map((p) => (
