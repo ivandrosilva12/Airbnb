@@ -2,7 +2,6 @@ package handler
 
 import (
 	"errors"
-	"net/http"
 
 	identityapp "github.com/airhost/backend/internal/application/identity"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -35,8 +34,7 @@ func (h *IdentityHandler) Submit(c *gin.Context) {
 		return
 	}
 	var req submitVerificationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	v, err := h.svc.Submit(c.Request.Context(), userID, identityapp.SubmitInput{
@@ -118,8 +116,7 @@ func (h *IdentityHandler) Reject(c *gin.Context) {
 		return
 	}
 	var req rejectVerificationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	v, err := h.svc.Reject(c.Request.Context(), adminID, id, req.Reason)

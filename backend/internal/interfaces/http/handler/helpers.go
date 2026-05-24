@@ -33,6 +33,18 @@ func pageFromQuery(c *gin.Context) shared.Page {
 	return shared.NewPage(limit, offset)
 }
 
+// bindJSON decodes the JSON request body into dst. On failure it writes a
+// consistent 400 with a generic message — never echoing the validator's raw
+// error, which would leak struct field names and binding tags — and returns
+// false so the caller can return early.
+func bindJSON(c *gin.Context, dst any) bool {
+	if err := c.ShouldBindJSON(dst); err != nil {
+		response.FailMessage(c, 400, "invalid or malformed request body")
+		return false
+	}
+	return true
+}
+
 // requireUser fetches the authenticated user or aborts with 401.
 func requireUser(c *gin.Context) (uuid.UUID, bool) {
 	u, ok := middleware.CurrentUser(c)

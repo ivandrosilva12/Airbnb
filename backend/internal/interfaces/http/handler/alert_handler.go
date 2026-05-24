@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/subtle"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -52,8 +53,7 @@ type createSilenceRequest struct {
 // CreateSilence registers a new silence (admin action).
 func (h *AlertHandler) CreateSilence(c *gin.Context) {
 	var req createSilenceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 
@@ -212,6 +212,9 @@ func failAlerting(c *gin.Context, err error) {
 	case errors.Is(err, shared.ErrNotFound):
 		response.Fail(c, err)
 	default:
-		response.FailMessage(c, http.StatusBadGateway, err.Error())
+		// Most likely the upstream Alertmanager is unreachable. Log the detail
+		// server-side; return a generic 502 without leaking internals.
+		slog.Warn("alerting: upstream request failed", "error", err)
+		response.FailMessage(c, http.StatusBadGateway, "alert manager is unavailable")
 	}
 }

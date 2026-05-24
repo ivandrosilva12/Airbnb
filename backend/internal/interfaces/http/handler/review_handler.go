@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"net/http"
-
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
@@ -30,8 +28,7 @@ func (h *ReviewHandler) Create(c *gin.Context) {
 		return
 	}
 	var req createReviewRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	bookingID, ok := parseUUID(c, req.BookingID, "bookingId")
@@ -58,8 +55,7 @@ func (h *ReviewHandler) CreateGuest(c *gin.Context) {
 		return
 	}
 	var req createReviewRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	bookingID, ok := parseUUID(c, req.BookingID, "bookingId")

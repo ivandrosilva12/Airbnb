@@ -28,8 +28,7 @@ func (h *FavoriteHandler) Add(c *gin.Context) {
 		return
 	}
 	var req addFavoriteRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	propertyID, ok := parseUUID(c, req.PropertyID, "propertyId")

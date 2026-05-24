@@ -40,8 +40,7 @@ func (h *UserHandler) UpdateMe(c *gin.Context) {
 		return
 	}
 	var req updateProfileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	u, err := h.svc.UpdateProfile(c.Request.Context(), id, userapp.UpdateProfileInput{
@@ -69,8 +68,7 @@ func (h *UserHandler) UpdatePreferences(c *gin.Context) {
 		return
 	}
 	var req emailPreferencesRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	prefs := u.EmailPrefs

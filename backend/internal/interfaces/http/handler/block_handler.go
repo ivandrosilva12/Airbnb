@@ -37,8 +37,7 @@ func (h *BlockHandler) Create(c *gin.Context) {
 		return
 	}
 	var req createBlockRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	from, err := time.Parse("2006-01-02", req.From)
@@ -98,8 +97,7 @@ func (h *BlockHandler) ImportCalendar(c *gin.Context) {
 		return
 	}
 	var req importCalendarRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	events, err := ical.Parse([]byte(req.ICal))

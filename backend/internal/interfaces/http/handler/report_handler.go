@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"net/http"
-
 	reportapp "github.com/airhost/backend/internal/application/report"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
@@ -37,8 +35,7 @@ func (h *ReportHandler) Create(c *gin.Context) {
 		return
 	}
 	var req createReportRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	r, err := h.svc.File(c.Request.Context(), reporterID, propertyID, req.Reason, req.Note)

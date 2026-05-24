@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"net/http"
-
 	messageapp "github.com/airhost/backend/internal/application/message"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
@@ -28,8 +26,7 @@ func (h *MessageHandler) Start(c *gin.Context) {
 		return
 	}
 	var req startConversationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	propertyID, ok := parseUUID(c, req.PropertyID, "propertyId")
@@ -135,8 +132,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		return
 	}
 	var req sendMessageRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	m, err := h.svc.SendMessage(c.Request.Context(), actorID, id, req.Body)

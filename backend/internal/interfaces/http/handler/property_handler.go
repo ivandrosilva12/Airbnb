@@ -74,8 +74,7 @@ func (h *PropertyHandler) Create(c *gin.Context) {
 		return
 	}
 	var req createPropertyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	p, err := h.svc.Create(c.Request.Context(), propertyapp.CreateInput{
@@ -200,8 +199,7 @@ func (h *PropertyHandler) Update(c *gin.Context) {
 		return
 	}
 	var req updatePropertyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	p, err := h.svc.Update(c.Request.Context(), actorID, id, propertyapp.UpdateInput{
@@ -396,8 +394,7 @@ func (h *PropertyHandler) ReorderPhotos(c *gin.Context) {
 		return
 	}
 	var req reorderPhotosRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	orderedIDs := make([]uuid.UUID, 0, len(req.PhotoIDs))
@@ -432,8 +429,7 @@ func (h *PropertyHandler) PresignPhotoUpload(c *gin.Context) {
 		return
 	}
 	var req presignRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	url, key, err := h.svc.PresignPhotoUpload(c.Request.Context(), actorID, id, path.Ext(req.Filename))

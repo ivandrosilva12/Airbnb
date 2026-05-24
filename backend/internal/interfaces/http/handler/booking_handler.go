@@ -38,8 +38,7 @@ func (h *BookingHandler) Create(c *gin.Context) {
 		return
 	}
 	var req createBookingRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailMessage(c, http.StatusBadRequest, err.Error())
+	if !bindJSON(c, &req) {
 		return
 	}
 	propertyID, ok := parseUUID(c, req.PropertyID, "propertyId")
