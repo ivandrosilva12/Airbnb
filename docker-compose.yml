@@ -39,7 +39,13 @@ services:
     volumes:
       - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /realms/airhost HTTP/1.0\\r\\n\\r\\n' >&3 && cat <&3 | head -1 | grep -q '200'"]
+      # The image has bash (/dev/tcp) but no curl/wget. Use a well-formed HTTP/1.1
+      # request WITH a Host header (a Host-less request makes Keycloak 500) against
+      # the realm's OIDC discovery doc, and confirm it is fully loaded by matching
+      # "issuer" in the response.
+      test:
+        - CMD-SHELL
+        - "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /realms/airhost/.well-known/openid-configuration HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'issuer' <&3"
       interval: 10s
       timeout: 5s
       retries: 20
@@ -61,7 +67,7 @@ services:
       # one), then probe readiness, so the check works regardless of mc defaults.
       test:
         - CMD-SHELL
-        - "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" >/dev/null 2>&1 && mc ready local"
+        - "mc alias set local http://127.0.0.1:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" >/dev/null 2>&1 && mc ready local"
       interval: 10s
       timeout: 5s
       retries: 10
@@ -75,11 +81,14 @@ services:
   api:
     build:
       context: ./backend
+    # Self-heal if a dependency is briefly unavailable at startup (e.g. Keycloak
+    # still warming up) instead of exiting permanently.
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
       minio:
         condition: service_healthy
     environment:
