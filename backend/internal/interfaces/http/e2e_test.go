@@ -61,12 +61,14 @@ func (fakeStorage) PublicURL(key string) string { return "http://storage.test/" 
 // harness wires the real router against in-memory repositories and a stub auth
 // middleware that resolves "Bearer <userID>" to a seeded local user.
 type harness struct {
-	t           *testing.T
-	router      *gin.Engine
-	userRepo    *memory.UserRepository
-	paymentRepo *memory.PaymentRepository
-	mailer      *email.RecordingMailer
-	silencer    *memSilencer
+	t            *testing.T
+	router       *gin.Engine
+	userRepo     *memory.UserRepository
+	paymentRepo  *memory.PaymentRepository
+	propertyRepo *memory.PropertyRepository
+	bookingRepo  *memory.BookingRepository
+	mailer       *email.RecordingMailer
+	silencer     *memSilencer
 }
 
 // webhookSecret is the GPay Angola webhook secret the harness registers so e2e
@@ -171,7 +173,7 @@ func newHarness(t *testing.T) *harness {
 		},
 	})
 
-	return &harness{t: t, router: router, userRepo: userRepo, paymentRepo: paymentRepo, mailer: mailer, silencer: silencer}
+	return &harness{t: t, router: router, userRepo: userRepo, paymentRepo: paymentRepo, propertyRepo: propertyRepo, bookingRepo: bookingRepo, mailer: mailer, silencer: silencer}
 }
 
 func (h *harness) seedUser(role domainuser.Role, email string) *domainuser.User {

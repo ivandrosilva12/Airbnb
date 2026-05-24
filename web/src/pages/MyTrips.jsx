@@ -39,6 +39,7 @@ export default function MyTrips() {
   const [bookings, setBookings] = useState([]);
   const [payments, setPayments] = useState({});
   const [guestRating, setGuestRating] = useState(null);
+  const [pending, setPending] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState(null);
@@ -47,16 +48,18 @@ export default function MyTrips() {
   async function load() {
     setLoading(true);
     try {
-      const [bookingsRes, paymentsRes, guestReviews] = await Promise.all([
+      const [bookingsRes, paymentsRes, guestReviews, pendingRes] = await Promise.all([
         api.myBookings(),
         api.listPayments(),
         api.myGuestReviews(),
+        api.myPendingReviews(),
       ]);
       setBookings(bookingsRes.items || []);
       const byBooking = {};
       for (const p of paymentsRes.items || []) byBooking[p.bookingId] = p;
       setPayments(byBooking);
       setGuestRating(guestReviews?.summary || null);
+      setPending(pendingRes?.items || []);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -90,6 +93,31 @@ export default function MyTrips() {
       <h1>{t('trips.title')}</h1>
       {guestRating && guestRating.count > 0 && (
         <p className="card-meta">{t('trips.guestRating', { rating: guestRating.averageRating.toFixed(1), count: guestRating.count })}</p>
+      )}
+      {pending.length > 0 && (
+        <div className="review-prompt">
+          <strong>{t('trips.pendingTitle', { count: pending.length })}</strong>
+          <ul>
+            {pending.map((p) => (
+              <li key={p.bookingId}>
+                <span>{p.propertyTitle} · {p.checkIn?.slice(0, 10)} → {p.checkOut?.slice(0, 10)}</span>
+                {reviewed[p.bookingId] ? (
+                  <span className="success">{t('trips.reviewed')}</span>
+                ) : reviewing === p.bookingId ? (
+                  <ReviewForm
+                    bookingId={p.bookingId}
+                    onDone={() => { setReviewing(null); setReviewed((r) => ({ ...r, [p.bookingId]: true })); }}
+                    onError={setError}
+                  />
+                ) : (
+                  <button className="btn btn-primary btn-sm" onClick={() => { setError(null); setReviewing(p.bookingId); }}>
+                    {t('trips.leaveReview')}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {error && <p className="error">{error}</p>}
       {loading ? (

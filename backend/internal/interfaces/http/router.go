@@ -114,6 +114,7 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.POST("/reviews", h.Review.Create)
 		auth.POST("/reviews/guest", h.Review.CreateGuest)
 		auth.GET("/me/guest-reviews", h.Review.MyGuestReviews)
+		auth.GET("/me/reviews/pending", h.Review.MyPendingReviews)
 
 		// Messaging (host↔guest). Both roles participate, so these live under
 		// the authenticated group rather than the host-only group.

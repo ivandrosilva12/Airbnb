@@ -55,6 +55,12 @@ func (s *Service) EventHandler() event.Handler {
 			s.send(ctx, recipient, catBookings, "Booking cancelled",
 				fmt.Sprintf("A booking for %q was cancelled.", ev.PropertyTitle))
 
+		case event.BookingCompleted:
+			s.send(ctx, ev.GuestID, catBookings, "How was your stay?",
+				fmt.Sprintf("Your stay at %q is complete. Leave a review to help other guests.", ev.PropertyTitle))
+			s.send(ctx, ev.HostID, catBookings, "Review your guest",
+				fmt.Sprintf("Your guest's stay at %q is complete. Leave a review of your guest.", ev.PropertyTitle))
+
 		case event.MessageSent:
 			s.send(ctx, ev.RecipientID, catMessages, "New message",
 				"You have a new message on AirHost. Open the app to reply.")

@@ -35,6 +35,19 @@ func (s *Service) EventHandler() event.Handler {
 				"Booking cancelled",
 				fmt.Sprintf("A booking for %q was cancelled.", ev.PropertyTitle), ev.BookingID)
 
+		case event.BookingCompleted:
+			// Prompt the guest to review the property, and the host to review the
+			// guest. The guest prompt's failure is logged separately so the host
+			// prompt still runs.
+			if e1 := s.create(ctx, ev.GuestID, notification.TypeReviewRequested,
+				"How was your stay?",
+				fmt.Sprintf("Leave a review for %q.", ev.PropertyTitle), ev.BookingID); e1 != nil {
+				slog.Error("failed to create notification", "event", e.EventName(), "error", e1)
+			}
+			err = s.create(ctx, ev.HostID, notification.TypeReviewRequested,
+				"Review your guest",
+				fmt.Sprintf("Leave a review for your guest at %q.", ev.PropertyTitle), ev.BookingID)
+
 		case event.MessageSent:
 			err = s.create(ctx, ev.RecipientID, notification.TypeMessageReceived,
 				"New message",

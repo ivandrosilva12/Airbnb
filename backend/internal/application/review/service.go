@@ -5,6 +5,8 @@ package reviewapp
 
 import (
 	"context"
+	"sort"
+	"time"
 
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/property"
@@ -121,6 +123,53 @@ func (s *Service) ensureNotReviewed(ctx context.Context, bookingID uuid.UUID, ki
 		return shared.NewValidationError("this booking has already been reviewed")
 	}
 	return nil
+}
+
+// PendingReview is a completed stay the guest has not reviewed yet — the
+// backbone of the post-stay review prompt.
+type PendingReview struct {
+	BookingID     uuid.UUID
+	PropertyID    uuid.UUID
+	PropertyTitle string
+	CheckIn       time.Time
+	CheckOut      time.Time
+}
+
+// PendingForGuest returns the guest's completed stays that still await their
+// property review, most recent check-out first.
+func (s *Service) PendingForGuest(ctx context.Context, guestID uuid.UUID, page shared.Page) ([]PendingReview, error) {
+	res, err := s.bookings.ListByGuest(ctx, guestID, page)
+	if err != nil {
+		return nil, err
+	}
+	pending := make([]PendingReview, 0)
+	for _, b := range res.Items {
+		if b.Status != booking.StatusCompleted {
+			continue
+		}
+		reviewed, err := s.reviews.ExistsForBookingKind(ctx, b.ID, review.KindGuestToProperty)
+		if err != nil {
+			return nil, err
+		}
+		if reviewed {
+			continue
+		}
+		title := ""
+		if prop, err := s.properties.FindByID(ctx, b.PropertyID); err == nil {
+			title = prop.Title
+		}
+		pending = append(pending, PendingReview{
+			BookingID:     b.ID,
+			PropertyID:    b.PropertyID,
+			PropertyTitle: title,
+			CheckIn:       b.Dates.CheckIn,
+			CheckOut:      b.Dates.CheckOut,
+		})
+	}
+	sort.Slice(pending, func(i, j int) bool {
+		return pending[i].CheckOut.After(pending[j].CheckOut)
+	})
+	return pending, nil
 }
 
 // ListByProperty returns property reviews for a property.

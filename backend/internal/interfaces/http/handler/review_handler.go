@@ -107,6 +107,25 @@ func (h *ReviewHandler) MyGuestReviews(c *gin.Context) {
 	})
 }
 
+// MyPendingReviews returns the authenticated guest's completed stays that still
+// await a property review — the data behind the post-stay review prompt.
+func (h *ReviewHandler) MyPendingReviews(c *gin.Context) {
+	guestID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	pending, err := h.svc.PendingForGuest(c.Request.Context(), guestID, pageFromQuery(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	items := make([]dto.PendingReviewView, 0, len(pending))
+	for _, p := range pending {
+		items = append(items, dto.FromPendingReview(p))
+	}
+	response.OK(c, gin.H{"items": items})
+}
+
 // ListForProperty returns reviews for a property.
 func (h *ReviewHandler) ListForProperty(c *gin.Context) {
 	propertyID, ok := pathUUID(c, "id")

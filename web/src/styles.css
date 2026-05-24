@@ -230,6 +230,10 @@ a { color: inherit; text-decoration: none; }
 .silence-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 12px 0 20px; }
 .silence-form label { display: flex; flex-direction: column; font-size: .82rem; color: var(--muted); gap: 4px; }
 .silence-form input, .silence-form select { padding: 8px; border: 1px solid var(--border, #ddd); border-radius: 8px; font: inherit; }
+.review-prompt { background: #fff8e6; border: 1px solid #f3d27a; border-radius: var(--radius, 10px); padding: 14px 16px; margin: 12px 0 20px; }
+.review-prompt ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.review-prompt li { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.btn-sm { padding: 4px 10px; font-size: .85rem; }
 .badge-firing { background: #fdecea; color: #c0392b; }
 .badge-ok { background: #e8f6ec; color: #1e7e44; }
 .admin-table tr.row-muted td { color: var(--muted); }

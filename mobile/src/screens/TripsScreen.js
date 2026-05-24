@@ -9,23 +9,43 @@ export default function TripsScreen() {
   const [items, setItems] = useState([]);
   const [payments, setPayments] = useState({});
   const [expanded, setExpanded] = useState({});
+  const [pending, setPending] = useState({});
+  const [reviewed, setReviewed] = useState({});
+  const [reviewing, setReviewing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [bookingsRes, paymentsRes] = await Promise.all([api.myBookings(), api.listPayments()]);
+      const [bookingsRes, paymentsRes, pendingRes] = await Promise.all([
+        api.myBookings(),
+        api.listPayments(),
+        api.pendingReviews(),
+      ]);
       setItems(bookingsRes.items || []);
       const byBooking = {};
       for (const p of paymentsRes.items || []) byBooking[p.bookingId] = p;
       setPayments(byBooking);
+      const pend = {};
+      for (const p of pendingRes.items || []) pend[p.bookingId] = true;
+      setPending(pend);
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
   }, [api]);
+
+  async function submitReview(bookingId, rating) {
+    try {
+      await api.createReview({ bookingId, rating, comment: '' });
+      setReviewed((r) => ({ ...r, [bookingId]: true }));
+      setReviewing(null);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   useEffect(() => {
     if (authenticated) load();
@@ -97,6 +117,25 @@ export default function TripsScreen() {
                   <Receipt label="Total" value={item.totalPrice.display} bold />
                 </View>
               )}
+
+              {reviewed[item.id] ? (
+                <Text style={styles.reviewedText}>Reviewed ✓</Text>
+              ) : item.status === 'completed' && pending[item.id] ? (
+                reviewing === item.id ? (
+                  <View style={styles.starRow}>
+                    <Text style={styles.meta}>Rate your stay:</Text>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Pressable key={n} onPress={() => submitReview(item.id, n)}>
+                        <Text style={styles.star}>★{n}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : (
+                  <Pressable onPress={() => { setError(null); setReviewing(item.id); }}>
+                    <Text style={styles.reviewCta}>Leave a review</Text>
+                  </Pressable>
+                )
+              ) : null}
             </View>
           );
         }}
@@ -124,6 +163,10 @@ const styles = StyleSheet.create({
   payLine: { color: '#444', fontSize: 13, marginTop: 2 },
   cancel: { color: '#c0392b', fontWeight: '600' },
   receiptToggle: { color: '#ff385c', fontWeight: '600', marginTop: 8 },
+  reviewCta: { color: '#ff385c', fontWeight: '700', marginTop: 8 },
+  reviewedText: { color: '#1e7e44', fontWeight: '700', marginTop: 8 },
+  starRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 8 },
+  star: { color: '#ff385c', fontWeight: '700', fontSize: 15 },
   receipt: { marginTop: 8, backgroundColor: '#fafafa', borderRadius: 8, padding: 12 },
   receiptLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
   receiptLabel: { color: '#717171' },

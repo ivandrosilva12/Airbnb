@@ -145,6 +145,46 @@ func TestReview_RefreshesPropertyRating(t *testing.T) {
 	}
 }
 
+func TestPendingForGuest(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	guestID := uuid.New()
+	prop := makeProperty(t, f.properties, uuid.New())
+
+	// A completed, unreviewed stay is pending.
+	done := makeBooking(t, guestID, prop.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, done)
+	// A confirmed (not completed) stay is not pending.
+	confirmed := makeBooking(t, guestID, prop.ID, booking.StatusConfirmed)
+	_ = f.bookings.Create(ctx, confirmed)
+	// Another guest's completed stay is not mine.
+	other := makeBooking(t, uuid.New(), prop.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, other)
+
+	pending, err := f.svc.PendingForGuest(ctx, guestID, shared.NewPage(50, 0))
+	if err != nil {
+		t.Fatalf("pending: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending = %d, want 1", len(pending))
+	}
+	if pending[0].BookingID != done.ID || pending[0].PropertyTitle != "Flat" {
+		t.Fatalf("unexpected pending entry: %+v", pending[0])
+	}
+
+	// After reviewing it, nothing is pending.
+	if _, err := f.svc.Create(ctx, reviewapp.CreateInput{GuestID: guestID, BookingID: done.ID, Rating: 5}); err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+	pending, err = f.svc.PendingForGuest(ctx, guestID, shared.NewPage(50, 0))
+	if err != nil {
+		t.Fatalf("pending after review: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending after review = %d, want 0", len(pending))
+	}
+}
+
 func TestGuestReview_OnlyHostAfterCompletion(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()

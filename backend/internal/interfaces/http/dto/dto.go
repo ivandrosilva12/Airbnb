@@ -10,6 +10,7 @@ import (
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/application/port"
 	reportapp "github.com/airhost/backend/internal/application/report"
+	reviewapp "github.com/airhost/backend/internal/application/review"
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/identity"
@@ -554,6 +555,26 @@ type SilenceView struct {
 	CreatedBy string               `json:"createdBy"`
 	Comment   string               `json:"comment"`
 	Status    string               `json:"status"`
+}
+
+// PendingReviewView renders a completed stay awaiting the guest's review.
+type PendingReviewView struct {
+	BookingID     uuid.UUID `json:"bookingId"`
+	PropertyID    uuid.UUID `json:"propertyId"`
+	PropertyTitle string    `json:"propertyTitle"`
+	CheckIn       time.Time `json:"checkIn"`
+	CheckOut      time.Time `json:"checkOut"`
+}
+
+// FromPendingReview maps a pending-review record to its view.
+func FromPendingReview(p reviewapp.PendingReview) PendingReviewView {
+	return PendingReviewView{
+		BookingID:     p.BookingID,
+		PropertyID:    p.PropertyID,
+		PropertyTitle: p.PropertyTitle,
+		CheckIn:       p.CheckIn,
+		CheckOut:      p.CheckOut,
+	}
 }
 
 // AlertStateView renders the latest known state of an alert (firing/resolved)

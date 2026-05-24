@@ -42,6 +42,18 @@ type BookingCancelled struct {
 
 func (BookingCancelled) EventName() string { return "booking.cancelled" }
 
+// BookingCompleted is published when a host marks a stay completed (after
+// check-out). Both parties are prompted to leave a post-stay review.
+type BookingCompleted struct {
+	BookingID     uuid.UUID
+	PropertyID    uuid.UUID
+	PropertyTitle string
+	HostID        uuid.UUID
+	GuestID       uuid.UUID
+}
+
+func (BookingCompleted) EventName() string { return "booking.completed" }
+
 // MessageSent is published when a message is posted; the recipient is notified.
 type MessageSent struct {
 	ConversationID uuid.UUID

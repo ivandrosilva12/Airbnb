@@ -73,3 +73,26 @@ func TestEventHandler_CreatesNotificationsAndUnreadFlow(t *testing.T) {
 		t.Fatalf("unread after mark-all = %d, want 0", c)
 	}
 }
+
+func TestEventHandler_BookingCompletedPromptsBothParties(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewNotificationRepository()
+	svc := notificationapp.NewService(repo)
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	hostID := uuid.New()
+	guestID := uuid.New()
+	dispatcher.Publish(ctx, event.BookingCompleted{
+		BookingID: uuid.New(), PropertyID: uuid.New(), PropertyTitle: "Loft", HostID: hostID, GuestID: guestID,
+	})
+
+	// Both the guest and the host are prompted to review.
+	if c, _ := svc.UnreadCount(ctx, guestID); c != 1 {
+		t.Fatalf("guest review prompts = %d, want 1", c)
+	}
+	if c, _ := svc.UnreadCount(ctx, hostID); c != 1 {
+		t.Fatalf("host review prompts = %d, want 1", c)
+	}
+}

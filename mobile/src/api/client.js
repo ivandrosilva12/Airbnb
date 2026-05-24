@@ -40,6 +40,10 @@ export function createApi(getAccessToken) {
     myBookings: () => request('GET', '/bookings/me', { auth: true }),
     cancelBooking: (id) => request('POST', `/bookings/${id}/cancel`, { auth: true }),
 
+    // Post-stay reviews
+    pendingReviews: () => request('GET', '/me/reviews/pending', { auth: true }),
+    createReview: (body) => request('POST', '/reviews', { body, auth: true }),
+
     // Payments (guest-facing reads)
     listPayments: () => request('GET', '/payments/me', { auth: true }),
 

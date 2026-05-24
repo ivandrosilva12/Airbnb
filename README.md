@@ -77,7 +77,10 @@ Key domain rules enforced in code:
 - Money is stored as integer minor units (cents) with an ISO currency.
 - Reviews are bidirectional and tied to a *completed* booking: the guest reviews
   the property and the host reviews the guest — at most one review per direction
-  per booking.
+  per booking. Completing a stay publishes a `BookingCompleted` event that prompts
+  both parties to review (in-app notification + e-mail); guests see their
+  outstanding stays via `GET /me/reviews/pending`, surfaced as a prompt in the web
+  Trips page and the mobile Trips screen.
 - A payment follows the booking: it is *authorized* when the booking is requested,
   *captured* when the host confirms, and *refunded* if the booking is cancelled.
 - Each listing has a cancellation policy (flexible/moderate/strict). A guest
@@ -195,7 +198,7 @@ Authenticated (Bearer token):
 - `GET /me` · `PATCH /me` · `PATCH /me/preferences` (email opt-outs) · `POST /me/become-host`
 - `GET /me/verification` · `POST /me/verification` — submit / read KYC identity verification
 - `POST /bookings` · `GET /bookings/me` · `GET /bookings/:id` · `POST /bookings/:id/cancel`
-- `POST /reviews` (guest → property) · `POST /reviews/guest` (host → guest) · `GET /me/guest-reviews`
+- `POST /reviews` (guest → property) · `POST /reviews/guest` (host → guest) · `GET /me/guest-reviews` · `GET /me/reviews/pending` (stays awaiting review)
 - `GET /conversations` (each with the viewer's `unreadCount`) · `POST /conversations` (start/get a thread)
 - `GET /conversations/unread-count` (total unread, for the badge) · `POST /conversations/:id/read`
 - `GET /conversations/:id/messages` · `POST /conversations/:id/messages`
@@ -252,6 +255,7 @@ docker-compose.yml
 | Geo radius search | Complete | Haversine distance filter (pg + memory); web "Near me" geolocation; covered by unit + e2e tests |
 | Map search (web) | Complete | List/Map toggle on the home page; Leaflet + OpenStreetMap plots results as markers (vector, no API key) and fits bounds; markers link to the listing |
 | Bidirectional reviews | Complete | Host reviews guest (kind-discriminated, one per direction); guest sees their rating; covered by unit tests |
+| Post-stay review flow | Complete | Completing a stay emits `BookingCompleted` → notification + e-mail prompts both parties; `GET /me/reviews/pending` lists the guest's unreviewed completed stays, shown as a prompt on web Trips and mobile Trips; covered by unit + e2e tests |
 | Listing ratings | Complete | Denormalised avg rating/count refreshed on review (migration 0009); shown on cards; covered by unit test |
 | Result sorting | Complete | Sort by newest/price/rating (pg ORDER BY + memory); web sort dropdown; covered by unit test |
 | Host metrics | Complete | `analyticsapp` read-model composing property+booking+payment (revenue, counts, upcoming, rating); dashboard cards; covered by e2e test |
@@ -288,7 +292,7 @@ docker-compose.yml
 | CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build + a Keycloak integration job |
 | SQL schema | Complete | Applied by the startup migrator |
 | Web (React) | Complete | `npm run build` passes |
-| Mobile (Expo) | Guest + host | Guest: explore, listing + booking, account hub, trips (with payment status + an in-app receipt breakdown), saved, notifications, messages, contact host, report a listing, identity verification. Host: dashboard (metrics + earnings + listings) and per-listing booking management (confirm/complete/cancel). Builds require an emulator/device; not auto-verified |
+| Mobile (Expo) | Guest + host | Guest: explore, listing + booking, account hub, trips (with payment status, an in-app receipt breakdown, and a post-stay review prompt), saved, notifications, messages, contact host, report a listing, identity verification. Host: dashboard (metrics + earnings + listings) and per-listing booking management (confirm/complete/cancel). Builds require an emulator/device; not auto-verified |
 | Infra (compose) | Complete | Config authored; bring up with `docker compose up` |
 | Observability | Complete | `/metrics` endpoint + Prometheus scrape (api, prometheus, alertmanager) + Grafana dashboard (incl. webhook-events-by-outcome, rate-limited-per-minute, active-alerts table, and Alertmanager notification/held-alert panels) |
 | Alerting | Complete | Prometheus alert rules (`infra/prometheus/alerts.yml`): API down, 5xx error rate, webhook signature-rejection / processing-error spikes, sustained rate limiting. Routed by Alertmanager to email (MailHog locally) and Slack for critical (`SLACK_WEBHOOK_URL`); resolved notifications go to a separate channel/mailbox (templated on `.Status`). Each alert carries a `runbook_url` annotation linking to a per-alert page in [`docs/runbooks/`](docs/runbooks/), rendered as a clickable link in Slack and listed in the e-mail. Admins can mute alerts during maintenance via the silence API (`/admin/alerts/silences`, backed by Alertmanager `ALERTMANAGER_URL`) and a panel in the web Moderation console. Alertmanager also pushes every firing/resolved notification to the API (`POST /webhooks/alerts`), which keeps an in-memory alert-state view exposed at `GET /admin/alerts` and rendered as a live "Alerts" panel (firing + recently resolved) in the console — so resolved state shows in-app, not just email/Slack |

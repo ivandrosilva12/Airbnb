@@ -217,6 +217,13 @@ func (s *Service) Complete(ctx context.Context, actorID, bookingID uuid.UUID) (*
 	if err := s.bookings.Update(ctx, b); err != nil {
 		return nil, err
 	}
+	s.events.Publish(ctx, event.BookingCompleted{
+		BookingID:     b.ID,
+		PropertyID:    prop.ID,
+		PropertyTitle: prop.Title,
+		HostID:        prop.HostID,
+		GuestID:       b.GuestID,
+	})
 	return b, nil
 }
 
