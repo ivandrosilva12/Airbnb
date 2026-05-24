@@ -9,11 +9,17 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/config"
 )
+
+// stripeReplayTolerance is the maximum age of a Stripe webhook timestamp; older
+// (or far-future) signatures are rejected to prevent replay.
+const stripeReplayTolerance = 5 * time.Minute
 
 // NewWebhookVerifiers builds the set of provider webhook verifiers keyed by
 // provider name, for whichever providers have a webhook secret configured.
@@ -22,7 +28,7 @@ import (
 func NewWebhookVerifiers(cfg config.PaymentConfig) map[string]port.WebhookVerifier {
 	out := map[string]port.WebhookVerifier{}
 	if cfg.Stripe.WebhookSecret != "" {
-		out[nameStripe] = &stripeWebhookVerifier{secret: cfg.Stripe.WebhookSecret}
+		out[nameStripe] = &stripeWebhookVerifier{secret: cfg.Stripe.WebhookSecret, tolerance: stripeReplayTolerance}
 	}
 	if cfg.AppyPay.WebhookSecret != "" {
 		out[nameAppyPay] = &jsonWebhookVerifier{provider: nameAppyPay, secret: cfg.AppyPay.WebhookSecret}
@@ -48,8 +54,13 @@ func hmacHexEqual(secret, signature string, payload []byte) bool {
 // --- Stripe ------------------------------------------------------------------
 
 // stripeWebhookVerifier verifies the `Stripe-Signature` header (t=…,v1=…) as an
-// HMAC-SHA256 of "<timestamp>.<body>" and maps Stripe event types.
-type stripeWebhookVerifier struct{ secret string }
+// HMAC-SHA256 of "<timestamp>.<body>" and maps Stripe event types. The signed
+// timestamp is also checked against a tolerance window to prevent replay.
+type stripeWebhookVerifier struct {
+	secret    string
+	tolerance time.Duration
+	now       func() time.Time // injectable clock for tests
+}
 
 func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.GatewayEvent, bool, error) {
 	sig := header.Get("Stripe-Signature")
@@ -75,6 +86,22 @@ func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.Ga
 	signedPayload := append([]byte(timestamp+"."), body...)
 	if !hmacHexEqual(v.secret, v1, signedPayload) {
 		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: signature mismatch")
+	}
+	// Anti-replay: reject timestamps outside the tolerance window.
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: bad timestamp")
+	}
+	tolerance := v.tolerance
+	if tolerance <= 0 {
+		tolerance = stripeReplayTolerance
+	}
+	clock := v.now
+	if clock == nil {
+		clock = time.Now
+	}
+	if age := clock().Sub(time.Unix(ts, 0)); age > tolerance || age < -tolerance {
+		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: timestamp outside tolerance")
 	}
 
 	var evt struct {

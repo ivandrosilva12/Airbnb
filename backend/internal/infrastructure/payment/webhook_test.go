@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/config"
@@ -17,13 +19,23 @@ func hexHMAC(secret string, payload []byte) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// stripeSignature builds a `Stripe-Signature` header value for the body at the
+// given timestamp.
+func stripeSignature(secret string, ts int64, body []byte) string {
+	t := strconv.FormatInt(ts, 10)
+	sig := hexHMAC(secret, append([]byte(t+"."), body...))
+	return "t=" + t + ",v1=" + sig
+}
+
 func TestStripeWebhookVerifier(t *testing.T) {
-	v := &stripeWebhookVerifier{secret: "whsec_test"}
+	// A fixed clock so the signed timestamp sits inside the tolerance window.
+	now := time.Unix(1700000000, 0)
+	v := &stripeWebhookVerifier{secret: "whsec_test", tolerance: 5 * time.Minute, now: func() time.Time { return now }}
+	ts := now.Unix()
 	body := []byte(`{"type":"payment_intent.succeeded","data":{"object":{"id":"pi_42"}}}`)
-	sig := hexHMAC("whsec_test", append([]byte("1700000000."), body...))
 
 	h := http.Header{}
-	h.Set("Stripe-Signature", "t=1700000000,v1="+sig)
+	h.Set("Stripe-Signature", stripeSignature("whsec_test", ts, body))
 
 	evt, ok, err := v.Verify(h, body)
 	if err != nil || !ok {
@@ -34,14 +46,21 @@ func TestStripeWebhookVerifier(t *testing.T) {
 	}
 
 	// Tampered signature is rejected.
-	h.Set("Stripe-Signature", "t=1700000000,v1=deadbeef")
+	h.Set("Stripe-Signature", "t="+strconv.FormatInt(ts, 10)+",v1=deadbeef")
 	if _, _, err := v.Verify(h, body); err == nil {
 		t.Fatal("expected signature mismatch error")
 	}
 
+	// A correctly signed but stale timestamp is rejected (anti-replay).
+	old := now.Add(-time.Hour).Unix()
+	h.Set("Stripe-Signature", stripeSignature("whsec_test", old, body))
+	if _, _, err := v.Verify(h, body); err == nil {
+		t.Fatal("expected stale-timestamp rejection")
+	}
+
 	// A charge.refunded maps to a refund against the payment intent.
 	rbody := []byte(`{"type":"charge.refunded","data":{"object":{"id":"ch_1","payment_intent":"pi_42","amount_refunded":1500}}}`)
-	h.Set("Stripe-Signature", "t=1700000000,v1="+hexHMAC("whsec_test", append([]byte("1700000000."), rbody...)))
+	h.Set("Stripe-Signature", stripeSignature("whsec_test", ts, rbody))
 	evt, ok, err = v.Verify(h, rbody)
 	if err != nil || !ok {
 		t.Fatalf("verify refund: ok=%v err=%v", ok, err)

@@ -75,8 +75,9 @@ func NewRouter(d Deps) *gin.Engine {
 	api.GET("/properties/:id/reviews/summary", h.Review.Summary)
 
 	// Payment gateway webhooks (authenticated by per-provider signature, not by a
-	// user token, so they live outside the auth group).
-	api.POST("/webhooks/payments/:provider", h.PaymentWebhook.Handle)
+	// user token, so they live outside the auth group). Rate-limited per IP to
+	// blunt floods/replay storms against the unauthenticated route.
+	api.POST("/webhooks/payments/:provider", middleware.RateLimit(5, 20), h.PaymentWebhook.Handle)
 
 	// Authenticated routes.
 	auth := api.Group("")

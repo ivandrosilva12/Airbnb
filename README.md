@@ -274,6 +274,7 @@ docker-compose.yml
 | Real payment gateways | Complete | `StripeGateway`, `AppyPayGateway` + `GPayAngolaGateway` adapters of the `PaymentGateway` port over each provider's REST API (manual-capture authorize → capture → refund, idempotency + error mapping); `PAYMENT_PROVIDER` forces one or `auto` routes by currency; falls back to fake when a secret is unset; covered by unit tests against mock HTTP servers |
 | Currency-based routing | Complete | `RoutingGateway` composite: domestic currency (AOA) → GPay Angola primary with AppyPay failover; foreign currency → Stripe. Tags the gateway reference at authorize so capture/refund pin to the authorizing provider; covered by failover/routing unit tests |
 | Payment webhooks | Complete | Public `POST /webhooks/payments/:provider` reconciles async gateway events (capture/refund/fail) idempotently; per-provider signature verification (Stripe HMAC `Stripe-Signature`; AppyPay/GPay Angola hex HMAC `X-Signature`), enabled only when the provider's webhook secret is set; covered by verifier unit tests + an e2e test |
+| Webhook hardening | Complete | Per-IP token-bucket rate limiting on the webhook route (429 on exceed); Stripe signature timestamp anti-replay (5-minute tolerance window); covered by limiter + verifier unit tests |
 | Host payouts | Complete | New `payout` context: an earnings ledger credited on confirmation (total minus the platform fee) and debited on refund; `GET /host/earnings` balance + ledger + `export.csv` statement; dashboard card + a dedicated `/host/earnings` payouts panel (balances per currency + signed ledger linking to listings, CSV download); covered by unit + e2e tests |
 | Message read-receipts | Complete | Per-participant read markers, per-conversation + total unread counts, navbar/inbox badges; covered by the e2e test |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |
@@ -313,6 +314,7 @@ docker-compose.yml
   `STRIPE_WEBHOOK_SECRET` / `APPYPAY_WEBHOOK_SECRET` / `GPAYANGOLA_WEBHOOK_SECRET`),
   parsed into a normalized event, and reconciled idempotently against the local
   payment, so retried or out-of-order deliveries are safe. A provider's route is
-  only mounted when its webhook secret is configured.
-- Suggested follow-ups: full-stack e2e tests against a live Keycloak.
+  only mounted when its webhook secret is configured. The webhook route is
+  rate-limited per IP (token bucket) and Stripe signatures are rejected outside a
+  5-minute timestamp window to blunt replay/flood attacks.
 ```
