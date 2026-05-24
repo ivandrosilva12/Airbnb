@@ -177,6 +177,9 @@ a { color: inherit; text-decoration: none; }
 .view-toggle { display: inline-flex; border: 1px solid #ddd; border-radius: 999px; overflow: hidden; }
 .view-toggle button { background: #fff; border: none; padding: 6px 16px; cursor: pointer; font-size: .9rem; color: #222; }
 .view-toggle button.on { background: var(--primary); color: #fff; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 28px 0 8px; }
+.pagination-info { color: var(--muted); font-size: .9rem; min-width: 110px; text-align: center; }
+.pagination .btn[disabled] { opacity: .45; cursor: not-allowed; }
 .map-view { height: 460px; width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid #eee; z-index: 0; }
 .ical-url { display: block; background: #f6f6f6; border: 1px solid #eee; border-radius: 8px; padding: 10px 12px; font-size: .82rem; word-break: break-all; margin-bottom: 12px; }
 .ical-import { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }

@@ -1,22 +1,29 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, FlatList, TextInput, Image, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useApi } from '../api/useApi';
+
+const PAGE_SIZE = 12;
 
 export default function ExploreScreen({ navigation }) {
   const api = useApi();
   const [city, setCity] = useState('');
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
+  const paramsRef = useRef({});
 
   const load = useCallback(
     async (params = {}) => {
       setLoading(true);
       setError(null);
+      paramsRef.current = params;
       try {
         const cleaned = Object.fromEntries(Object.entries(params).filter(([, v]) => v));
-        const res = await api.searchProperties(cleaned);
+        const res = await api.searchProperties({ ...cleaned, limit: PAGE_SIZE, offset: 0 });
         setItems(res.items || []);
+        setTotal(res.total || 0);
       } catch (e) {
         setError(e.message);
       } finally {
@@ -25,6 +32,23 @@ export default function ExploreScreen({ navigation }) {
     },
     [api],
   );
+
+  // loadMore appends the next page when the user scrolls to the end, until every
+  // result is loaded. Guards against overlapping fetches and the initial load.
+  const loadMore = useCallback(async () => {
+    if (loading || loadingMore || items.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const cleaned = Object.fromEntries(Object.entries(paramsRef.current).filter(([, v]) => v));
+      const res = await api.searchProperties({ ...cleaned, limit: PAGE_SIZE, offset: items.length });
+      setItems((prev) => [...prev, ...(res.items || [])]);
+      setTotal(res.total || 0);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [api, loading, loadingMore, items.length, total]);
 
   useEffect(() => {
     load();
@@ -47,7 +71,10 @@ export default function ExploreScreen({ navigation }) {
         <FlatList
           data={items}
           keyExtractor={(item) => item.id}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
           ListEmptyComponent={<Text style={styles.empty}>No listings found.</Text>}
+          ListFooterComponent={loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color="#ff385c" /> : null}
           renderItem={({ item }) => (
             <Pressable style={styles.card} onPress={() => navigation.navigate('Property', { id: item.id })}>
               {item.photos?.[0]?.url ? (

@@ -6,6 +6,8 @@ import MapView from '../components/MapView';
 import { useT } from '../i18n/I18nContext';
 import { AMENITY_CODES } from '../amenities';
 
+const PAGE_SIZE = 12;
+
 export default function Home() {
   const { t } = useT();
   const navigate = useNavigate();
@@ -14,20 +16,33 @@ export default function Home() {
   const [filters, setFilters] = useState({ q: '', city: '', type: '', minGuests: '', checkIn: '', checkOut: '', sort: '', amenities: [] });
   const [geo, setGeo] = useState(null); // { lat, lng, radiusKm } | null
   const [results, setResults] = useState({ items: [], total: 0 });
+  const [page, setPage] = useState(0);
+  const [lastParams, setLastParams] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  async function load(params = {}) {
+  // load runs a search. Changing the filters/geo starts a new query at page 0;
+  // the pagination controls re-run the last query with an explicit page index.
+  async function load(params = {}, p = 0) {
     setLoading(true);
     setError(null);
     try {
       const cleaned = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v != null));
-      setResults(await api.searchProperties(cleaned));
+      const res = await api.searchProperties({ ...cleaned, limit: PAGE_SIZE, offset: p * PAGE_SIZE });
+      setResults(res);
+      setLastParams(cleaned);
+      setPage(p);
+      if (p !== 0) window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
+  }
+
+  // goToPage moves within the current result set, preserving the active filters.
+  function goToPage(p) {
+    load(lastParams, p);
   }
 
   useEffect(() => {
@@ -175,6 +190,25 @@ export default function Home() {
             <PropertyCard key={p.id} property={p} />
           ))}
         </div>
+      )}
+
+      {!loading && !error && results.total > PAGE_SIZE && (
+        <nav className="pagination" aria-label={t('home.page', { page: page + 1, pages: Math.ceil(results.total / PAGE_SIZE) })}>
+          <button type="button" className="btn btn-ghost" disabled={page === 0} onClick={() => goToPage(page - 1)}>
+            ‹ {t('home.prev')}
+          </button>
+          <span className="pagination-info">
+            {t('home.page', { page: page + 1, pages: Math.ceil(results.total / PAGE_SIZE) })}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={(page + 1) * PAGE_SIZE >= results.total}
+            onClick={() => goToPage(page + 1)}
+          >
+            {t('home.next')} ›
+          </button>
+        </nav>
       )}
     </div>
   );
