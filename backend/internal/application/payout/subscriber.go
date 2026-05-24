@@ -62,6 +62,12 @@ func (s *Service) recordRefund(ctx context.Context, ev event.BookingCancelled) {
 	if fraction == 0 {
 		return // the host keeps the full charge under the cancellation policy
 	}
+	// Policy: on a guest cancellation the guest is refunded `fraction` of the
+	// full total (payment subscriber) while the host is debited `fraction` of
+	// their *net* earning (total − service fee). The platform therefore absorbs
+	// `fraction` × service fee — it does not profit from cancelled stays. This
+	// asymmetry is intentional; the guest refund and host debit are each correct
+	// relative to what that party paid/earned.
 	b, err := s.bookings.FindByID(ctx, ev.BookingID)
 	if err != nil {
 		slog.Error("payout: booking lookup failed", "booking", ev.BookingID, "error", err)

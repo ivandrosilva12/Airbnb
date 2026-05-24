@@ -781,20 +781,14 @@ func (r *PaymentRepository) RevenueForBookings(_ context.Context, bookingIDs []u
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	var rev payment.Revenue
+	acc := payment.NewRevenueAccumulator()
 	for _, p := range r.m {
 		if _, ok := want[p.BookingID]; !ok {
 			continue
 		}
-		rev.Currency = p.Amount.Currency()
-		switch p.Status {
-		case payment.StatusCaptured:
-			rev.CapturedCents += p.Amount.AmountCents()
-		case payment.StatusAuthorized:
-			rev.PendingCents += p.Amount.AmountCents()
-		}
+		acc.Add(p.Amount.Currency(), p.Status, p.Amount.AmountCents(), p.RefundedCents)
 	}
-	return rev, nil
+	return acc.Dominant(), nil
 }
 
 func (r *PaymentRepository) ListByGuest(_ context.Context, guestID uuid.UUID, page shared.Page) (shared.PageResult[*payment.Payment], error) {

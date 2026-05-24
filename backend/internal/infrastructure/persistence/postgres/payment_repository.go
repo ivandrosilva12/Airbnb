@@ -85,36 +85,34 @@ func (r *PaymentRepository) ListByGuest(ctx context.Context, guestID uuid.UUID, 
 }
 
 func (r *PaymentRepository) RevenueForBookings(ctx context.Context, bookingIDs []uuid.UUID) (payment.Revenue, error) {
-	var rev payment.Revenue
 	if len(bookingIDs) == 0 {
-		return rev, nil
+		return payment.Revenue{}, nil
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT status, currency, SUM(amount_cents)
+		SELECT status, currency, SUM(amount_cents), SUM(refunded_cents)
 		FROM payments WHERE booking_id = ANY($1)
 		GROUP BY status, currency`, bookingIDs)
 	if err != nil {
-		return rev, mapError(err)
+		return payment.Revenue{}, mapError(err)
 	}
 	defer rows.Close()
+	acc := payment.NewRevenueAccumulator()
 	for rows.Next() {
 		var (
 			status   string
 			currency string
 			cents    int64
+			refunded int64
 		)
-		if err := rows.Scan(&status, &currency, &cents); err != nil {
+		if err := rows.Scan(&status, &currency, &cents, &refunded); err != nil {
 			return payment.Revenue{}, mapError(err)
 		}
-		rev.Currency = currency
-		switch payment.Status(status) {
-		case payment.StatusCaptured:
-			rev.CapturedCents += cents
-		case payment.StatusAuthorized:
-			rev.PendingCents += cents
-		}
+		acc.Add(currency, payment.Status(status), cents, refunded)
 	}
-	return rev, mapError(rows.Err())
+	if err := rows.Err(); err != nil {
+		return payment.Revenue{}, mapError(err)
+	}
+	return acc.Dominant(), nil
 }
 
 func scanPayment(row rowScanner) (*payment.Payment, error) {
