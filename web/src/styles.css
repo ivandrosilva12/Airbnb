@@ -178,6 +178,10 @@ a { color: inherit; text-decoration: none; }
 .view-toggle button { background: #fff; border: none; padding: 6px 16px; cursor: pointer; font-size: .9rem; color: #222; }
 .view-toggle button.on { background: var(--primary); color: #fff; }
 .map-view { height: 460px; width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid #eee; z-index: 0; }
+.ical-url { display: block; background: #f6f6f6; border: 1px solid #eee; border-radius: 8px; padding: 10px 12px; font-size: .82rem; word-break: break-all; margin-bottom: 12px; }
+.ical-import { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+.ical-import textarea { width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 10px; font-family: monospace; font-size: .8rem; }
+.ical-import .btn { align-self: flex-start; }
 .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
 .photo-card { position: relative; border: 1px solid #eee; border-radius: 10px; overflow: hidden; background: #fff; }
 .photo-card.is-cover { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(255,56,92,.15); }

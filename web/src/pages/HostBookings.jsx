@@ -46,6 +46,8 @@ export default function HostBookings() {
   const [reviewed, setReviewed] = useState({});
   const [blocks, setBlocks] = useState([]);
   const [blockForm, setBlockForm] = useState({ from: '', to: '', reason: '' });
+  const [icalText, setIcalText] = useState('');
+  const [icalMsg, setIcalMsg] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -99,6 +101,20 @@ export default function HostBookings() {
       load();
     } catch (e) {
       setError(e.message);
+    }
+  }
+
+  async function importCalendar(e) {
+    e.preventDefault();
+    setError(null);
+    setIcalMsg(null);
+    try {
+      const res = await api.importCalendar(id, icalText);
+      setIcalText('');
+      setIcalMsg(t('ical.imported', { imported: res.imported, found: res.found }));
+      load();
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -180,6 +196,27 @@ export default function HostBookings() {
               ))}
             </ul>
           )}
+        </section>
+      )}
+
+      {!loading && (
+        <section className="blocks-section">
+          <h2>{t('ical.title')}</h2>
+          <p className="muted-text">{t('ical.exportHint')}</p>
+          <code className="ical-url">{api.calendarFeedUrl(id)}</code>
+
+          <form className="ical-import" onSubmit={importCalendar}>
+            <label>{t('ical.importLabel')}
+              <textarea
+                rows={4}
+                placeholder="BEGIN:VCALENDAR…"
+                value={icalText}
+                onChange={(e) => setIcalText(e.target.value)}
+              />
+            </label>
+            <button className="btn btn-primary" type="submit" disabled={!icalText.trim()}>{t('ical.importBtn')}</button>
+          </form>
+          {icalMsg && <p className="success">{icalMsg}</p>}
         </section>
       )}
     </div>

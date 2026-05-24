@@ -175,6 +175,7 @@ Public:
 - `GET /properties?q=...` — free-text search across listing title, description and city
 - `GET /amenities` — canonical amenity codes (shared by the create form and search filter)
 - `GET /properties/:id/availability` — booked date ranges (`?from=YYYY-MM-DD&to=YYYY-MM-DD`)
+- `GET /properties/:id/calendar.ics` — iCalendar feed of booked + blocked ranges (for external subscription)
 - `GET /properties/:id/reviews` · `GET /properties/:id/reviews/summary`
 
 Authenticated (Bearer token):
@@ -197,6 +198,7 @@ Host only:
 - `PATCH /properties/:id/photos/order` (reorder; first is the cover) · `DELETE /properties/:id/photos/:photoId`
 - `GET /properties/:id/bookings` · `POST /bookings/:id/confirm` · `POST /bookings/:id/complete`
 - `GET /properties/:id/blocks` · `POST /properties/:id/blocks` · `DELETE /blocks/:id` (calendar blocks)
+- `POST /properties/:id/calendar/import` — import an external iCal feed as blocks
 
 - `GET /host/metrics` — dashboard analytics (revenue, bookings by status, upcoming check-ins, rating)
 - `GET /host/earnings` — earnings balance per currency (net of the platform fee) · `GET /host/earnings/entries` — the earnings ledger
@@ -239,6 +241,7 @@ docker-compose.yml
 | Amenities filter (UI) | Complete | Toggle chips on the search bar emitting repeated `amenity=` params (backend filter already existed) |
 | Canonical amenities | Complete | Shared canonical code set; backend normalizes on create + search (drops unknowns); `GET /amenities` drives the create form and filter; covered by unit + e2e tests |
 | Host calendar blocks | Complete | New `block` context; blocked ranges reject bookings, show in availability, and exclude from date search; host UI to add/remove; covered by unit + e2e tests |
+| Calendar sync (iCal) | Complete | Public `calendar.ics` export (bookings + blocks) for external subscription; import of an external iCal feed into host blocks (idempotent, RFC 5545 subset parser); host UI; covered by unit + e2e tests |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Advanced pricing | Complete | Per-listing weekly/monthly length-of-stay discounts + occupancy tax (migration 0014); derived in the domain and stored on the booking; create-listing form + detail/receipt breakdown; covered by unit + e2e tests |
 | Photo management | Complete | Reorder (first photo = cover), set-cover and delete on the property aggregate; host-only `PATCH /photos/order` + `DELETE /photos/:photoId`; web photo manager page; covered by an e2e test |

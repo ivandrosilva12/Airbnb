@@ -121,6 +121,8 @@ export const api = {
   listBlocks: (propertyId) => request('GET', `/properties/${propertyId}/blocks`, { auth: true }),
   createBlock: (propertyId, body) => request('POST', `/properties/${propertyId}/blocks`, { body, auth: true }),
   deleteBlock: (blockId) => request('DELETE', `/blocks/${blockId}`, { auth: true }),
+  importCalendar: (propertyId, ical) => request('POST', `/properties/${propertyId}/calendar/import`, { body: { ical }, auth: true }),
+  calendarFeedUrl: (propertyId) => `${BASE_URL}/properties/${propertyId}/calendar.ics`,
 
   // Availability (public)
   availability: (id, params = {}) => {

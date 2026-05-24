@@ -67,6 +67,7 @@ func NewRouter(d Deps) *gin.Engine {
 	api.GET("/properties", h.Property.Search)
 	api.GET("/properties/:id", h.Property.Get)
 	api.GET("/properties/:id/availability", h.Booking.Availability)
+	api.GET("/properties/:id/calendar.ics", h.Booking.CalendarICS)
 	api.GET("/properties/:id/reviews", h.Review.ListForProperty)
 	api.GET("/properties/:id/reviews/summary", h.Review.Summary)
 
@@ -141,6 +142,7 @@ func NewRouter(d Deps) *gin.Engine {
 			// Calendar blocks.
 			host.GET("/properties/:id/blocks", h.Block.ListForProperty)
 			host.POST("/properties/:id/blocks", h.Block.Create)
+			host.POST("/properties/:id/calendar/import", h.Block.ImportCalendar)
 			host.DELETE("/blocks/:id", h.Block.Delete)
 		}
 

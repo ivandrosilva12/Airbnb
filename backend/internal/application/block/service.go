@@ -54,6 +54,58 @@ func (s *Service) Create(ctx context.Context, hostID, propertyID uuid.UUID, from
 	return b, nil
 }
 
+// ImportRange is a busy range to import as a host block (e.g. from an external
+// iCal feed).
+type ImportRange struct {
+	From   time.Time
+	To     time.Time
+	Reason string
+}
+
+// Import creates blocks for the given busy ranges on a listing the host owns,
+// skipping ranges in the past or ones that already overlap an existing block
+// (so re-importing the same feed is idempotent). It returns the number created.
+func (s *Service) Import(ctx context.Context, hostID, propertyID uuid.UUID, ranges []ImportRange) (int, error) {
+	prop, err := s.properties.FindByID(ctx, propertyID)
+	if err != nil {
+		return 0, err
+	}
+	if !prop.IsOwnedBy(hostID) {
+		return 0, shared.ErrForbidden
+	}
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	created := 0
+	for _, r := range ranges {
+		if !r.To.After(today) {
+			continue // wholly in the past
+		}
+		from := r.From
+		if from.Before(today) {
+			from = today // clamp an in-progress range to its remaining future nights
+		}
+		dates, err := booking.NewDateRange(from, r.To)
+		if err != nil {
+			continue // skip malformed ranges rather than failing the whole import
+		}
+		overlap, err := s.blocks.HasOverlap(ctx, propertyID, dates)
+		if err != nil {
+			return created, err
+		}
+		if overlap {
+			continue
+		}
+		b, err := block.New(propertyID, dates, r.Reason)
+		if err != nil {
+			continue
+		}
+		if err := s.blocks.Create(ctx, b); err != nil {
+			return created, err
+		}
+		created++
+	}
+	return created, nil
+}
+
 // ListForHost returns the blocks on a listing the host owns.
 func (s *Service) ListForHost(ctx context.Context, hostID, propertyID uuid.UUID, page shared.Page) (shared.PageResult[*block.Block], error) {
 	prop, err := s.properties.FindByID(ctx, propertyID)

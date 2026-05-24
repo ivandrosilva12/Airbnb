@@ -2,9 +2,11 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	blockapp "github.com/airhost/backend/internal/application/block"
+	"github.com/airhost/backend/internal/infrastructure/ical"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
 	"github.com/gin-gonic/gin"
@@ -77,6 +79,48 @@ func (h *BlockHandler) ListForProperty(c *gin.Context) {
 		items = append(items, dto.FromBlock(b))
 	}
 	response.OK(c, dto.PageView[dto.BlockView]{Items: items, Total: res.Total})
+}
+
+type importCalendarRequest struct {
+	ICal string `json:"ical" binding:"required"`
+}
+
+// ImportCalendar parses an external iCalendar feed (pasted or fetched by the
+// client) and blocks its busy ranges on a listing the host owns. Idempotent:
+// ranges already blocked are skipped.
+func (h *BlockHandler) ImportCalendar(c *gin.Context) {
+	hostID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	propertyID, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	var req importCalendarRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	events, err := ical.Parse([]byte(req.ICal))
+	if err != nil {
+		response.FailMessage(c, http.StatusBadRequest, "could not parse iCalendar data")
+		return
+	}
+	ranges := make([]blockapp.ImportRange, 0, len(events))
+	for _, e := range events {
+		reason := "Imported"
+		if s := strings.TrimSpace(e.Summary); s != "" {
+			reason = "Imported: " + s
+		}
+		ranges = append(ranges, blockapp.ImportRange{From: e.Start, To: e.End, Reason: reason})
+	}
+	imported, err := h.svc.Import(c.Request.Context(), hostID, propertyID, ranges)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"imported": imported, "found": len(events)})
 }
 
 // Delete removes a block on a listing the host owns.

@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	"github.com/airhost/backend/internal/infrastructure/ical"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
@@ -179,6 +181,39 @@ func (h *BookingHandler) Availability(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"propertyId": propertyID, "booked": dto.FromBookedRanges(ranges)})
+}
+
+// CalendarICS streams the listing's busy ranges (bookings + host blocks) as an
+// iCalendar feed, so external platforms (Airbnb, Google Calendar, …) can
+// subscribe and avoid double-booking. Public, like availability.
+func (h *BookingHandler) CalendarICS(c *gin.Context) {
+	propertyID, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	from := time.Now().UTC().Truncate(24 * time.Hour)
+	to := from.AddDate(2, 0, 0) // two years of future availability
+	ranges, err := h.svc.Availability(c.Request.Context(), propertyID, from, to)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	events := make([]ical.Event, 0, len(ranges))
+	for _, r := range ranges {
+		summary := "Booked"
+		if r.Status == "blocked" {
+			summary = "Blocked"
+		}
+		events = append(events, ical.Event{
+			UID:     fmt.Sprintf("%s-%s@airhost", propertyID, r.CheckIn.Format("20060102")),
+			Summary: summary,
+			Start:   r.CheckIn,
+			End:     r.CheckOut,
+		})
+	}
+	body := ical.Render("AirHost — listing "+propertyID.String(), events)
+	c.Header("Content-Disposition", `attachment; filename="airhost-`+propertyID.String()+`.ics"`)
+	c.Data(http.StatusOK, "text/calendar; charset=utf-8", body)
 }
 
 func parseDateOr(raw string, fallback time.Time) time.Time {
