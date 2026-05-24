@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,6 +36,14 @@ func (r *WebhookEventRepository) Record(ctx context.Context, provider, eventID s
 		provider, eventID,
 	)
 	return mapError(err)
+}
+
+func (r *WebhookEventRepository) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM webhook_events WHERE created_at < $1`, cutoff)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return ct.RowsAffected(), nil
 }
 
 var _ port.WebhookDedupeStore = (*WebhookEventRepository)(nil)

@@ -3,6 +3,7 @@ package port
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/airhost/backend/internal/domain/shared"
 )
@@ -50,6 +51,9 @@ type WebhookDedupeStore interface {
 	Seen(ctx context.Context, provider, eventID string) (bool, error)
 	// Record persists (provider, eventID); it is idempotent.
 	Record(ctx context.Context, provider, eventID string) error
+	// DeleteOlderThan removes records created before cutoff and returns how many
+	// were deleted — a retention/cleanup operation.
+	DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
 // WebhookVerifier authenticates and parses a provider's webhook request into a

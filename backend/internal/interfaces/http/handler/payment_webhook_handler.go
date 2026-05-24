@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"time"
 
 	paymentapp "github.com/airhost/backend/internal/application/payment"
 	"github.com/airhost/backend/internal/application/port"
@@ -115,4 +117,29 @@ func (h *PaymentWebhookHandler) Handle(c *gin.Context) {
 		h.observe(provider, "noop")
 	}
 	response.OK(c, gin.H{"status": "ok", "reconciled": changed})
+}
+
+// Cleanup purges processed-webhook records older than ?olderThanDays (default
+// 30) — a retention operation for the dedupe table (admin only).
+func (h *PaymentWebhookHandler) Cleanup(c *gin.Context) {
+	if h.dedupe == nil {
+		response.OK(c, gin.H{"deleted": 0})
+		return
+	}
+	days := 30
+	if raw := c.Query("olderThanDays"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			response.FailMessage(c, http.StatusBadRequest, "olderThanDays must be a non-negative integer")
+			return
+		}
+		days = n
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -days)
+	deleted, err := h.dedupe.DeleteOlderThan(c.Request.Context(), cutoff)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"deleted": deleted, "cutoff": cutoff.Format(time.RFC3339)})
 }

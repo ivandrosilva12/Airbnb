@@ -183,6 +183,9 @@ func NewRouter(d Deps) *gin.Engine {
 			admin.GET("/reports", h.Report.ListOpen)
 			admin.POST("/reports/:id/resolve", h.Report.Resolve)
 			admin.POST("/reports/:id/dismiss", h.Report.Dismiss)
+
+			// Webhook dedupe-table retention/cleanup.
+			admin.POST("/webhooks/events/cleanup", h.PaymentWebhook.Cleanup)
 		}
 	}
 

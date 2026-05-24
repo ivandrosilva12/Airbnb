@@ -222,6 +222,7 @@ Admin only:
 - `POST /admin/properties/:id/suspend` · `POST /admin/properties/:id/unsuspend`
 - `GET /admin/verifications` (review queue) · `POST /admin/verifications/:id/approve` · `POST /admin/verifications/:id/reject`
 - `GET /admin/reports` (moderation queue) · `POST /admin/reports/:id/resolve` · `POST /admin/reports/:id/dismiss`
+- `POST /admin/webhooks/events/cleanup?olderThanDays=` — prune processed-webhook records (retention)
 
 The stay lifecycle is: `pending → confirmed → completed`, with `cancelled` reachable
 from pending/confirmed. A guest can only review a **completed** booking, so the host
@@ -275,7 +276,7 @@ docker-compose.yml
 | Currency-based routing | Complete | `RoutingGateway` composite: domestic currency (AOA) → GPay Angola primary with AppyPay failover; foreign currency → Stripe. Tags the gateway reference at authorize so capture/refund pin to the authorizing provider; covered by failover/routing unit tests |
 | Payment webhooks | Complete | Public `POST /webhooks/payments/:provider` reconciles async gateway events (capture/refund/fail) idempotently; per-provider signature verification (Stripe HMAC `Stripe-Signature`; AppyPay/GPay Angola hex HMAC `X-Signature`), enabled only when the provider's webhook secret is set; covered by verifier unit tests + an e2e test |
 | Webhook hardening | Complete | Per-IP token-bucket rate limiting on the webhook route (429 on exceed, tunable via `WEBHOOK_RATE_RPS`/`WEBHOOK_RATE_BURST`); Stripe signature timestamp anti-replay (5-minute tolerance window); covered by limiter + verifier unit tests |
-| Webhook idempotency | Complete | Processed deliveries recorded in `webhook_events` (provider, event_id; migration 0017) so duplicates/replays are skipped at storage level (Stripe event id; AppyPay/GPay `eventId` or a body hash); reconciliation stays idempotent regardless; covered by an e2e replay test |
+| Webhook idempotency | Complete | Processed deliveries recorded in `webhook_events` (provider, event_id; migration 0017) so duplicates/replays are skipped at storage level (Stripe event id; AppyPay/GPay `eventId` or a body hash); reconciliation stays idempotent regardless; admin retention route `POST /admin/webhooks/events/cleanup?olderThanDays=` prunes old rows; covered by unit + e2e tests |
 | Metrics | Complete | Prometheus `/metrics`: HTTP request/latency/in-flight, bookings/properties created, plus `airhost_webhook_events_total{provider,outcome}` and `airhost_rate_limited_total{route}` |
 | Host payouts | Complete | New `payout` context: an earnings ledger credited on confirmation (total minus the platform fee) and debited on refund; `GET /host/earnings` balance + ledger + `export.csv` statement; dashboard card + a dedicated `/host/earnings` payouts panel (balances per currency + signed ledger linking to listings, CSV download); covered by unit + e2e tests |
 | Message read-receipts | Complete | Per-participant read markers, per-conversation + total unread counts, navbar/inbox badges; covered by the e2e test |

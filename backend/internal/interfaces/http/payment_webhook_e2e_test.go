@@ -98,4 +98,17 @@ func TestEndToEnd_PaymentWebhook(t *testing.T) {
 	}); r.Code != http.StatusNotFound {
 		t.Fatalf("unconfigured provider: status = %d, want 404", r.Code)
 	}
+
+	// Retention cleanup is admin-only.
+	admin := h.seedUser(domainuser.RoleAdmin, "wh-admin@test.dev")
+	if r := h.do(http.MethodPost, "/api/v1/admin/webhooks/events/cleanup", guestTok, nil); r.Code != http.StatusForbidden {
+		t.Fatalf("guest cleanup: status = %d, want 403", r.Code)
+	}
+	// olderThanDays=0 prunes everything recorded before now, including the
+	// event captured above.
+	rec = h.do(http.MethodPost, "/api/v1/admin/webhooks/events/cleanup?olderThanDays=0", admin.ID.String(), nil)
+	mustStatus(t, rec, http.StatusOK, "cleanup")
+	if deleted := h.decode(rec)["deleted"].(float64); deleted < 1 {
+		t.Fatalf("cleanup deleted = %v, want >= 1", deleted)
+	}
 }
