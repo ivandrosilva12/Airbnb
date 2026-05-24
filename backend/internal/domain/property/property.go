@@ -283,6 +283,60 @@ func (p *Property) AddPhoto(objectKey, url string) Photo {
 	return photo
 }
 
+// RemovePhoto detaches a photo from the listing and renumbers the rest so
+// positions stay contiguous from zero (the first photo is the cover).
+func (p *Property) RemovePhoto(photoID uuid.UUID) error {
+	idx := -1
+	for i, ph := range p.Photos {
+		if ph.ID == photoID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return shared.ErrNotFound
+	}
+	p.Photos = append(p.Photos[:idx], p.Photos[idx+1:]...)
+	p.renumberPhotos()
+	p.touch()
+	return nil
+}
+
+// ReorderPhotos rearranges photos to match orderedIDs, which must be a
+// permutation of the listing's current photo IDs. Position 0 becomes the cover.
+func (p *Property) ReorderPhotos(orderedIDs []uuid.UUID) error {
+	if len(orderedIDs) != len(p.Photos) {
+		return shared.NewValidationError("the order must list every photo exactly once")
+	}
+	byID := make(map[uuid.UUID]Photo, len(p.Photos))
+	for _, ph := range p.Photos {
+		byID[ph.ID] = ph
+	}
+	reordered := make([]Photo, 0, len(orderedIDs))
+	seen := make(map[uuid.UUID]struct{}, len(orderedIDs))
+	for _, id := range orderedIDs {
+		ph, ok := byID[id]
+		if !ok {
+			return shared.NewValidationError("unknown photo in the requested order")
+		}
+		if _, dup := seen[id]; dup {
+			return shared.NewValidationError("a photo is listed more than once")
+		}
+		seen[id] = struct{}{}
+		reordered = append(reordered, ph)
+	}
+	p.Photos = reordered
+	p.renumberPhotos()
+	p.touch()
+	return nil
+}
+
+func (p *Property) renumberPhotos() {
+	for i := range p.Photos {
+		p.Photos[i].Position = i
+	}
+}
+
 // UpdateDetails mutates editable descriptive fields.
 func (p *Property) UpdateDetails(title, description string, price, cleaningFee shared.Money, maxGuests int) error {
 	title = strings.TrimSpace(title)

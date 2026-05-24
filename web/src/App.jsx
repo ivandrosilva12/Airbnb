@@ -10,6 +10,7 @@ import Notifications from './pages/Notifications';
 import HostDashboard from './pages/HostDashboard';
 import HostBookings from './pages/HostBookings';
 import CreateListing from './pages/CreateListing';
+import HostPhotos from './pages/HostPhotos';
 import Settings from './pages/Settings';
 
 function Protected({ children }) {
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="/host" element={<Protected><HostDashboard /></Protected>} />
             <Route path="/host/new" element={<Protected><CreateListing /></Protected>} />
             <Route path="/host/properties/:id/bookings" element={<Protected><HostBookings /></Protected>} />
+            <Route path="/host/properties/:id/photos" element={<Protected><HostPhotos /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}

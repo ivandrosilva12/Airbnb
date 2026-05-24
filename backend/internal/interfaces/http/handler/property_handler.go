@@ -14,6 +14,7 @@ import (
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // PropertyHandler exposes listing endpoints.
@@ -316,6 +317,64 @@ func (h *PropertyHandler) UploadPhoto(c *gin.Context) {
 		contentType = "application/octet-stream"
 	}
 	p, err := h.svc.UploadPhoto(c.Request.Context(), actorID, id, file, fileHeader.Size, contentType, fileHeader.Filename)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromProperty(p))
+}
+
+// DeletePhoto detaches a photo from an owned listing.
+func (h *PropertyHandler) DeletePhoto(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	photoID, ok := pathUUID(c, "photoId")
+	if !ok {
+		return
+	}
+	p, err := h.svc.RemovePhoto(c.Request.Context(), actorID, id, photoID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromProperty(p))
+}
+
+type reorderPhotosRequest struct {
+	PhotoIDs []string `json:"photoIds" binding:"required"`
+}
+
+// ReorderPhotos sets the photo order (first is the cover) for an owned listing.
+func (h *PropertyHandler) ReorderPhotos(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	var req reorderPhotosRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.FailMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	orderedIDs := make([]uuid.UUID, 0, len(req.PhotoIDs))
+	for _, raw := range req.PhotoIDs {
+		pid, err := uuid.Parse(raw)
+		if err != nil {
+			response.FailMessage(c, http.StatusBadRequest, "invalid photo id")
+			return
+		}
+		orderedIDs = append(orderedIDs, pid)
+	}
+	p, err := h.svc.ReorderPhotos(c.Request.Context(), actorID, id, orderedIDs)
 	if err != nil {
 		response.Fail(c, err)
 		return

@@ -132,6 +132,8 @@ func NewRouter(d Deps) *gin.Engine {
 			host.POST("/properties/:id/publish", h.Property.Publish)
 			host.POST("/properties/:id/photos", h.Property.UploadPhoto)
 			host.POST("/properties/:id/photos/presign", h.Property.PresignPhotoUpload)
+			host.PATCH("/properties/:id/photos/order", h.Property.ReorderPhotos)
+			host.DELETE("/properties/:id/photos/:photoId", h.Property.DeletePhoto)
 			host.GET("/properties/:id/bookings", h.Booking.ListForProperty)
 			host.POST("/bookings/:id/confirm", h.Booking.Confirm)
 			host.POST("/bookings/:id/complete", h.Booking.Complete)

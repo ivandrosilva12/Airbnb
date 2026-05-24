@@ -194,6 +194,7 @@ Host only:
 - `GET /host/properties` · `POST /properties` · `PATCH /properties/:id` · `DELETE /properties/:id`
 - `POST /properties/:id/publish`
 - `POST /properties/:id/photos` (multipart) · `POST /properties/:id/photos/presign`
+- `PATCH /properties/:id/photos/order` (reorder; first is the cover) · `DELETE /properties/:id/photos/:photoId`
 - `GET /properties/:id/bookings` · `POST /bookings/:id/confirm` · `POST /bookings/:id/complete`
 - `GET /properties/:id/blocks` · `POST /properties/:id/blocks` · `DELETE /blocks/:id` (calendar blocks)
 
@@ -239,6 +240,7 @@ docker-compose.yml
 | Host calendar blocks | Complete | New `block` context; blocked ranges reject bookings, show in availability, and exclude from date search; host UI to add/remove; covered by unit + e2e tests |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Advanced pricing | Complete | Per-listing weekly/monthly length-of-stay discounts + occupancy tax (migration 0014); derived in the domain and stored on the booking; create-listing form + detail/receipt breakdown; covered by unit + e2e tests |
+| Photo management | Complete | Reorder (first photo = cover), set-cover and delete on the property aggregate; host-only `PATCH /photos/order` + `DELETE /photos/:photoId`; web photo manager page; covered by an e2e test |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification/payment/email subscribe |
 | Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |

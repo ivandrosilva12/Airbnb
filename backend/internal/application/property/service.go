@@ -187,6 +187,37 @@ func (s *Service) UploadPhoto(
 	return p, nil
 }
 
+// RemovePhoto detaches a photo from an owned listing. The stored object is left
+// in place (the storage port is write-only); a janitor could reap orphans later.
+func (s *Service) RemovePhoto(ctx context.Context, actorID, propertyID, photoID uuid.UUID) (*property.Property, error) {
+	p, err := s.ownedProperty(ctx, actorID, propertyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.RemovePhoto(photoID); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// ReorderPhotos sets the photo order (and thus the cover) for an owned listing.
+func (s *Service) ReorderPhotos(ctx context.Context, actorID, propertyID uuid.UUID, orderedIDs []uuid.UUID) (*property.Property, error) {
+	p, err := s.ownedProperty(ctx, actorID, propertyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.ReorderPhotos(orderedIDs); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
 // PresignPhotoUpload returns a direct-upload URL for client-side uploads.
 func (s *Service) PresignPhotoUpload(ctx context.Context, actorID, propertyID uuid.UUID, ext string) (string, string, error) {
 	if _, err := s.ownedProperty(ctx, actorID, propertyID); err != nil {

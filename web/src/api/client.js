@@ -113,6 +113,8 @@ export const api = {
     fd.append('photo', file);
     return request('POST', `/properties/${id}/photos`, { formData: fd, auth: true });
   },
+  reorderPhotos: (id, photoIds) => request('PATCH', `/properties/${id}/photos/order`, { body: { photoIds }, auth: true }),
+  deletePhoto: (id, photoId) => request('DELETE', `/properties/${id}/photos/${photoId}`, { auth: true }),
   propertyBookings: (id) => request('GET', `/properties/${id}/bookings`, { auth: true }),
   confirmBooking: (id) => request('POST', `/bookings/${id}/confirm`, { auth: true }),
   completeBooking: (id) => request('POST', `/bookings/${id}/complete`, { auth: true }),
