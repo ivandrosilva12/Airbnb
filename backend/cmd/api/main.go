@@ -27,6 +27,7 @@ import (
 	payoutapp "github.com/airhost/backend/internal/application/payout"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
+	reportapp "github.com/airhost/backend/internal/application/report"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	searchapp "github.com/airhost/backend/internal/application/search"
 	userapp "github.com/airhost/backend/internal/application/user"
@@ -103,6 +104,7 @@ func run() error {
 	payoutRepo := postgres.NewPayoutRepository(pool)
 	blockRepo := postgres.NewBlockRepository(pool)
 	identityRepo := postgres.NewIdentityRepository(pool)
+	reportRepo := postgres.NewReportRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers.
@@ -123,6 +125,7 @@ func run() error {
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
 	identitySvc := identityapp.NewService(identityRepo, dispatcher)
+	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
 	realtimeHub := realtime.NewHub()
 	realtimeSvc := realtimeapp.NewService(realtimeHub)
 
@@ -170,6 +173,7 @@ func run() error {
 			Payout:       handler.NewPayoutHandler(payoutSvc),
 			Realtime:     handler.NewRealtimeHandler(realtimeHub),
 			Identity:     handler.NewIdentityHandler(identitySvc),
+			Report:       handler.NewReportHandler(reportSvc),
 		},
 	})
 

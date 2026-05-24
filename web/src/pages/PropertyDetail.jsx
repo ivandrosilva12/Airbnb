@@ -193,8 +193,80 @@ export default function PropertyDetail() {
           )}
           {message && <p className="success">{message}</p>}
           {error && <p className="error">{error}</p>}
+          {!isOwnListing && (
+            <ReportControl propertyId={property.id} authenticated={authenticated} login={login} />
+          )}
         </aside>
       </div>
     </div>
+  );
+}
+
+// ReportControl is a collapsible "report this listing" form shown on the
+// listing detail page for any non-owner.
+function ReportControl({ propertyId, authenticated, login }) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('inappropriate');
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState(null);
+
+  if (done) return <p className="muted report-done">{t('report.done')}</p>;
+
+  if (!open) {
+    return (
+      <button className="btn-link-danger" onClick={() => setOpen(true)}>
+        ⚑ {t('report.button')}
+      </button>
+    );
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!authenticated) {
+      login();
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.reportListing(propertyId, { reason, note });
+      setDone(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="report-form" onSubmit={submit}>
+      <strong>{t('report.title')}</strong>
+      <label>
+        {t('report.reason')}
+        <select value={reason} onChange={(e) => setReason(e.target.value)}>
+          <option value="spam">{t('report.reason.spam')}</option>
+          <option value="inappropriate">{t('report.reason.inappropriate')}</option>
+          <option value="scam">{t('report.reason.scam')}</option>
+          <option value="inaccurate">{t('report.reason.inaccurate')}</option>
+          <option value="other">{t('report.reason.other')}</option>
+        </select>
+      </label>
+      <label>
+        {t('report.note')}
+        <textarea rows="3" value={note} onChange={(e) => setNote(e.target.value)} />
+      </label>
+      {error && <p className="error">{error}</p>}
+      <div className="report-actions">
+        <button className="btn btn-primary" type="submit" disabled={submitting}>
+          {submitting ? t('report.submitting') : t('report.submit')}
+        </button>
+        <button className="btn btn-ghost" type="button" onClick={() => setOpen(false)}>
+          {t('common.cancel')}
+        </button>
+      </div>
+    </form>
   );
 }

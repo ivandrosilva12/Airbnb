@@ -48,7 +48,7 @@ ones:
 Bounded contexts: **user**, **property**, **booking**, **review**, **message**
 (host↔guest threads), **favorite** (wishlists), **notification** (in-app),
 **payment**, **block** (host calendar blocks), **payout** (host earnings ledger),
-**identity** (KYC identity verification).
+**identity** (KYC identity verification), **report** (listing/abuse reports).
 The **email** application service turns the same domain events into transactional
 email. Read-model query services compose
 multiple contexts without owning data: `searchapp` (property + booking + block,
@@ -188,6 +188,7 @@ Authenticated (Bearer token):
 - `GET /conversations/unread-count` (total unread, for the badge) · `POST /conversations/:id/read`
 - `GET /conversations/:id/messages` · `POST /conversations/:id/messages`
 - `GET /favorites` · `POST /favorites` · `DELETE /favorites/:propertyId` (wishlist)
+- `POST /properties/:id/reports` — flag a listing for moderation
 - `GET /realtime` — Server-Sent Events stream of live update hints (token via `?access_token=` for EventSource)
 - `GET /notifications` (with unread count) · `POST /notifications/:id/read` · `POST /notifications/read-all`
 - `GET /payments/me` · `GET /bookings/:id/payment` (payment status for the guest's booking)
@@ -208,6 +209,7 @@ Host only:
 Admin only:
 - `POST /admin/properties/:id/suspend` · `POST /admin/properties/:id/unsuspend`
 - `GET /admin/verifications` (review queue) · `POST /admin/verifications/:id/approve` · `POST /admin/verifications/:id/reject`
+- `GET /admin/reports` (moderation queue) · `POST /admin/reports/:id/resolve` · `POST /admin/reports/:id/dismiss`
 
 The stay lifecycle is: `pending → confirmed → completed`, with `cancelled` reachable
 from pending/confirmed. A guest can only review a **completed** booking, so the host
@@ -250,6 +252,7 @@ docker-compose.yml
 | Photo management | Complete | Reorder (first photo = cover), set-cover and delete on the property aggregate; host-only `PATCH /photos/order` + `DELETE /photos/:photoId`; web photo manager page; covered by an e2e test |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; KYC review queue; web `/admin` console; covered by the e2e test |
 | Identity verification (KYC) | Complete | New `identity` context: users submit a document, admins approve/reject (migration 0015); approval publishes an `IdentityVerified` event → notification + account email; web settings panel + admin queue, mobile submit/status screen; covered by unit + e2e tests |
+| Listing/abuse reports | Complete | New `report` context: any user flags a listing (reason + note, one open report each, migration 0016); admins resolve/dismiss from a queue enriched with listing titles and can suspend the listing; "Report listing" control on the detail page + `/admin` report queue; covered by unit + e2e tests |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification/payment/email subscribe |
 | Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |
 | Real-time updates | Complete | SSE endpoint + in-process fan-out hub pushing live notification/message hints; web `EventSource` refreshes badges instantly (polling kept as fallback); covered by hub/service unit tests + a streaming e2e test |
@@ -278,6 +281,5 @@ docker-compose.yml
   held by a KYC provider, never raw PII. Account/security emails (e.g. the
   verified confirmation) are always delivered and cannot be opted out of.
 - Suggested follow-ups: a real payment gateway (Stripe) behind the existing
-  `PaymentGateway` port, listing/abuse reporting with an admin moderation UI, and
-  full-stack e2e tests against a live Keycloak.
+  `PaymentGateway` port and full-stack e2e tests against a live Keycloak.
 ```

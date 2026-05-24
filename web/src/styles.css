@@ -211,9 +211,17 @@ a { color: inherit; text-decoration: none; }
 
 /* Admin moderation tables */
 .admin-table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
-.admin-table th, .admin-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border, #eee); }
+.admin-table th, .admin-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border, #eee); vertical-align: top; }
 .admin-table th { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-.admin-actions { display: flex; gap: 8px; }
+.admin-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Listing report (on the detail page) */
+.btn-link-danger { background: none; border: none; color: #c0392b; cursor: pointer; font-size: .85rem; padding: 8px 0 0; text-decoration: underline; display: block; }
+.report-form { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border, #eee); padding-top: 12px; }
+.report-form label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; }
+.report-form select, .report-form textarea { padding: 8px; border: 1px solid var(--border, #ddd); border-radius: 8px; font: inherit; }
+.report-actions { display: flex; gap: 8px; }
+.report-done { color: #1a7f47; }
 
 @media (max-width: 800px) {
   .detail-grid { grid-template-columns: 1fr; }

@@ -20,6 +20,7 @@ import (
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
+	"github.com/airhost/backend/internal/domain/report"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
@@ -39,6 +40,7 @@ var (
 	_ payout.Repository       = (*PayoutRepository)(nil)
 	_ block.Repository        = (*BlockRepository)(nil)
 	_ identity.Repository     = (*IdentityRepository)(nil)
+	_ report.Repository       = (*ReportRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -1036,6 +1038,71 @@ func (r *IdentityRepository) ListByStatus(_ context.Context, status identity.Sta
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
 	return paginate(all, page), nil
+}
+
+// --- Listing reports ---------------------------------------------------------
+
+// ReportRepository is an in-memory report.Repository.
+type ReportRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]report.Report
+}
+
+// NewReportRepository builds an empty in-memory report repository.
+func NewReportRepository() *ReportRepository {
+	return &ReportRepository{m: map[uuid.UUID]report.Report{}}
+}
+
+func (r *ReportRepository) Create(_ context.Context, rep *report.Report) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.m[rep.ID] = *rep
+	return nil
+}
+
+func (r *ReportRepository) Update(_ context.Context, rep *report.Report) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[rep.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[rep.ID] = *rep
+	return nil
+}
+
+func (r *ReportRepository) FindByID(_ context.Context, id uuid.UUID) (*report.Report, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if rep, ok := r.m[id]; ok {
+		c := rep
+		return &c, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *ReportRepository) ListByStatus(_ context.Context, status report.Status, page shared.Page) (shared.PageResult[*report.Report], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*report.Report
+	for _, rep := range r.m {
+		if rep.Status == status {
+			c := rep
+			all = append(all, &c)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
+	return paginate(all, page), nil
+}
+
+func (r *ReportRepository) HasOpenFromReporter(_ context.Context, propertyID, reporterID uuid.UUID) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, rep := range r.m {
+		if rep.PropertyID == propertyID && rep.ReporterID == reporterID && rep.Status == report.StatusOpen {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // --- helpers -----------------------------------------------------------------

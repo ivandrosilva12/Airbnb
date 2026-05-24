@@ -94,10 +94,18 @@ export const api = {
   getVerification: () => request('GET', '/me/verification', { auth: true }),
   submitVerification: (body) => request('POST', '/me/verification', { body, auth: true }),
 
+  // Listing reports
+  reportListing: (propertyId, body) => request('POST', `/properties/${propertyId}/reports`, { body, auth: true }),
+
   // Admin moderation
   adminListVerifications: () => request('GET', '/admin/verifications', { auth: true }),
   adminApproveVerification: (id) => request('POST', `/admin/verifications/${id}/approve`, { auth: true }),
   adminRejectVerification: (id, reason) => request('POST', `/admin/verifications/${id}/reject`, { body: { reason }, auth: true }),
+  adminListReports: () => request('GET', '/admin/reports', { auth: true }),
+  adminResolveReport: (id, resolution) => request('POST', `/admin/reports/${id}/resolve`, { body: { resolution }, auth: true }),
+  adminDismissReport: (id, resolution) => request('POST', `/admin/reports/${id}/dismiss`, { body: { resolution }, auth: true }),
+  adminSuspendProperty: (id) => request('POST', `/admin/properties/${id}/suspend`, { auth: true }),
+  adminUnsuspendProperty: (id) => request('POST', `/admin/properties/${id}/unsuspend`, { auth: true }),
 
   // Bookings
   createBooking: (body) => request('POST', '/bookings', { body, auth: true }),

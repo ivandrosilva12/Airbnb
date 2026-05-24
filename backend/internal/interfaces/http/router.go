@@ -27,6 +27,7 @@ type Handlers struct {
 	Payout       *handler.PayoutHandler
 	Realtime     *handler.RealtimeHandler
 	Identity     *handler.IdentityHandler
+	Report       *handler.ReportHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -111,6 +112,9 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.POST("/favorites", h.Favorite.Add)
 		auth.DELETE("/favorites/:propertyId", h.Favorite.Remove)
 
+		// Report a listing for moderation (any authenticated user).
+		auth.POST("/properties/:id/reports", h.Report.Create)
+
 		// Live updates (SSE) — token passed via ?access_token= for EventSource.
 		auth.GET("/realtime", h.Realtime.Stream)
 
@@ -162,6 +166,11 @@ func NewRouter(d Deps) *gin.Engine {
 			admin.GET("/verifications", h.Identity.ListPending)
 			admin.POST("/verifications/:id/approve", h.Identity.Approve)
 			admin.POST("/verifications/:id/reject", h.Identity.Reject)
+
+			// Listing-report moderation queue.
+			admin.GET("/reports", h.Report.ListOpen)
+			admin.POST("/reports/:id/resolve", h.Report.Resolve)
+			admin.POST("/reports/:id/dismiss", h.Report.Dismiss)
 		}
 	}
 

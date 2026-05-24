@@ -7,6 +7,7 @@ import (
 
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	reportapp "github.com/airhost/backend/internal/application/report"
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/identity"
@@ -15,6 +16,7 @@ import (
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
+	"github.com/airhost/backend/internal/domain/report"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
@@ -486,6 +488,43 @@ func FromVerification(v *identity.Verification) VerificationView {
 		ReviewedAt:      v.ReviewedAt,
 		CreatedAt:       v.CreatedAt,
 	}
+}
+
+// ReportView is the public representation of a listing report. PropertyTitle is
+// populated for the administrator moderation queue.
+type ReportView struct {
+	ID            uuid.UUID  `json:"id"`
+	PropertyID    uuid.UUID  `json:"propertyId"`
+	PropertyTitle string     `json:"propertyTitle,omitempty"`
+	ReporterID    uuid.UUID  `json:"reporterId"`
+	Reason        string     `json:"reason"`
+	Note          string     `json:"note,omitempty"`
+	Status        string     `json:"status"`
+	Resolution    string     `json:"resolution,omitempty"`
+	ResolvedAt    *time.Time `json:"resolvedAt,omitempty"`
+	CreatedAt     time.Time  `json:"createdAt"`
+}
+
+// FromReport maps a report aggregate to its view (no listing title).
+func FromReport(r *report.Report) ReportView {
+	return ReportView{
+		ID:         r.ID,
+		PropertyID: r.PropertyID,
+		ReporterID: r.ReporterID,
+		Reason:     string(r.Reason),
+		Note:       r.Note,
+		Status:     string(r.Status),
+		Resolution: r.Resolution,
+		ResolvedAt: r.ResolvedAt,
+		CreatedAt:  r.CreatedAt,
+	}
+}
+
+// FromEnrichedReport maps an enriched report (with listing title) to its view.
+func FromEnrichedReport(e reportapp.EnrichedReport) ReportView {
+	v := FromReport(e.Report)
+	v.PropertyTitle = e.PropertyTitle
+	return v
 }
 
 // PageView wraps a paginated list response.
