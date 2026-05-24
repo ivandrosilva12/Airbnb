@@ -65,6 +65,32 @@
         { "expr": "airhost_bookings_created_total", "legendFormat": "bookings" },
         { "expr": "airhost_properties_created_total", "legendFormat": "properties" }
       ]
+    },
+    {
+      "id": 6,
+      "title": "Webhook events (req/s) by outcome",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "sum(rate(airhost_webhook_events_total[5m])) by (provider, outcome)",
+          "legendFormat": "{{provider}} · {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Rate-limited rejections (per minute)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "sum(rate(airhost_rate_limited_total[5m])) by (route) * 60",
+          "legendFormat": "{{route}}"
+        }
+      ]
     }
   ],
   "templating": {
