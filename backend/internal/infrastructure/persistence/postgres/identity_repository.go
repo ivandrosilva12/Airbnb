@@ -6,17 +6,17 @@ import (
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// IdentityRepository is the Postgres implementation of identity.Repository.
+// IdentityRepository is the Postgres implementation of identity.Repository. It
+// runs against a querier (the pool, or a transaction inside a UnitOfWork).
 type IdentityRepository struct {
-	pool *pgxpool.Pool
+	pool querier
 }
 
 // NewIdentityRepository builds an IdentityRepository.
-func NewIdentityRepository(pool *pgxpool.Pool) *IdentityRepository {
-	return &IdentityRepository{pool: pool}
+func NewIdentityRepository(db querier) *IdentityRepository {
+	return &IdentityRepository{pool: db}
 }
 
 const identityColumns = `id, user_id, status, document_type, document_ref, legal_name,

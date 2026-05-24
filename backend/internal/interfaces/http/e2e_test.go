@@ -92,12 +92,15 @@ func newHarness(t *testing.T) *harness {
 	reportRepo := memory.NewReportRepository()
 
 	dispatcher := event.NewDispatcher()
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, dispatcher)
+	uow := memory.NewUnitOfWork(bookingRepo, messageRepo, identityRepo, outbox, relay)
 
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{})
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, 0.10, dispatcher) // 10% service fee
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, 0.10, uow) // 10% service fee
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
-	messageSvc := messageapp.NewService(messageRepo, propertyRepo, dispatcher)
+	messageSvc := messageapp.NewService(messageRepo, propertyRepo, uow)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
@@ -107,7 +110,7 @@ func newHarness(t *testing.T) *harness {
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
-	identitySvc := identityapp.NewService(identityRepo, dispatcher)
+	identitySvc := identityapp.NewService(identityRepo, uow)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
 	silencer := newMemSilencer()
 	alertingSvc := alertingapp.NewService(silencer)

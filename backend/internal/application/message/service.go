@@ -8,6 +8,7 @@ import (
 	"errors"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -18,15 +19,13 @@ import (
 type Service struct {
 	messages   message.Repository
 	properties property.Repository
-	events     event.Publisher
+	uow        port.UnitOfWork
 }
 
-// NewService wires the messaging application service. publisher may be nil.
-func NewService(messages message.Repository, properties property.Repository, publisher event.Publisher) *Service {
-	if publisher == nil {
-		publisher = event.Nop()
-	}
-	return &Service{messages: messages, properties: properties, events: publisher}
+// NewService wires the messaging application service. The UnitOfWork makes the
+// message write and its MessageSent event commit atomically.
+func NewService(messages message.Repository, properties property.Repository, uow port.UnitOfWork) *Service {
+	return &Service{messages: messages, properties: properties, uow: uow}
 }
 
 // StartConversation returns the thread between the guest and the property's
@@ -69,22 +68,29 @@ func (s *Service) SendMessage(ctx context.Context, actorID, conversationID uuid.
 	if err != nil {
 		return nil, err
 	}
-	if err := s.messages.AddMessage(ctx, msg); err != nil {
-		return nil, err
-	}
-	if err := s.messages.UpdateConversation(ctx, conv); err != nil {
-		return nil, err
-	}
-
 	recipient := conv.GuestID
 	if actorID == conv.GuestID {
 		recipient = conv.HostID
 	}
-	s.events.Publish(ctx, event.MessageSent{
-		ConversationID: conv.ID,
-		SenderID:       actorID,
-		RecipientID:    recipient,
-	})
+	if err := s.uow.Run(ctx, func(tx port.Tx) error {
+		if err := tx.Messages.AddMessage(ctx, msg); err != nil {
+			return err
+		}
+		if err := tx.Messages.UpdateConversation(ctx, conv); err != nil {
+			return err
+		}
+		rec, err := event.NewRecord(event.MessageSent{
+			ConversationID: conv.ID,
+			SenderID:       actorID,
+			RecipientID:    recipient,
+		})
+		if err != nil {
+			return err
+		}
+		return tx.Outbox.Append(ctx, rec)
+	}); err != nil {
+		return nil, err
+	}
 	return msg, nil
 }
 

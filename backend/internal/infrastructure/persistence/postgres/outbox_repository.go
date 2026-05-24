@@ -5,17 +5,18 @@ import (
 
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// OutboxRepository is the Postgres implementation of event.OutboxStore.
+// OutboxRepository is the Postgres implementation of event.OutboxStore. It runs
+// against a querier (the pool, or a transaction inside a UnitOfWork) so an event
+// can be appended in the same transaction as the domain write that produced it.
 type OutboxRepository struct {
-	pool *pgxpool.Pool
+	pool querier
 }
 
 // NewOutboxRepository builds an OutboxRepository.
-func NewOutboxRepository(pool *pgxpool.Pool) *OutboxRepository {
-	return &OutboxRepository{pool: pool}
+func NewOutboxRepository(db querier) *OutboxRepository {
+	return &OutboxRepository{pool: db}
 }
 
 func (r *OutboxRepository) Append(ctx context.Context, rec event.Record) error {

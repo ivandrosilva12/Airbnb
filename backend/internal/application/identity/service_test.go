@@ -13,11 +13,16 @@ import (
 	"github.com/google/uuid"
 )
 
-// recordingPublisher captures published events for assertions.
-type recordingPublisher struct{ events []event.Event }
-
-func (p *recordingPublisher) Publish(_ context.Context, e event.Event) {
-	p.events = append(p.events, e)
+// newIdentityService wires the service with an in-memory unit of work and a
+// recording subscriber, returning the captured events for assertions.
+func newIdentityService(repo *memory.IdentityRepository) (*identityapp.Service, *[]event.Event) {
+	captured := &[]event.Event{}
+	d := event.NewDispatcher()
+	d.Subscribe(func(_ context.Context, e event.Event) { *captured = append(*captured, e) })
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, d)
+	uow := memory.NewUnitOfWork(nil, nil, repo, outbox, relay)
+	return identityapp.NewService(repo, uow), captured
 }
 
 func validSubmit() identityapp.SubmitInput {
@@ -27,8 +32,7 @@ func validSubmit() identityapp.SubmitInput {
 func TestIdentity_SubmitApproveFlow(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewIdentityRepository()
-	pub := &recordingPublisher{}
-	svc := identityapp.NewService(repo, pub)
+	svc, captured := newIdentityService(repo)
 
 	userID := uuid.New()
 	adminID := uuid.New()
@@ -72,11 +76,11 @@ func TestIdentity_SubmitApproveFlow(t *testing.T) {
 	if approved.Status != identity.StatusApproved || approved.ReviewerID != adminID {
 		t.Fatalf("unexpected approved state: %+v", approved)
 	}
-	if len(pub.events) != 1 {
-		t.Fatalf("expected 1 published event, got %d", len(pub.events))
+	if len(*captured) != 1 {
+		t.Fatalf("expected 1 published event, got %d", len(*captured))
 	}
-	if _, ok := pub.events[0].(event.IdentityVerified); !ok {
-		t.Fatalf("expected IdentityVerified, got %T", pub.events[0])
+	if _, ok := (*captured)[0].(event.IdentityVerified); !ok {
+		t.Fatalf("expected IdentityVerified, got %T", (*captured)[0])
 	}
 	if verified, _ := svc.IsVerified(ctx, userID); !verified {
 		t.Fatal("user should be verified after approval")
@@ -91,7 +95,7 @@ func TestIdentity_SubmitApproveFlow(t *testing.T) {
 func TestIdentity_RejectAllowsResubmit(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewIdentityRepository()
-	svc := identityapp.NewService(repo, nil) // nil publisher → Nop
+	svc, _ := newIdentityService(repo)
 
 	userID := uuid.New()
 	adminID := uuid.New()

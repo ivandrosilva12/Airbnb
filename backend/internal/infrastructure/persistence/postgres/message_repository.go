@@ -6,17 +6,17 @@ import (
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// MessageRepository is the Postgres implementation of message.Repository.
+// MessageRepository is the Postgres implementation of message.Repository. It
+// runs against a querier (the pool, or a transaction inside a UnitOfWork).
 type MessageRepository struct {
-	pool *pgxpool.Pool
+	pool querier
 }
 
 // NewMessageRepository builds a MessageRepository.
-func NewMessageRepository(pool *pgxpool.Pool) *MessageRepository {
-	return &MessageRepository{pool: pool}
+func NewMessageRepository(db querier) *MessageRepository {
+	return &MessageRepository{pool: db}
 }
 
 const conversationColumns = `id, property_id, host_id, guest_id, created_at, last_message_at,

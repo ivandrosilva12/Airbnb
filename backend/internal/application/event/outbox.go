@@ -61,6 +61,17 @@ func jsonDecoder[T Event]() func([]byte) (Event, error) {
 	}
 }
 
+// NewRecord builds an outbox record from an event (JSON payload + a fresh id).
+// Services append the record inside their write transaction so the event is
+// persisted atomically with the domain change.
+func NewRecord(e Event) (Record, error) {
+	payload, err := json.Marshal(e)
+	if err != nil {
+		return Record{}, err
+	}
+	return Record{ID: uuid.New(), Name: e.EventName(), Payload: payload, CreatedAt: time.Now().UTC()}, nil
+}
+
 // --- durable publisher -------------------------------------------------------
 
 // DurablePublisher records each event in an OutboxStore before fanning it out

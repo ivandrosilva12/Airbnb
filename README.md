@@ -94,14 +94,16 @@ Key domain rules enforced in code:
 - Photo uploads are capped at 10 MiB and the content type is detected from the
   bytes (allowlist: JPEG/PNG/WebP/GIF), so the public object URL cannot serve
   attacker-supplied active content.
-- Domain events are published through a durable publisher: each event is recorded
-  in an `outbox` table (migration 0019) before being fanned out to the in-process
-  subscribers, then marked processed. Anything left unprocessed by a crash
-  mid-dispatch is re-delivered at startup and by a periodic relay (at-least-once;
-  subscribers tolerate a rare duplicate). The small window between a domain write
-  committing and the outbox append is not yet covered — fully closing it requires
-  threading a unit-of-work transaction through the repositories (a planned
-  follow-up).
+- Domain events use a transactional outbox. A `UnitOfWork` (`port.UnitOfWork`)
+  runs the domain write and the `outbox` append (migration 0019) in a single
+  Postgres transaction, so the write and its events commit atomically — there is
+  no window where a committed change can lose its event. After the transaction
+  commits, a relay drains the outbox and fans the events out to the in-process
+  subscribers; anything left unprocessed by a crash mid-dispatch is re-delivered
+  at startup and by a periodic relay (at-least-once; subscribers tolerate a rare
+  duplicate). The publishing flows (booking create/confirm/cancel/complete,
+  messaging, identity approval) go through the UnitOfWork; the in-memory test
+  path mirrors the same contract.
 
 ## Tech stack
 

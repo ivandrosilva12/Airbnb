@@ -13,8 +13,19 @@ import (
 	"time"
 
 	"github.com/airhost/backend/internal/config"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// querier is the subset of the pgx API the repositories use. It is satisfied by
+// both *pgxpool.Pool and pgx.Tx, so a repository can run directly against the
+// pool or inside a transaction (see UnitOfWork).
+type querier interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 // NewPool opens a pgx connection pool and verifies connectivity.
 func NewPool(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, error) {

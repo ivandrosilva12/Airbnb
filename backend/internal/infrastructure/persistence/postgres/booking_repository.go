@@ -7,17 +7,17 @@ import (
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// BookingRepository is the Postgres implementation of booking.Repository.
+// BookingRepository is the Postgres implementation of booking.Repository. It
+// runs against a querier (the pool, or a transaction inside a UnitOfWork).
 type BookingRepository struct {
-	pool *pgxpool.Pool
+	pool querier
 }
 
 // NewBookingRepository builds a BookingRepository.
-func NewBookingRepository(pool *pgxpool.Pool) *BookingRepository {
-	return &BookingRepository{pool: pool}
+func NewBookingRepository(db querier) *BookingRepository {
+	return &BookingRepository{pool: db}
 }
 
 const bookingColumns = `id, property_id, guest_id, check_in, check_out, guests,

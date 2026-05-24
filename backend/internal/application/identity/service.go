@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
@@ -16,16 +17,14 @@ import (
 
 // Service orchestrates identity-verification use cases.
 type Service struct {
-	repo      identity.Repository
-	publisher event.Publisher
+	repo identity.Repository
+	uow  port.UnitOfWork
 }
 
-// NewService wires the identity application service.
-func NewService(repo identity.Repository, publisher event.Publisher) *Service {
-	if publisher == nil {
-		publisher = event.Nop()
-	}
-	return &Service{repo: repo, publisher: publisher}
+// NewService wires the identity application service. The UnitOfWork makes the
+// approval write and its IdentityVerified event commit atomically.
+func NewService(repo identity.Repository, uow port.UnitOfWork) *Service {
+	return &Service{repo: repo, uow: uow}
 }
 
 // SubmitInput carries a user's document submission.
@@ -95,10 +94,18 @@ func (s *Service) Approve(ctx context.Context, adminID, verificationID uuid.UUID
 	if err := v.Approve(adminID); err != nil {
 		return nil, err
 	}
-	if err := s.repo.Update(ctx, v); err != nil {
+	if err := s.uow.Run(ctx, func(tx port.Tx) error {
+		if err := tx.Identity.Update(ctx, v); err != nil {
+			return err
+		}
+		rec, err := event.NewRecord(event.IdentityVerified{VerificationID: v.ID, UserID: v.UserID})
+		if err != nil {
+			return err
+		}
+		return tx.Outbox.Append(ctx, rec)
+	}); err != nil {
 		return nil, err
 	}
-	s.publisher.Publish(ctx, event.IdentityVerified{VerificationID: v.ID, UserID: v.UserID})
 	return v, nil
 }
 

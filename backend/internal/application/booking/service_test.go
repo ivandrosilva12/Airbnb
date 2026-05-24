@@ -6,6 +6,7 @@ import (
 	"time"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
@@ -25,7 +26,10 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	bookings := memory.NewBookingRepository()
 	properties := memory.NewPropertyRepository()
-	svc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), 0, nil)
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
+	uow := memory.NewUnitOfWork(bookings, nil, nil, outbox, relay)
+	svc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), 0, uow)
 
 	hostID := uuid.New()
 	price, _ := shared.NewMoney(10000, "EUR") // 100.00/night

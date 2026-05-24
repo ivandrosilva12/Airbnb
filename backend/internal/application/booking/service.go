@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/property"
@@ -21,17 +22,29 @@ type Service struct {
 	properties     property.Repository
 	blocks         block.Repository
 	serviceFeeRate float64
-	events         event.Publisher
+	uow            port.UnitOfWork
 }
 
 // NewService wires the booking application service. serviceFeeRate is the
-// platform fee applied to each booking (e.g. 0.12 for 12%). publisher may be
-// nil, in which case no domain events are emitted.
-func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, serviceFeeRate float64, publisher event.Publisher) *Service {
-	if publisher == nil {
-		publisher = event.Nop()
-	}
-	return &Service{bookings: bookings, properties: properties, blocks: blocks, serviceFeeRate: serviceFeeRate, events: publisher}
+// platform fee applied to each booking (e.g. 0.12 for 12%). The UnitOfWork makes
+// the booking write and its domain event commit atomically.
+func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, serviceFeeRate float64, uow port.UnitOfWork) *Service {
+	return &Service{bookings: bookings, properties: properties, blocks: blocks, serviceFeeRate: serviceFeeRate, uow: uow}
+}
+
+// emit runs the booking write and records the event in one transaction, so the
+// two commit together (or roll back together).
+func (s *Service) emit(ctx context.Context, write func(tx port.Tx) error, ev event.Event) error {
+	return s.uow.Run(ctx, func(tx port.Tx) error {
+		if err := write(tx); err != nil {
+			return err
+		}
+		rec, err := event.NewRecord(ev)
+		if err != nil {
+			return err
+		}
+		return tx.Outbox.Append(ctx, rec)
+	})
 }
 
 // CreateInput carries the data required to make a reservation.
@@ -85,18 +98,20 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	if err != nil {
 		return nil, err
 	}
-	if err := s.bookings.Create(ctx, b); err != nil {
+	if err := s.emit(ctx,
+		func(tx port.Tx) error { return tx.Bookings.Create(ctx, b) },
+		event.BookingRequested{
+			BookingID:     b.ID,
+			PropertyID:    prop.ID,
+			PropertyTitle: prop.Title,
+			HostID:        prop.HostID,
+			GuestID:       in.GuestID,
+			TotalCents:    b.Pricing.Total.AmountCents(),
+			Currency:      b.Pricing.Total.Currency(),
+		},
+	); err != nil {
 		return nil, err
 	}
-	s.events.Publish(ctx, event.BookingRequested{
-		BookingID:     b.ID,
-		PropertyID:    prop.ID,
-		PropertyTitle: prop.Title,
-		HostID:        prop.HostID,
-		GuestID:       in.GuestID,
-		TotalCents:    b.Pricing.Total.AmountCents(),
-		Currency:      b.Pricing.Total.Currency(),
-	})
 	return b, nil
 }
 
@@ -148,15 +163,17 @@ func (s *Service) Confirm(ctx context.Context, actorID, bookingID uuid.UUID) (*b
 	if err := b.Confirm(); err != nil {
 		return nil, err
 	}
-	if err := s.bookings.Update(ctx, b); err != nil {
+	if err := s.emit(ctx,
+		func(tx port.Tx) error { return tx.Bookings.Update(ctx, b) },
+		event.BookingConfirmed{
+			BookingID:     b.ID,
+			PropertyID:    prop.ID,
+			PropertyTitle: prop.Title,
+			GuestID:       b.GuestID,
+		},
+	); err != nil {
 		return nil, err
 	}
-	s.events.Publish(ctx, event.BookingConfirmed{
-		BookingID:     b.ID,
-		PropertyID:    prop.ID,
-		PropertyTitle: prop.Title,
-		GuestID:       b.GuestID,
-	})
 	return b, nil
 }
 
@@ -172,9 +189,6 @@ func (s *Service) Cancel(ctx context.Context, actorID, bookingID uuid.UUID) (*bo
 	if err := b.Cancel(); err != nil {
 		return nil, err
 	}
-	if err := s.bookings.Update(ctx, b); err != nil {
-		return nil, err
-	}
 
 	// A host cancellation is the host's fault and always refunds in full;
 	// otherwise the listing's cancellation policy decides the refund fraction.
@@ -185,15 +199,20 @@ func (s *Service) Cancel(ctx context.Context, actorID, bookingID uuid.UUID) (*bo
 		refundFraction = prop.CancellationPolicy.RefundFraction(daysUntilCheckIn)
 	}
 
-	s.events.Publish(ctx, event.BookingCancelled{
-		BookingID:      b.ID,
-		PropertyID:     prop.ID,
-		PropertyTitle:  prop.Title,
-		HostID:         prop.HostID,
-		GuestID:        b.GuestID,
-		CancelledBy:    actorID,
-		RefundFraction: refundFraction,
-	})
+	if err := s.emit(ctx,
+		func(tx port.Tx) error { return tx.Bookings.Update(ctx, b) },
+		event.BookingCancelled{
+			BookingID:      b.ID,
+			PropertyID:     prop.ID,
+			PropertyTitle:  prop.Title,
+			HostID:         prop.HostID,
+			GuestID:        b.GuestID,
+			CancelledBy:    actorID,
+			RefundFraction: refundFraction,
+		},
+	); err != nil {
+		return nil, err
+	}
 	return b, nil
 }
 
@@ -214,16 +233,18 @@ func (s *Service) Complete(ctx context.Context, actorID, bookingID uuid.UUID) (*
 	if err := b.Complete(); err != nil {
 		return nil, err
 	}
-	if err := s.bookings.Update(ctx, b); err != nil {
+	if err := s.emit(ctx,
+		func(tx port.Tx) error { return tx.Bookings.Update(ctx, b) },
+		event.BookingCompleted{
+			BookingID:     b.ID,
+			PropertyID:    prop.ID,
+			PropertyTitle: prop.Title,
+			HostID:        prop.HostID,
+			GuestID:       b.GuestID,
+		},
+	); err != nil {
 		return nil, err
 	}
-	s.events.Publish(ctx, event.BookingCompleted{
-		BookingID:     b.ID,
-		PropertyID:    prop.ID,
-		PropertyTitle: prop.Title,
-		HostID:        prop.HostID,
-		GuestID:       b.GuestID,
-	})
 	return b, nil
 }
 

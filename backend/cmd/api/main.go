@@ -119,13 +119,16 @@ func run() error {
 	dispatcher := event.NewDispatcher()
 	outboxRepo := postgres.NewOutboxRepository(pool)
 	eventPublisher := event.NewDurablePublisher(outboxRepo, dispatcher)
+	// The unit of work commits a domain write and its events in one transaction,
+	// then drains the relay so subscribers run once the write has committed.
+	uow := postgres.NewUnitOfWork(pool, eventPublisher)
 
 	// --- Application services ---------------------------------------------
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, objectStore)
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, cfg.Pricing.ServiceFeeRate, eventPublisher)
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, cfg.Pricing.ServiceFeeRate, uow)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
-	messageSvc := messageapp.NewService(messageRepo, propertyRepo, eventPublisher)
+	messageSvc := messageapp.NewService(messageRepo, propertyRepo, uow)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
@@ -134,7 +137,7 @@ func run() error {
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
-	identitySvc := identityapp.NewService(identityRepo, eventPublisher)
+	identitySvc := identityapp.NewService(identityRepo, uow)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
 	alertStateSvc := alertstateapp.NewService()
