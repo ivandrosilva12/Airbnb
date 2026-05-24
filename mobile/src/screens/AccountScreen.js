@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
 
 const LINKS = [
@@ -10,6 +12,13 @@ const LINKS = [
 
 export default function AccountScreen({ navigation }) {
   const { authenticated, login, logout } = useAuth();
+  const api = useApi();
+  const [isHost, setIsHost] = useState(false);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    api.me().then((u) => setIsHost(u.role === 'host' || u.role === 'admin')).catch(() => {});
+  }, [authenticated]);
 
   if (!authenticated) {
     return (
@@ -29,6 +38,13 @@ export default function AccountScreen({ navigation }) {
           <Text style={styles.chevron}>›</Text>
         </Pressable>
       ))}
+      {isHost && (
+        <Pressable style={styles.row} onPress={() => navigation.navigate('HostListings')}>
+          <Text style={styles.icon}>🏠</Text>
+          <Text style={styles.label}>Host dashboard</Text>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+      )}
       <Pressable style={styles.signOut} onPress={logout}>
         <Text style={styles.signOutText}>Sign out</Text>
       </Pressable>

@@ -35,6 +35,14 @@ export function createApi(getAccessToken) {
     myBookings: () => request('GET', '/bookings/me', { auth: true }),
     cancelBooking: (id) => request('POST', `/bookings/${id}/cancel`, { auth: true }),
 
+    // Host
+    hostMetrics: () => request('GET', '/host/metrics', { auth: true }),
+    hostEarnings: () => request('GET', '/host/earnings', { auth: true }),
+    myProperties: () => request('GET', '/host/properties', { auth: true }),
+    propertyBookings: (id) => request('GET', `/properties/${id}/bookings`, { auth: true }),
+    confirmBooking: (id) => request('POST', `/bookings/${id}/confirm`, { auth: true }),
+    completeBooking: (id) => request('POST', `/bookings/${id}/complete`, { auth: true }),
+
     // Favorites (wishlist)
     listFavorites: () => request('GET', '/favorites', { auth: true }),
     addFavorite: (propertyId) => request('POST', '/favorites', { body: { propertyId }, auth: true }),
