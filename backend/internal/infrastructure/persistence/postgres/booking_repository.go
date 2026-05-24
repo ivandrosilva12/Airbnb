@@ -62,6 +62,13 @@ func (r *BookingRepository) ListByProperty(ctx context.Context, propertyID uuid.
 	return r.list(ctx, `property_id=$1`, propertyID, page)
 }
 
+func (r *BookingRepository) ListByPropertyIDs(ctx context.Context, propertyIDs []uuid.UUID, page shared.Page) (shared.PageResult[*booking.Booking], error) {
+	if len(propertyIDs) == 0 {
+		return shared.PageResult[*booking.Booking]{}, nil
+	}
+	return r.list(ctx, `property_id = ANY($1)`, propertyIDs, page)
+}
+
 func (r *BookingRepository) list(ctx context.Context, where string, arg any, page shared.Page) (shared.PageResult[*booking.Booking], error) {
 	var total int64
 	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM bookings WHERE `+where, arg).Scan(&total); err != nil {

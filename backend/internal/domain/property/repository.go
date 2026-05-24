@@ -51,6 +51,9 @@ type Repository interface {
 	Update(ctx context.Context, p *Property) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	FindByID(ctx context.Context, id uuid.UUID) (*Property, error)
+	// FindByIDs batch-loads properties by id (order unspecified); missing ids are
+	// simply absent from the result. Used to hydrate lists without an N+1.
+	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*Property, error)
 	ListByHost(ctx context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*Property], error)
 	Search(ctx context.Context, criteria SearchCriteria) (shared.PageResult[*Property], error)
 	// UpdateRating persists the denormalised review aggregates for a listing.

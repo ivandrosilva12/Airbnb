@@ -60,36 +60,39 @@ func (s *Service) HostMetrics(ctx context.Context, hostID uuid.UUID) (HostMetric
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	var bookingIDs []uuid.UUID
 
+	propertyIDs := make([]uuid.UUID, 0, len(props.Items))
 	for _, p := range props.Items {
 		if p.Status == property.StatusPublished {
 			m.Published++
 		}
 		ratingWeighted += p.AverageRating * float64(p.ReviewCount)
 		m.ReviewCount += p.ReviewCount
+		propertyIDs = append(propertyIDs, p.ID)
+	}
 
-		bs, err := s.bookings.ListByProperty(ctx, p.ID, reportPage)
-		if err != nil {
-			return HostMetrics{}, err
+	// One query across all the host's listings instead of an N+1 over them.
+	bs, err := s.bookings.ListByPropertyIDs(ctx, propertyIDs, reportPage)
+	if err != nil {
+		return HostMetrics{}, err
+	}
+	for _, b := range bs.Items {
+		m.Bookings++
+		bookingIDs = append(bookingIDs, b.ID)
+		switch b.Status {
+		case booking.StatusPending:
+			m.Pending++
+		case booking.StatusConfirmed:
+			m.Confirmed++
+		case booking.StatusCompleted:
+			m.Completed++
+		case booking.StatusCancelled:
+			m.Cancelled++
 		}
-		for _, b := range bs.Items {
-			m.Bookings++
-			bookingIDs = append(bookingIDs, b.ID)
-			switch b.Status {
-			case booking.StatusPending:
-				m.Pending++
-			case booking.StatusConfirmed:
-				m.Confirmed++
-			case booking.StatusCompleted:
-				m.Completed++
-			case booking.StatusCancelled:
-				m.Cancelled++
-			}
-			if b.Status == booking.StatusConfirmed || b.Status == booking.StatusCompleted {
-				m.NightsBooked += b.Dates.Nights()
-			}
-			if b.IsActive() && !b.Dates.CheckIn.Before(today) {
-				m.UpcomingCheckins++
-			}
+		if b.Status == booking.StatusConfirmed || b.Status == booking.StatusCompleted {
+			m.NightsBooked += b.Dates.Nights()
+		}
+		if b.IsActive() && !b.Dates.CheckIn.Before(today) {
+			m.UpcomingCheckins++
 		}
 	}
 

@@ -131,6 +131,21 @@ func (r *PropertyRepository) FindByID(ctx context.Context, id uuid.UUID) (*prope
 	return p, nil
 }
 
+func (r *PropertyRepository) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*property.Property, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+propertyColumns+` FROM properties WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	res, err := r.collect(ctx, rows, 0)
+	if err != nil {
+		return nil, err
+	}
+	return res.Items, nil
+}
+
 func (r *PropertyRepository) ListByHost(ctx context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*property.Property], error) {
 	var total int64
 	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM properties WHERE host_id=$1`, hostID).Scan(&total); err != nil {

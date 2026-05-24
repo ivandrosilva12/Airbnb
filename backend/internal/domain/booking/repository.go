@@ -15,6 +15,9 @@ type Repository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*Booking, error)
 	ListByGuest(ctx context.Context, guestID uuid.UUID, page shared.Page) (shared.PageResult[*Booking], error)
 	ListByProperty(ctx context.Context, propertyID uuid.UUID, page shared.Page) (shared.PageResult[*Booking], error)
+	// ListByPropertyIDs returns bookings across several properties in one query,
+	// so host-wide aggregations avoid an N+1 over the host's listings.
+	ListByPropertyIDs(ctx context.Context, propertyIDs []uuid.UUID, page shared.Page) (shared.PageResult[*Booking], error)
 	// HasOverlap reports whether an active booking already occupies the given
 	// date range for the property. Used to enforce no double-booking.
 	HasOverlap(ctx context.Context, propertyID uuid.UUID, dates DateRange) (bool, error)

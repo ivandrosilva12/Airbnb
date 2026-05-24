@@ -156,6 +156,19 @@ func (r *PropertyRepository) FindByID(_ context.Context, id uuid.UUID) (*propert
 	return nil, shared.ErrNotFound
 }
 
+func (r *PropertyRepository) FindByIDs(_ context.Context, ids []uuid.UUID) ([]*property.Property, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*property.Property, 0, len(ids))
+	for _, id := range ids {
+		if p, ok := r.m[id]; ok {
+			c := p
+			out = append(out, &c)
+		}
+	}
+	return out, nil
+}
+
 func (r *PropertyRepository) ListByHost(_ context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*property.Property], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -303,6 +316,17 @@ func (r *BookingRepository) ListByProperty(_ context.Context, propertyID uuid.UU
 	return r.list(func(b booking.Booking) bool { return b.PropertyID == propertyID }, page)
 }
 
+func (r *BookingRepository) ListByPropertyIDs(_ context.Context, propertyIDs []uuid.UUID, page shared.Page) (shared.PageResult[*booking.Booking], error) {
+	if len(propertyIDs) == 0 {
+		return shared.PageResult[*booking.Booking]{}, nil
+	}
+	set := make(map[uuid.UUID]struct{}, len(propertyIDs))
+	for _, id := range propertyIDs {
+		set[id] = struct{}{}
+	}
+	return r.list(func(b booking.Booking) bool { _, ok := set[b.PropertyID]; return ok }, page)
+}
+
 func (r *BookingRepository) list(pred func(booking.Booking) bool, page shared.Page) (shared.PageResult[*booking.Booking], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -313,7 +337,14 @@ func (r *BookingRepository) list(pred func(booking.Booking) bool, page shared.Pa
 			all = append(all, &c)
 		}
 	}
-	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
+	// created_at DESC with an id tiebreaker, matching the Postgres repo so
+	// pagination is deterministic when timestamps collide.
+	sort.Slice(all, func(i, j int) bool {
+		if !all[i].CreatedAt.Equal(all[j].CreatedAt) {
+			return all[i].CreatedAt.After(all[j].CreatedAt)
+		}
+		return all[i].ID.String() > all[j].ID.String()
+	})
 	return paginate(all, page), nil
 }
 

@@ -5,7 +5,6 @@ package favoriteapp
 
 import (
 	"context"
-	"errors"
 
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/property"
@@ -44,16 +43,21 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID, page shared.Page) 
 	if err != nil {
 		return shared.PageResult[*property.Property]{}, err
 	}
+	// Batch-load all listings in one query (avoids an N+1), then re-order to the
+	// wishlist order; listings since deleted are simply absent.
+	loaded, err := s.properties.FindByIDs(ctx, ids.Items)
+	if err != nil {
+		return shared.PageResult[*property.Property]{}, err
+	}
+	byID := make(map[uuid.UUID]*property.Property, len(loaded))
+	for _, p := range loaded {
+		byID[p.ID] = p
+	}
 	items := make([]*property.Property, 0, len(ids.Items))
 	for _, id := range ids.Items {
-		p, err := s.properties.FindByID(ctx, id)
-		if err != nil {
-			if errors.Is(err, shared.ErrNotFound) {
-				continue
-			}
-			return shared.PageResult[*property.Property]{}, err
+		if p, ok := byID[id]; ok {
+			items = append(items, p)
 		}
-		items = append(items, p)
 	}
 	return shared.PageResult[*property.Property]{Items: items, Total: ids.Total}, nil
 }
