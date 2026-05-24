@@ -20,6 +20,9 @@ type Repository interface {
 	Update(ctx context.Context, p *Payment) error
 	FindByID(ctx context.Context, id uuid.UUID) (*Payment, error)
 	FindByBookingID(ctx context.Context, bookingID uuid.UUID) (*Payment, error)
+	// FindByGatewayRef locates a payment by its stored gateway reference (an
+	// exact match). Used to reconcile asynchronous gateway webhook events.
+	FindByGatewayRef(ctx context.Context, gatewayRef string) (*Payment, error)
 	ListByGuest(ctx context.Context, guestID uuid.UUID, page shared.Page) (shared.PageResult[*Payment], error)
 	// RevenueForBookings totals captured and pending amounts across the given
 	// bookings. Assumes a single currency (the platform default); the currency

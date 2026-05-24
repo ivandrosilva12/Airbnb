@@ -6,6 +6,7 @@ import (
 
 	"github.com/airhost/backend/internal/application/event"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/shared"
 	infrapayment "github.com/airhost/backend/internal/infrastructure/payment"
@@ -83,5 +84,82 @@ func TestCancel_ReleasesAuthorizedHoldInFull(t *testing.T) {
 	p, _ := svc.GetForBooking(ctx, guestID, bookingID)
 	if p.Status != payment.StatusRefunded || p.RefundedCents != 10000 {
 		t.Fatalf("authorized hold release = status %s refunded %d, want refunded 10000", p.Status, p.RefundedCents)
+	}
+}
+
+func TestReconcileGatewayEvent_CaptureRefundIdempotent(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewPaymentRepository()
+	svc := paymentapp.NewService(repo, infrapayment.NewFakeGateway(), memory.NewBookingRepository(), memory.NewPropertyRepository())
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	bookingID := uuid.New()
+	guestID := uuid.New()
+	dispatcher.Publish(ctx, event.BookingRequested{BookingID: bookingID, GuestID: guestID, TotalCents: 30000, Currency: "EUR"})
+	p, _ := svc.GetForBooking(ctx, guestID, bookingID)
+	ref := p.GatewayRef // untagged fake ref; provider unknown to the verifier
+
+	// A "captured" webhook moves authorized -> captured.
+	changed, err := svc.ReconcileGatewayEvent(ctx, port.GatewayEvent{Provider: "fake", Reference: ref, Type: port.GatewayCaptured})
+	if err != nil {
+		t.Fatalf("reconcile capture: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected the capture event to change state")
+	}
+	p, _ = svc.GetForBooking(ctx, guestID, bookingID)
+	if p.Status != payment.StatusCaptured {
+		t.Fatalf("status = %s, want captured", p.Status)
+	}
+
+	// Re-delivering the same event is a no-op (idempotent).
+	changed, err = svc.ReconcileGatewayEvent(ctx, port.GatewayEvent{Provider: "fake", Reference: ref, Type: port.GatewayCaptured})
+	if err != nil {
+		t.Fatalf("reconcile capture (replay): %v", err)
+	}
+	if changed {
+		t.Fatal("replayed capture should be a no-op")
+	}
+
+	// A partial "refunded" webhook records the refund.
+	changed, err = svc.ReconcileGatewayEvent(ctx, port.GatewayEvent{Provider: "fake", Reference: ref, Type: port.GatewayRefunded, AmountCents: 12000})
+	if err != nil {
+		t.Fatalf("reconcile refund: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected the refund event to change state")
+	}
+	p, _ = svc.GetForBooking(ctx, guestID, bookingID)
+	if p.Status != payment.StatusRefunded || p.RefundedCents != 12000 {
+		t.Fatalf("after refund = status %s refunded %d, want refunded 12000", p.Status, p.RefundedCents)
+	}
+
+	// An event for an unknown reference is a safe no-op (not an error).
+	changed, err = svc.ReconcileGatewayEvent(ctx, port.GatewayEvent{Provider: "fake", Reference: "nope", Type: port.GatewayCaptured})
+	if err != nil || changed {
+		t.Fatalf("unknown ref: changed=%v err=%v, want false/nil", changed, err)
+	}
+}
+
+func TestReconcileGatewayEvent_FailedAuthorization(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewPaymentRepository()
+	svc := paymentapp.NewService(repo, infrapayment.NewFakeGateway(), memory.NewBookingRepository(), memory.NewPropertyRepository())
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	bookingID := uuid.New()
+	guestID := uuid.New()
+	dispatcher.Publish(ctx, event.BookingRequested{BookingID: bookingID, GuestID: guestID, TotalCents: 5000, Currency: "EUR"})
+	p, _ := svc.GetForBooking(ctx, guestID, bookingID)
+
+	changed, err := svc.ReconcileGatewayEvent(ctx, port.GatewayEvent{Provider: "fake", Reference: p.GatewayRef, Type: port.GatewayFailed, FailureReason: "bank declined"})
+	if err != nil || !changed {
+		t.Fatalf("reconcile failed: changed=%v err=%v", changed, err)
+	}
+	p, _ = svc.GetForBooking(ctx, guestID, bookingID)
+	if p.Status != payment.StatusFailed || p.FailureReason != "bank declined" {
+		t.Fatalf("after fail = status %s reason %q, want failed/bank declined", p.Status, p.FailureReason)
 	}
 }

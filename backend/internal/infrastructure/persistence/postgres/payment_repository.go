@@ -51,6 +51,11 @@ func (r *PaymentRepository) FindByBookingID(ctx context.Context, bookingID uuid.
 	return scanPayment(row)
 }
 
+func (r *PaymentRepository) FindByGatewayRef(ctx context.Context, gatewayRef string) (*payment.Payment, error) {
+	row := r.pool.QueryRow(ctx, `SELECT `+paymentColumns+` FROM payments WHERE gateway_ref=$1`, gatewayRef)
+	return scanPayment(row)
+}
+
 func (r *PaymentRepository) ListByGuest(ctx context.Context, guestID uuid.UUID, page shared.Page) (shared.PageResult[*payment.Payment], error) {
 	var total int64
 	if err := r.pool.QueryRow(ctx,

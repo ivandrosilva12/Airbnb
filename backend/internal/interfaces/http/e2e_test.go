@@ -59,11 +59,16 @@ func (fakeStorage) PublicURL(key string) string { return "http://storage.test/" 
 // harness wires the real router against in-memory repositories and a stub auth
 // middleware that resolves "Bearer <userID>" to a seeded local user.
 type harness struct {
-	t        *testing.T
-	router   *gin.Engine
-	userRepo *memory.UserRepository
-	mailer   *email.RecordingMailer
+	t           *testing.T
+	router      *gin.Engine
+	userRepo    *memory.UserRepository
+	paymentRepo *memory.PaymentRepository
+	mailer      *email.RecordingMailer
 }
+
+// webhookSecret is the GPay Angola webhook secret the harness registers so e2e
+// tests can sign payloads.
+const webhookSecret = "test-webhook-secret"
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
@@ -136,25 +141,26 @@ func newHarness(t *testing.T) *harness {
 		Registry: registry,
 		Auth:     authMW,
 		Handlers: apphttp.Handlers{
-			Health:       handler.NewHealthHandler(nil),
-			User:         handler.NewUserHandler(userSvc),
-			Property:     handler.NewPropertyHandler(propertySvc, searchSvc, metrics),
-			Booking:      handler.NewBookingHandler(bookingSvc, metrics),
-			Review:       handler.NewReviewHandler(reviewSvc),
-			Message:      handler.NewMessageHandler(messageSvc),
-			Favorite:     handler.NewFavoriteHandler(favoriteSvc),
-			Notification: handler.NewNotificationHandler(notificationSvc),
-			Payment:      handler.NewPaymentHandler(paymentSvc),
-			Analytics:    handler.NewAnalyticsHandler(analyticsSvc),
-			Block:        handler.NewBlockHandler(blockSvc),
-			Payout:       handler.NewPayoutHandler(payoutSvc),
-			Realtime:     handler.NewRealtimeHandler(realtimeHub),
-			Identity:     handler.NewIdentityHandler(identitySvc),
-			Report:       handler.NewReportHandler(reportSvc),
+			Health:         handler.NewHealthHandler(nil),
+			User:           handler.NewUserHandler(userSvc),
+			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics),
+			Booking:        handler.NewBookingHandler(bookingSvc, metrics),
+			Review:         handler.NewReviewHandler(reviewSvc),
+			Message:        handler.NewMessageHandler(messageSvc),
+			Favorite:       handler.NewFavoriteHandler(favoriteSvc),
+			Notification:   handler.NewNotificationHandler(notificationSvc),
+			Payment:        handler.NewPaymentHandler(paymentSvc),
+			Analytics:      handler.NewAnalyticsHandler(analyticsSvc),
+			Block:          handler.NewBlockHandler(blockSvc),
+			Payout:         handler.NewPayoutHandler(payoutSvc),
+			Realtime:       handler.NewRealtimeHandler(realtimeHub),
+			Identity:       handler.NewIdentityHandler(identitySvc),
+			Report:         handler.NewReportHandler(reportSvc),
+			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(config.PaymentConfig{GPayAngola: config.GPayAngolaConfig{WebhookSecret: webhookSecret}})),
 		},
 	})
 
-	return &harness{t: t, router: router, userRepo: userRepo, mailer: mailer}
+	return &harness{t: t, router: router, userRepo: userRepo, paymentRepo: paymentRepo, mailer: mailer}
 }
 
 func (h *harness) seedUser(role domainuser.Role, email string) *domainuser.User {
@@ -183,6 +189,19 @@ func (h *harness) do(method, path, token string, body any) *httptest.ResponseRec
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	h.router.ServeHTTP(rec, req)
+	return rec
+}
+
+// doRaw issues a request with a raw body and explicit headers (e.g. a signed
+// webhook payload), bypassing JSON marshalling and bearer auth.
+func (h *harness) doRaw(method, path string, body []byte, headers map[string]string) *httptest.ResponseRecorder {
+	h.t.Helper()
+	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	rec := httptest.NewRecorder()
 	h.router.ServeHTTP(rec, req)

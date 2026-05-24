@@ -5,6 +5,8 @@ package paymentapp
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/airhost/backend/internal/application/port"
@@ -45,6 +47,78 @@ func (s *Service) GetForBooking(ctx context.Context, actorID, bookingID uuid.UUI
 // ListForGuest returns a guest's payments.
 func (s *Service) ListForGuest(ctx context.Context, guestID uuid.UUID, page shared.Page) (shared.PageResult[*payment.Payment], error) {
 	return s.repo.ListByGuest(ctx, guestID, page)
+}
+
+// ReconcileGatewayEvent applies an asynchronous gateway webhook event to the
+// local payment, idempotently (gateways retry webhooks). It reports whether a
+// state change was persisted. Events for unknown references or already-settled
+// payments are no-ops, so re-delivery is safe.
+func (s *Service) ReconcileGatewayEvent(ctx context.Context, evt port.GatewayEvent) (bool, error) {
+	if evt.Type == port.GatewayIgnored || evt.Reference == "" {
+		return false, nil
+	}
+	p, err := s.findByGatewayRef(ctx, evt.Provider, evt.Reference)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			slog.Warn("payment: webhook for unknown reference", "provider", evt.Provider, "ref", evt.Reference)
+			return false, nil
+		}
+		return false, err
+	}
+
+	switch evt.Type {
+	case port.GatewayCaptured:
+		if p.Status != payment.StatusAuthorized {
+			return false, nil // already captured/settled or not capturable
+		}
+		if err := p.Capture(); err != nil {
+			return false, err
+		}
+	case port.GatewayRefunded:
+		if p.Status != payment.StatusAuthorized && p.Status != payment.StatusCaptured {
+			return false, nil // already refunded or nothing to refund
+		}
+		amount := evt.AmountCents
+		if amount <= 0 || amount > p.Amount.AmountCents() {
+			amount = p.Amount.AmountCents()
+		}
+		if err := p.Refund(amount); err != nil {
+			return false, err
+		}
+	case port.GatewayFailed:
+		if p.Status == payment.StatusCaptured || p.Status == payment.StatusRefunded || p.Status == payment.StatusFailed {
+			return false, nil // a settled or already-failed payment is not re-failed
+		}
+		p.Fail(evt.FailureReason)
+	default:
+		return false, nil
+	}
+
+	if err := s.repo.Update(ctx, p); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// findByGatewayRef resolves a payment from a provider-native reference, allowing
+// for the routing gateway's "<provider>:<ref>" tag on the stored value.
+func (s *Service) findByGatewayRef(ctx context.Context, provider, ref string) (*payment.Payment, error) {
+	candidates := []string{ref}
+	if provider != "" {
+		candidates = []string{provider + ":" + ref, ref}
+	}
+	var lastErr error
+	for _, c := range candidates {
+		p, err := s.repo.FindByGatewayRef(ctx, c)
+		if err == nil {
+			return p, nil
+		}
+		lastErr = err
+		if !errors.Is(err, shared.ErrNotFound) {
+			return nil, err
+		}
+	}
+	return nil, lastErr
 }
 
 // ReceiptData is the read-model rendered into a payment receipt.

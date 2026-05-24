@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/airhost/backend/internal/domain/shared"
 )
@@ -13,4 +14,37 @@ type PaymentGateway interface {
 	Authorize(ctx context.Context, amount shared.Money, idempotencyKey string) (ref string, err error)
 	Capture(ctx context.Context, ref string) error
 	Refund(ctx context.Context, ref string, amountCents int64) error
+}
+
+// GatewayEventType is the normalized kind of an inbound webhook event, mapped
+// from each provider's own event vocabulary.
+type GatewayEventType string
+
+const (
+	// GatewayCaptured: funds were captured/settled.
+	GatewayCaptured GatewayEventType = "captured"
+	// GatewayRefunded: funds were returned to the payer.
+	GatewayRefunded GatewayEventType = "refunded"
+	// GatewayFailed: the payment failed or was declined.
+	GatewayFailed GatewayEventType = "failed"
+	// GatewayIgnored: a valid event we take no action on.
+	GatewayIgnored GatewayEventType = "ignored"
+)
+
+// GatewayEvent is a provider-agnostic webhook event used to reconcile a local
+// payment with the gateway's authoritative state.
+type GatewayEvent struct {
+	Provider      string
+	Reference     string // provider-native payment reference (e.g. pi_… / chg_…)
+	Type          GatewayEventType
+	AmountCents   int64 // refund amount; 0 means "full"
+	FailureReason string
+}
+
+// WebhookVerifier authenticates and parses a provider's webhook request into a
+// normalized GatewayEvent. It is an inbound port: infrastructure implements the
+// provider-specific signature check and payload mapping. ok=false means the
+// request was authentic but carries no actionable event.
+type WebhookVerifier interface {
+	Verify(header http.Header, body []byte) (event GatewayEvent, ok bool, err error)
 }

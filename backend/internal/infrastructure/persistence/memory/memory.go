@@ -762,6 +762,18 @@ func (r *PaymentRepository) FindByBookingID(_ context.Context, bookingID uuid.UU
 	return nil, shared.ErrNotFound
 }
 
+func (r *PaymentRepository) FindByGatewayRef(_ context.Context, gatewayRef string) (*payment.Payment, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, p := range r.m {
+		if p.GatewayRef == gatewayRef {
+			c := p
+			return &c, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
 func (r *PaymentRepository) RevenueForBookings(_ context.Context, bookingIDs []uuid.UUID) (payment.Revenue, error) {
 	want := make(map[uuid.UUID]struct{}, len(bookingIDs))
 	for _, id := range bookingIDs {

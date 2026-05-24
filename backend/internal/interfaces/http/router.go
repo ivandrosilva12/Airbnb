@@ -13,21 +13,22 @@ import (
 
 // Handlers bundles the HTTP handlers wired by the composition root.
 type Handlers struct {
-	Health       *handler.HealthHandler
-	User         *handler.UserHandler
-	Property     *handler.PropertyHandler
-	Booking      *handler.BookingHandler
-	Review       *handler.ReviewHandler
-	Message      *handler.MessageHandler
-	Favorite     *handler.FavoriteHandler
-	Notification *handler.NotificationHandler
-	Payment      *handler.PaymentHandler
-	Analytics    *handler.AnalyticsHandler
-	Block        *handler.BlockHandler
-	Payout       *handler.PayoutHandler
-	Realtime     *handler.RealtimeHandler
-	Identity     *handler.IdentityHandler
-	Report       *handler.ReportHandler
+	Health         *handler.HealthHandler
+	User           *handler.UserHandler
+	Property       *handler.PropertyHandler
+	Booking        *handler.BookingHandler
+	Review         *handler.ReviewHandler
+	Message        *handler.MessageHandler
+	Favorite       *handler.FavoriteHandler
+	Notification   *handler.NotificationHandler
+	Payment        *handler.PaymentHandler
+	Analytics      *handler.AnalyticsHandler
+	Block          *handler.BlockHandler
+	Payout         *handler.PayoutHandler
+	Realtime       *handler.RealtimeHandler
+	Identity       *handler.IdentityHandler
+	Report         *handler.ReportHandler
+	PaymentWebhook *handler.PaymentWebhookHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -72,6 +73,10 @@ func NewRouter(d Deps) *gin.Engine {
 	api.GET("/properties/:id/calendar.ics", h.Booking.CalendarICS)
 	api.GET("/properties/:id/reviews", h.Review.ListForProperty)
 	api.GET("/properties/:id/reviews/summary", h.Review.Summary)
+
+	// Payment gateway webhooks (authenticated by per-provider signature, not by a
+	// user token, so they live outside the auth group).
+	api.POST("/webhooks/payments/:provider", h.PaymentWebhook.Handle)
 
 	// Authenticated routes.
 	auth := api.Group("")

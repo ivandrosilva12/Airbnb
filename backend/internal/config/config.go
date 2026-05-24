@@ -44,23 +44,26 @@ type PaymentConfig struct {
 
 // StripeConfig holds Stripe REST API settings.
 type StripeConfig struct {
-	SecretKey string // sk_test_… / sk_live_…
-	BaseURL   string // override for tests; defaults to https://api.stripe.com
+	SecretKey     string // sk_test_… / sk_live_…
+	BaseURL       string // override for tests; defaults to https://api.stripe.com
+	WebhookSecret string // whsec_…; verifies inbound webhook signatures
 }
 
 // AppyPayConfig holds AppyPay REST API settings. Token is a pre-minted OAuth2
 // bearer (client-credentials) access token; in production it would be refreshed
 // out of band and injected via the environment.
 type AppyPayConfig struct {
-	Token   string
-	BaseURL string // e.g. https://api.appypay.co.ao/v2.0
+	Token         string
+	BaseURL       string // e.g. https://api.appypay.co.ao/v2.0
+	WebhookSecret string // shared secret verifying inbound webhook signatures
 }
 
 // GPayAngolaConfig holds GPay Angola (gpayangola.com) REST API settings. APIKey
 // authenticates as a bearer token.
 type GPayAngolaConfig struct {
-	APIKey  string
-	BaseURL string // e.g. https://api.gpayangola.com
+	APIKey        string
+	BaseURL       string // e.g. https://api.gpayangola.com
+	WebhookSecret string // shared secret verifying inbound webhook signatures
 }
 
 // EmailConfig holds transactional email settings. When SMTPHost is empty, a
@@ -177,16 +180,19 @@ func Load() (*Config, error) {
 			Provider:         getEnv("PAYMENT_PROVIDER", "fake"),
 			DomesticCurrency: getEnv("PAYMENT_DOMESTIC_CURRENCY", "AOA"),
 			Stripe: StripeConfig{
-				SecretKey: getEnv("STRIPE_SECRET_KEY", ""),
-				BaseURL:   getEnv("STRIPE_BASE_URL", "https://api.stripe.com"),
+				SecretKey:     getEnv("STRIPE_SECRET_KEY", ""),
+				BaseURL:       getEnv("STRIPE_BASE_URL", "https://api.stripe.com"),
+				WebhookSecret: getEnv("STRIPE_WEBHOOK_SECRET", ""),
 			},
 			AppyPay: AppyPayConfig{
-				Token:   getEnv("APPYPAY_TOKEN", ""),
-				BaseURL: getEnv("APPYPAY_BASE_URL", "https://api.appypay.co.ao/v2.0"),
+				Token:         getEnv("APPYPAY_TOKEN", ""),
+				BaseURL:       getEnv("APPYPAY_BASE_URL", "https://api.appypay.co.ao/v2.0"),
+				WebhookSecret: getEnv("APPYPAY_WEBHOOK_SECRET", ""),
 			},
 			GPayAngola: GPayAngolaConfig{
-				APIKey:  getEnv("GPAYANGOLA_API_KEY", ""),
-				BaseURL: getEnv("GPAYANGOLA_BASE_URL", "https://api.gpayangola.com"),
+				APIKey:        getEnv("GPAYANGOLA_API_KEY", ""),
+				BaseURL:       getEnv("GPAYANGOLA_BASE_URL", "https://api.gpayangola.com"),
+				WebhookSecret: getEnv("GPAYANGOLA_WEBHOOK_SECRET", ""),
 			},
 		},
 	}

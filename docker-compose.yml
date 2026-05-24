@@ -111,6 +111,11 @@ services:
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
       APPYPAY_TOKEN: "${APPYPAY_TOKEN:-}"
       GPAYANGOLA_API_KEY: "${GPAYANGOLA_API_KEY:-}"
+      # Webhook signing secrets. A provider's webhook route is only enabled when
+      # its secret is set (POST /api/v1/webhooks/payments/<provider>).
+      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
+      APPYPAY_WEBHOOK_SECRET: "${APPYPAY_WEBHOOK_SECRET:-}"
+      GPAYANGOLA_WEBHOOK_SECRET: "${GPAYANGOLA_WEBHOOK_SECRET:-}"
     ports:
       - "8081:8081"
 

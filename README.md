@@ -168,6 +168,7 @@ go test ./...
 ## API overview (`/api/v1`)
 
 Public:
+- `POST /webhooks/payments/:provider` — gateway webhook reconciliation (signed by the provider; enabled per provider when its webhook secret is set)
 - `GET /properties` — search (`?city=&country=&type=&minGuests=&maxPrice=&amenity=&checkIn=&checkOut=&lat=&lng=&radiusKm=&sort=`).
   When `checkIn`/`checkOut` (YYYY-MM-DD) are supplied, listings already booked for that window are excluded;
   when `lat`/`lng`/`radiusKm` are supplied, results are limited to that radius (haversine distance);
@@ -261,6 +262,7 @@ docker-compose.yml
 | Payments | Complete | Authorize/capture/refund driven by booking events via a gateway port; web shows payment status; covered by unit + e2e tests |
 | Real payment gateways | Complete | `StripeGateway`, `AppyPayGateway` + `GPayAngolaGateway` adapters of the `PaymentGateway` port over each provider's REST API (manual-capture authorize → capture → refund, idempotency + error mapping); `PAYMENT_PROVIDER` forces one or `auto` routes by currency; falls back to fake when a secret is unset; covered by unit tests against mock HTTP servers |
 | Currency-based routing | Complete | `RoutingGateway` composite: domestic currency (AOA) → GPay Angola primary with AppyPay failover; foreign currency → Stripe. Tags the gateway reference at authorize so capture/refund pin to the authorizing provider; covered by failover/routing unit tests |
+| Payment webhooks | Complete | Public `POST /webhooks/payments/:provider` reconciles async gateway events (capture/refund/fail) idempotently; per-provider signature verification (Stripe HMAC `Stripe-Signature`; AppyPay/GPay Angola hex HMAC `X-Signature`), enabled only when the provider's webhook secret is set; covered by verifier unit tests + an e2e test |
 | Host payouts | Complete | New `payout` context: an earnings ledger credited on confirmation (total minus the platform fee) and debited on refund; `GET /host/earnings` balance + ledger; dashboard card; covered by unit + e2e tests |
 | Message read-receipts | Complete | Per-participant read markers, per-conversation + total unread counts, navbar/inbox badges; covered by the e2e test |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |
@@ -294,6 +296,11 @@ docker-compose.yml
   hold, then capture/refund — in a full Stripe integration the client would
   confirm the PaymentIntent with a collected payment method before capture; that
   browser step is outside the server port.
-- Suggested follow-ups: full-stack e2e tests against a live Keycloak, and a
-  webhook endpoint to reconcile asynchronous gateway state transitions.
+- Payment webhooks: each provider POSTs to `/api/v1/webhooks/payments/<provider>`;
+  the request is authenticated by a per-provider signature (set
+  `STRIPE_WEBHOOK_SECRET` / `APPYPAY_WEBHOOK_SECRET` / `GPAYANGOLA_WEBHOOK_SECRET`),
+  parsed into a normalized event, and reconciled idempotently against the local
+  payment, so retried or out-of-order deliveries are safe. A provider's route is
+  only mounted when its webhook secret is configured.
+- Suggested follow-ups: full-stack e2e tests against a live Keycloak.
 ```
