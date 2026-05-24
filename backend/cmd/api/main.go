@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	blockapp "github.com/airhost/backend/internal/application/block"
@@ -39,6 +40,7 @@ import (
 	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/postgres"
 	"github.com/airhost/backend/internal/infrastructure/realtime"
+	"github.com/airhost/backend/internal/infrastructure/scheduler"
 	"github.com/airhost/backend/internal/infrastructure/storage"
 	apphttp "github.com/airhost/backend/internal/interfaces/http"
 	"github.com/airhost/backend/internal/interfaces/http/handler"
@@ -178,6 +180,25 @@ func run() error {
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
 		},
 	})
+
+	// --- Background jobs ---------------------------------------------------
+	// Periodically prune the webhook dedupe table so it does not grow forever.
+	sched := scheduler.New()
+	retentionDays := cfg.Security.WebhookRetentionDays
+	sched.Add(scheduler.Job{
+		Name:       "webhook-events-cleanup",
+		Interval:   cfg.Security.WebhookCleanupInterval,
+		RunAtStart: true,
+		Run: func(ctx context.Context) error {
+			cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
+			deleted, err := webhookEventRepo.DeleteOlderThan(ctx, cutoff)
+			if err == nil && deleted > 0 {
+				slog.Info("webhook-events cleanup", "deleted", deleted, "cutoff", cutoff)
+			}
+			return err
+		},
+	})
+	sched.Start(ctx)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.HTTP.Port,

@@ -34,6 +34,10 @@ type SecurityConfig struct {
 	// guarding the unauthenticated payment-webhook route.
 	WebhookRateRPS   float64
 	WebhookRateBurst int
+	// WebhookRetentionDays is how long processed-webhook dedupe records are kept;
+	// WebhookCleanupInterval is how often the scheduled cleanup runs.
+	WebhookRetentionDays   int
+	WebhookCleanupInterval time.Duration
 }
 
 // PaymentConfig selects and configures the payment gateway. Provider is one of
@@ -205,8 +209,10 @@ func Load() (*Config, error) {
 			},
 		},
 		Security: SecurityConfig{
-			WebhookRateRPS:   getFloat("WEBHOOK_RATE_RPS", 5),
-			WebhookRateBurst: getInt("WEBHOOK_RATE_BURST", 20),
+			WebhookRateRPS:         getFloat("WEBHOOK_RATE_RPS", 5),
+			WebhookRateBurst:       getInt("WEBHOOK_RATE_BURST", 20),
+			WebhookRetentionDays:   getInt("WEBHOOK_RETENTION_DAYS", 30),
+			WebhookCleanupInterval: getDuration("WEBHOOK_CLEANUP_INTERVAL", 24*time.Hour),
 		},
 	}
 
