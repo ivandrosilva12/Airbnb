@@ -92,6 +92,10 @@ export const api = {
   updatePreferences: (prefs) => request('PATCH', '/me/preferences', { body: prefs, auth: true }),
   becomeHost: () => request('POST', '/me/become-host', { auth: true }),
 
+  // GDPR self-service
+  exportMyData: () => downloadFile('/me/export', 'airhost-data-export.json'),
+  deleteAccount: () => request('DELETE', '/me', { auth: true }),
+
   // Identity verification (KYC)
   getVerification: () => request('GET', '/me/verification', { auth: true }),
   submitVerification: (body) => request('POST', '/me/verification', { body, auth: true }),

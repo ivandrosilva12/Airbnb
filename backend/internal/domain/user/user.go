@@ -182,6 +182,21 @@ func (u *User) Deactivate() {
 	u.touch()
 }
 
+// Anonymize scrubs personal data for a GDPR erasure request: the email, name
+// and avatar are replaced with non-identifying placeholders, the external
+// identity link is severed (so a future login provisions a fresh account rather
+// than resurrecting this one), and the account is deactivated. Per-id sentinels
+// keep the unique email/subject constraints satisfied. Records that must be
+// retained (bookings, payments, payouts) keep referencing this de-identified id.
+func (u *User) Anonymize() {
+	u.Email = "deleted-" + u.ID.String() + "@airhost.invalid"
+	u.FullName = "Deleted user"
+	u.AvatarURL = ""
+	u.KeycloakSub = "deleted-" + u.ID.String()
+	u.IsActive = false
+	u.touch()
+}
+
 // IsHost reports whether the user can act as a host.
 func (u *User) IsHost() bool { return u.Role == RoleHost || u.Role == RoleAdmin }
 

@@ -28,6 +28,7 @@ import (
 	notificationapp "github.com/airhost/backend/internal/application/notification"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
 	payoutapp "github.com/airhost/backend/internal/application/payout"
+	privacyapp "github.com/airhost/backend/internal/application/privacy"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reportapp "github.com/airhost/backend/internal/application/report"
@@ -137,6 +138,7 @@ func run() error {
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, paymentgw.NewDisburser(cfg.Payment))
+	privacySvc := privacyapp.NewService(userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo)
 	identitySvc := identityapp.NewService(identityRepo, uow)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
@@ -192,6 +194,7 @@ func run() error {
 			Report:         handler.NewReportHandler(reportSvc),
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
 			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc, cfg.Alerting.WebhookToken),
+			Privacy:        handler.NewPrivacyHandler(privacySvc),
 		},
 	})
 

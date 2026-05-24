@@ -21,6 +21,12 @@ export const translations = {
     'settings.emailMessages': 'New messages',
     'settings.saved': 'Saved.',
 
+    'privacy.title': 'Privacy & your data',
+    'privacy.hint': 'Download a copy of your data, or permanently delete your account.',
+    'privacy.export': 'Export my data',
+    'privacy.delete': 'Delete my account',
+    'privacy.deleteConfirm': 'Permanently delete your account? Your profile will be anonymised and you will be signed out. This cannot be undone.',
+
     'verify.title': 'Identity verification',
     'verify.hint': 'Verify your identity to earn a verified badge and build trust with hosts and guests.',
     'verify.statusLabel': 'Status',
@@ -353,6 +359,12 @@ export const translations = {
     'settings.emailBookings': 'Atualizações de reservas (pedidos, confirmações, cancelamentos)',
     'settings.emailMessages': 'Novas mensagens',
     'settings.saved': 'Guardado.',
+
+    'privacy.title': 'Privacidade e os seus dados',
+    'privacy.hint': 'Descarregue uma cópia dos seus dados, ou apague permanentemente a sua conta.',
+    'privacy.export': 'Exportar os meus dados',
+    'privacy.delete': 'Apagar a minha conta',
+    'privacy.deleteConfirm': 'Apagar permanentemente a sua conta? O seu perfil será anonimizado e a sessão terminada. Esta ação é irreversível.',
 
     'verify.title': 'Verificação de identidade',
     'verify.hint': 'Verifique a sua identidade para obter um selo de verificado e ganhar a confiança de anfitriões e hóspedes.',

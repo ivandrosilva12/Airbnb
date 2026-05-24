@@ -30,6 +30,7 @@ type Handlers struct {
 	Report         *handler.ReportHandler
 	PaymentWebhook *handler.PaymentWebhookHandler
 	Alert          *handler.AlertHandler
+	Privacy        *handler.PrivacyHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -113,6 +114,10 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.PATCH("/me", h.User.UpdateMe)
 		auth.PATCH("/me/preferences", h.User.UpdatePreferences)
 		auth.POST("/me/become-host", h.User.BecomeHost)
+
+		// GDPR self-service: export everything we hold, or erase the account.
+		auth.GET("/me/export", h.Privacy.Export)
+		auth.DELETE("/me", h.Privacy.Erase)
 
 		// KYC identity verification (user-facing submit/status).
 		auth.GET("/me/verification", h.Identity.GetMine)

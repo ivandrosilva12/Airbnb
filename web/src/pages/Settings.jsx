@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import keycloak from '../keycloak';
 import { useT } from '../i18n/I18nContext';
 
 export default function Settings() {
@@ -56,7 +57,54 @@ export default function Settings() {
       )}
 
       <VerificationPanel />
+      <PrivacyPanel />
     </div>
+  );
+}
+
+// PrivacyPanel offers GDPR self-service: download a copy of your data, or
+// permanently delete (anonymise) your account.
+function PrivacyPanel() {
+  const { t } = useT();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function exportData() {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.exportMyData();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteAccount() {
+    if (!window.confirm(t('privacy.deleteConfirm'))) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api.deleteAccount();
+      // The account is gone; end the session and return to the public site.
+      keycloak.logout({ redirectUri: window.location.origin });
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="privacy-panel">
+      <h2>{t('privacy.title')}</h2>
+      <p className="muted">{t('privacy.hint')}</p>
+      {error && <p className="error">{error}</p>}
+      <div className="privacy-actions">
+        <button className="btn btn-ghost" onClick={exportData} disabled={busy}>{t('privacy.export')}</button>
+        <button className="btn-link-danger" onClick={deleteAccount} disabled={busy}>{t('privacy.delete')}</button>
+      </div>
+    </section>
   );
 }
 

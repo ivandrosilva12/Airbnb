@@ -10,6 +10,7 @@ import (
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	payoutapp "github.com/airhost/backend/internal/application/payout"
 	"github.com/airhost/backend/internal/application/port"
+	privacyapp "github.com/airhost/backend/internal/application/privacy"
 	reportapp "github.com/airhost/backend/internal/application/report"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	"github.com/airhost/backend/internal/domain/block"
@@ -485,6 +486,45 @@ func FromDisbursement(d *payout.Disbursement) DisbursementView {
 		Failure:    d.Failure,
 		CreatedAt:  d.CreatedAt,
 	}
+}
+
+// DataExportView is the GDPR data-export document handed to a user.
+type DataExportView struct {
+	Profile             UserView           `json:"profile"`
+	Bookings            []BookingView      `json:"bookings"`
+	Payments            []PaymentView      `json:"payments"`
+	FavoritePropertyIDs []uuid.UUID        `json:"favoritePropertyIds"`
+	Notifications       []NotificationView `json:"notifications"`
+	Earnings            []PayoutEntryView  `json:"earnings"`
+	ReviewsAboutMe      []ReviewView       `json:"reviewsAboutMe"`
+}
+
+// FromExport maps an aggregated personal-data export to its view, reusing the
+// per-aggregate presenters so the export matches the rest of the API.
+func FromExport(e *privacyapp.Export) DataExportView {
+	v := DataExportView{
+		Profile:             FromUser(e.User),
+		FavoritePropertyIDs: e.FavoriteIDs,
+	}
+	for _, b := range e.Bookings {
+		v.Bookings = append(v.Bookings, FromBooking(b))
+	}
+	for _, p := range e.Payments {
+		v.Payments = append(v.Payments, FromPayment(p))
+	}
+	for _, n := range e.Notifications {
+		v.Notifications = append(v.Notifications, FromNotification(n))
+	}
+	for _, en := range e.PayoutEntries {
+		v.Earnings = append(v.Earnings, FromPayoutEntry(en))
+	}
+	for _, r := range e.ReviewsAboutMe {
+		v.ReviewsAboutMe = append(v.ReviewsAboutMe, FromReview(r))
+	}
+	if v.FavoritePropertyIDs == nil {
+		v.FavoritePropertyIDs = []uuid.UUID{}
+	}
+	return v
 }
 
 // BlockView is the public representation of a host calendar block.
