@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -669,15 +668,21 @@ func TestEndToEnd_BookingAndMessagingFlow(t *testing.T) {
 	}
 }
 
-func uploadPhoto(t *testing.T, h *harness, token, propID string) {
+// pngBytes is the 8-byte PNG signature followed by padding — enough for
+// http.DetectContentType to classify it as image/png.
+var pngBytes = append([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, make([]byte, 64)...)
+
+// uploadPhotoBytes posts a photo with the given filename and content and returns
+// the response recorder (so tests can assert success or rejection).
+func uploadPhotoBytes(t *testing.T, h *harness, token, propID, filename string, content []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
-	fw, err := w.CreateFormFile("photo", "cover.jpg")
+	fw, err := w.CreateFormFile("photo", filename)
 	if err != nil {
 		t.Fatalf("form file: %v", err)
 	}
-	fmt.Fprint(fw, "fake-image-bytes")
+	fw.Write(content)
 	w.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/properties/"+propID+"/photos", &buf)
@@ -685,5 +690,11 @@ func uploadPhoto(t *testing.T, h *harness, token, propID string) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	h.router.ServeHTTP(rec, req)
+	return rec
+}
+
+func uploadPhoto(t *testing.T, h *harness, token, propID string) {
+	t.Helper()
+	rec := uploadPhotoBytes(t, h, token, propID, "cover.png", pngBytes)
 	mustStatus(t, rec, http.StatusOK, "upload photo")
 }

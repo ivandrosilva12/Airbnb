@@ -20,25 +20,37 @@ func NewService(repo user.Repository) *Service {
 	return &Service{repo: repo}
 }
 
-// Identity is the data extracted from a verified Keycloak token.
+// Identity is the data extracted from a verified Keycloak token. Roles are the
+// realm roles asserted by the token; they grant host/admin locally.
 type Identity struct {
 	Subject  string
 	Email    string
 	FullName string
+	Roles    []string
 }
 
 // SyncFromIdentity returns the local user for a Keycloak identity, creating one
-// on first login (just-in-time provisioning).
+// on first login (just-in-time provisioning). The platform role is derived from
+// the token's realm roles: on creation the user gets that role, and on later
+// logins the role is *elevated* to match (never demoted, so a self-service host
+// promotion survives even if the IdP does not assert the host role).
 func (s *Service) SyncFromIdentity(ctx context.Context, id Identity) (*user.User, error) {
+	tokenRole := user.RoleFromRealmRoles(id.Roles)
+
 	existing, err := s.repo.FindByKeycloakSub(ctx, id.Subject)
 	if err == nil {
+		if existing.ElevateRole(tokenRole) {
+			if err := s.repo.Update(ctx, existing); err != nil {
+				return nil, err
+			}
+		}
 		return existing, nil
 	}
 	if !errors.Is(err, shared.ErrNotFound) {
 		return nil, err
 	}
 
-	u, err := user.NewUser(id.Subject, id.Email, fallback(id.FullName, id.Email), user.RoleGuest)
+	u, err := user.NewUser(id.Subject, id.Email, fallback(id.FullName, id.Email), tokenRole)
 	if err != nil {
 		return nil, err
 	}

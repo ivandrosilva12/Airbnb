@@ -22,6 +22,8 @@ func mapError(err error) error {
 		switch pgErr.Code {
 		case "23505": // unique_violation
 			return shared.ErrConflict
+		case "23P01": // exclusion_violation (e.g. overlapping bookings)
+			return shared.ErrConflict
 		case "23503": // foreign_key_violation
 			return shared.NewValidationError("referenced resource does not exist")
 		case "23514": // check_violation

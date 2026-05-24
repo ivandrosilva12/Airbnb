@@ -66,4 +66,17 @@ func TestEndToEnd_PhotoManagement(t *testing.T) {
 	if r := h.do(http.MethodDelete, "/api/v1/properties/"+propID+"/photos/"+second, hostTok, nil); r.Code != http.StatusNotFound {
 		t.Fatalf("delete missing photo: status = %d, want 404", r.Code)
 	}
+
+	// A non-image payload is rejected by content sniffing (415), even though the
+	// multipart part claims an image filename.
+	if r := uploadPhotoBytes(t, h, hostTok, propID, "evil.png", []byte("<html><script>alert(1)</script>")); r.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("non-image upload: status = %d, want 415", r.Code)
+	}
+
+	// An oversized upload is rejected (413).
+	big := make([]byte, (10<<20)+1024)
+	copy(big, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A})
+	if r := uploadPhotoBytes(t, h, hostTok, propID, "big.png", big); r.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized upload: status = %d, want 413", r.Code)
+	}
 }

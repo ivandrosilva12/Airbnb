@@ -71,6 +71,18 @@
         { "type": "password", "value": "guest123", "temporary": false }
       ],
       "realmRoles": ["guest"]
+    },
+    {
+      "username": "admin@airhost.dev",
+      "email": "admin@airhost.dev",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "credentials": [
+        { "type": "password", "value": "admin123", "temporary": false }
+      ],
+      "realmRoles": ["admin"]
     }
   ]
 }

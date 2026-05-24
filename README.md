@@ -87,6 +87,13 @@ Key domain rules enforced in code:
   cancellation refunds a policy-determined fraction of the captured charge based
   on days before check-in; a host cancellation always refunds in full; an
   uncaptured hold is always released in full.
+- No double-booking is enforced both in the application (overlap check) and at
+  the database level via a `btree_gist` `EXCLUDE` constraint (migration 0018),
+  so a concurrent race cannot create overlapping active bookings (the second
+  insert fails with a conflict).
+- Photo uploads are capped at 10 MiB and the content type is detected from the
+  bytes (allowlist: JPEG/PNG/WebP/GIF), so the public object URL cannot serve
+  attacker-supplied active content.
 
 ## Tech stack
 
@@ -129,7 +136,9 @@ docker compose up --build
 | Grafana | http://localhost:3001 | admin / admin |
 
 Seeded Keycloak users (realm `airhost`): `host@airhost.dev` / `host123`,
-`guest@airhost.dev` / `guest123`.
+`guest@airhost.dev` / `guest123`, `admin@airhost.dev` / `admin123`. The local
+platform role is derived from the token's realm roles on login (`admin`/`host`
+→ elevated, never demoted), so the admin account unlocks the `/admin` console.
 
 **3. Run the web app** (on the host):
 
@@ -269,7 +278,7 @@ docker-compose.yml
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
 | Advanced pricing | Complete | Per-listing weekly/monthly length-of-stay discounts + occupancy tax (migration 0014); derived in the domain and stored on the booking; create-listing form + detail/receipt breakdown; covered by unit + e2e tests |
 | Photo management | Complete | Reorder (first photo = cover), set-cover and delete on the property aggregate; host-only `PATCH /photos/order` + `DELETE /photos/:photoId`; web photo manager page; covered by an e2e test |
-| Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; KYC review queue; web `/admin` console; covered by the e2e test |
+| Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; KYC review queue; web `/admin` console; admin role granted via the Keycloak realm `admin` role (mapped on login); covered by the e2e test |
 | Identity verification (KYC) | Complete | New `identity` context: users submit a document, admins approve/reject (migration 0015); approval publishes an `IdentityVerified` event → notification + account email; web settings panel + admin queue, mobile submit/status screen; covered by unit + e2e tests |
 | Listing/abuse reports | Complete | New `report` context: any user flags a listing (reason + note, one open report each, migration 0016); admins resolve/dismiss from a queue enriched with listing titles and can suspend the listing; "Report listing" control on the detail page + `/admin` report queue; covered by unit + e2e tests |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification/payment/email subscribe |

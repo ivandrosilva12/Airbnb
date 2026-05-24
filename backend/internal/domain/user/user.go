@@ -30,6 +30,40 @@ func (r Role) Valid() bool {
 	}
 }
 
+// rank orders roles by privilege so promotions never demote.
+func (r Role) rank() int {
+	switch r {
+	case RoleAdmin:
+		return 2
+	case RoleHost:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// RoleFromRealmRoles maps a Keycloak realm-role list to the highest matching
+// platform role, defaulting to guest. Authorization in AirHost is driven by the
+// local role; this is how an identity provider grants host/admin.
+func RoleFromRealmRoles(roles []string) Role {
+	best := RoleGuest
+	for _, name := range roles {
+		var candidate Role
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "admin":
+			candidate = RoleAdmin
+		case "host":
+			candidate = RoleHost
+		default:
+			continue
+		}
+		if candidate.rank() > best.rank() {
+			best = candidate
+		}
+	}
+	return best
+}
+
 // EmailPreferences controls which transactional emails a user receives. In-app
 // notifications are always delivered; these toggles only gate email delivery.
 type EmailPreferences struct {
@@ -101,6 +135,19 @@ func (u *User) PromoteToHost() {
 		u.Role = RoleHost
 		u.touch()
 	}
+}
+
+// ElevateRole raises the user's role to r when r is more privileged than the
+// current role. It never demotes, so a self-service host promotion is preserved
+// even if the identity provider does not (yet) assert the host role. Returns
+// true when the role changed.
+func (u *User) ElevateRole(r Role) bool {
+	if !r.Valid() || r.rank() <= u.Role.rank() {
+		return false
+	}
+	u.Role = r
+	u.touch()
+	return true
 }
 
 // UpdateProfile changes mutable profile fields with validation.

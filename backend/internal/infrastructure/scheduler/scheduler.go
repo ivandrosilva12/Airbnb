@@ -60,6 +60,13 @@ func (s *Scheduler) run(ctx context.Context, j Job) {
 }
 
 func (s *Scheduler) invoke(ctx context.Context, j Job) {
+	// Recover so a panic in one job is logged and the job keeps ticking, rather
+	// than taking down the goroutine (and, on an unrecovered panic, the process).
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("scheduler: job panicked", "job", j.Name, "panic", r)
+		}
+	}()
 	if err := j.Run(ctx); err != nil {
 		slog.Error("scheduler: job failed", "job", j.Name, "error", err)
 	}

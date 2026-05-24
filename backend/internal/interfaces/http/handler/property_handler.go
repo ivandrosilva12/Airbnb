@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"path"
 	"strconv"
@@ -16,6 +18,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+// Photo-upload limits. The content type is detected from the bytes (not trusted
+// from the client header) so the stored object cannot be served as active
+// content (e.g. text/html, SVG) from the public URL.
+const maxPhotoUploadBytes = 10 << 20 // 10 MiB
+
+var allowedPhotoContentTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/webp": true,
+	"image/gif":  true,
+}
 
 // PropertyHandler exposes listing endpoints.
 type PropertyHandler struct {
@@ -300,9 +314,21 @@ func (h *PropertyHandler) UploadPhoto(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// Cap the total request body so an oversized multipart upload is rejected
+	// while parsing, not buffered whole.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxPhotoUploadBytes+1<<10)
 	fileHeader, err := c.FormFile("photo")
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			response.FailMessage(c, http.StatusRequestEntityTooLarge, "photo exceeds the 10 MiB limit")
+			return
+		}
 		response.FailMessage(c, http.StatusBadRequest, "photo file is required")
+		return
+	}
+	if fileHeader.Size > maxPhotoUploadBytes {
+		response.FailMessage(c, http.StatusRequestEntityTooLarge, "photo exceeds the 10 MiB limit")
 		return
 	}
 	file, err := fileHeader.Open()
@@ -312,9 +338,18 @@ func (h *PropertyHandler) UploadPhoto(c *gin.Context) {
 	}
 	defer file.Close()
 
-	contentType := fileHeader.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
+	// Detect the content type from the leading bytes rather than trusting the
+	// client-supplied header, then rewind so the full file is stored.
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(file, head)
+	contentType := http.DetectContentType(head[:n])
+	if !allowedPhotoContentTypes[contentType] {
+		response.FailMessage(c, http.StatusUnsupportedMediaType, "only JPEG, PNG, WebP or GIF images are allowed")
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		response.FailMessage(c, http.StatusBadRequest, "could not read uploaded file")
+		return
 	}
 	p, err := h.svc.UploadPhoto(c.Request.Context(), actorID, id, file, fileHeader.Size, contentType, fileHeader.Filename)
 	if err != nil {

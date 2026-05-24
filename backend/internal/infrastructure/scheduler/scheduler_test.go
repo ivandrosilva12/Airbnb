@@ -52,6 +52,43 @@ func TestScheduler_RunsAtStartAndOnInterval(t *testing.T) {
 	}
 }
 
+func TestScheduler_RecoversFromPanic(t *testing.T) {
+	var runs int32
+	fired := make(chan struct{}, 8)
+
+	s := New()
+	s.Add(Job{
+		Name:       "panicker",
+		Interval:   15 * time.Millisecond,
+		RunAtStart: true,
+		Run: func(_ context.Context) error {
+			atomic.AddInt32(&runs, 1)
+			select {
+			case fired <- struct{}{}:
+			default:
+			}
+			panic("boom")
+		},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx)
+
+	// The job panics every run; recovery must keep it ticking past the initial
+	// RunAtStart invocation without crashing the test process.
+	for i := 0; i < 2; i++ {
+		select {
+		case <-fired:
+		case <-time.After(time.Second):
+			t.Fatalf("job did not keep running after panic (iteration %d)", i)
+		}
+	}
+	if n := atomic.LoadInt32(&runs); n < 2 {
+		t.Fatalf("expected the panicking job to run repeatedly, got %d runs", n)
+	}
+}
+
 func TestScheduler_IgnoresInvalidJobs(t *testing.T) {
 	s := New()
 	s.Add(Job{Name: "no-interval", Run: func(context.Context) error { return nil }})

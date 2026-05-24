@@ -157,6 +157,7 @@ func run() error {
 			Subject:  claims.Subject,
 			Email:    claims.Email,
 			FullName: claims.FullName(),
+			Roles:    claims.RealmAccess.Roles,
 		})
 	}
 	authMW := middleware.NewAuthMiddleware(verifier, syncFn)
