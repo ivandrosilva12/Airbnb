@@ -19,11 +19,35 @@ type Config struct {
 	Storage  StorageConfig
 	Pricing  PricingConfig
 	Email    EmailConfig
+	Payment  PaymentConfig
 }
 
 // PricingConfig holds platform pricing policy.
 type PricingConfig struct {
 	ServiceFeeRate float64 // platform fee fraction, e.g. 0.12 for 12%
+}
+
+// PaymentConfig selects and configures the payment gateway. Provider is one of
+// "fake" (default; no external calls), "stripe" or "appypay". Secrets come from
+// the environment and must never be committed.
+type PaymentConfig struct {
+	Provider string
+	Stripe   StripeConfig
+	AppyPay  AppyPayConfig
+}
+
+// StripeConfig holds Stripe REST API settings.
+type StripeConfig struct {
+	SecretKey string // sk_test_… / sk_live_…
+	BaseURL   string // override for tests; defaults to https://api.stripe.com
+}
+
+// AppyPayConfig holds AppyPay REST API settings. Token is a pre-minted OAuth2
+// bearer (client-credentials) access token; in production it would be refreshed
+// out of band and injected via the environment.
+type AppyPayConfig struct {
+	Token   string
+	BaseURL string // e.g. https://api.appypay.co.ao/v2.0
 }
 
 // EmailConfig holds transactional email settings. When SMTPHost is empty, a
@@ -135,6 +159,17 @@ func Load() (*Config, error) {
 			SMTPPort:     getEnv("SMTP_PORT", "1025"),
 			SMTPUser:     getEnv("SMTP_USER", ""),
 			SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+		},
+		Payment: PaymentConfig{
+			Provider: getEnv("PAYMENT_PROVIDER", "fake"),
+			Stripe: StripeConfig{
+				SecretKey: getEnv("STRIPE_SECRET_KEY", ""),
+				BaseURL:   getEnv("STRIPE_BASE_URL", "https://api.stripe.com"),
+			},
+			AppyPay: AppyPayConfig{
+				Token:   getEnv("APPYPAY_TOKEN", ""),
+				BaseURL: getEnv("APPYPAY_BASE_URL", "https://api.appypay.co.ao/v2.0"),
+			},
 		},
 	}
 

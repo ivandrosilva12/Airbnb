@@ -258,7 +258,8 @@ docker-compose.yml
 | Real-time updates | Complete | SSE endpoint + in-process fan-out hub pushing live notification/message hints; web `EventSource` refreshes badges instantly (polling kept as fallback); covered by hub/service unit tests + a streaming e2e test |
 | Email notifications | Complete | Transactional HTML email (multipart/alternative with text fallback) via a `Mailer` port reacting to booking/message events; templated with `html/template` (auto-escaped); SMTP in prod, log mailer when unconfigured, MailHog locally; covered by unit + e2e tests |
 | Email preferences | Complete | Per-user opt-outs for booking/message emails (`PATCH /me/preferences`, migration 0013); the email subscriber honours them; web account settings page; covered by unit + e2e tests |
-| Payments | Complete | Authorize/capture/refund driven by booking events via a gateway port (fake by default); web shows payment status; covered by unit + e2e tests |
+| Payments | Complete | Authorize/capture/refund driven by booking events via a gateway port; web shows payment status; covered by unit + e2e tests |
+| Real payment gateways | Complete | `StripeGateway` + `AppyPayGateway` adapters of the `PaymentGateway` port over each provider's REST API (manual-capture authorize → capture → refund, idempotency + error mapping); `PAYMENT_PROVIDER` selects fake/stripe/appypay (falls back to fake when the secret is unset); covered by unit tests against mock HTTP servers |
 | Host payouts | Complete | New `payout` context: an earnings ledger credited on confirmation (total minus the platform fee) and debited on refund; `GET /host/earnings` balance + ledger; dashboard card; covered by unit + e2e tests |
 | Message read-receipts | Complete | Per-participant read markers, per-conversation + total unread counts, navbar/inbox badges; covered by the e2e test |
 | In-memory repos | Complete | Power the application + e2e test suites; usable for local runs |
@@ -280,6 +281,12 @@ docker-compose.yml
   production `documentRef` would be an object-storage key for an uploaded scan
   held by a KYC provider, never raw PII. Account/security emails (e.g. the
   verified confirmation) are always delivered and cannot be opted out of.
-- Suggested follow-ups: a real payment gateway (Stripe) behind the existing
-  `PaymentGateway` port and full-stack e2e tests against a live Keycloak.
+- Payment gateway: set `PAYMENT_PROVIDER` to `stripe` or `appypay` and supply
+  `STRIPE_SECRET_KEY` / `APPYPAY_TOKEN` via the environment (never committed) to
+  use a real processor; otherwise the fake in-memory gateway is used. The
+  adapters authorize as a manual-capture hold, then capture/refund — in a full
+  Stripe integration the client would confirm the PaymentIntent with a collected
+  payment method before capture; that browser step is outside the server port.
+- Suggested follow-ups: full-stack e2e tests against a live Keycloak, and a
+  webhook endpoint to reconcile asynchronous gateway state transitions.
 ```
