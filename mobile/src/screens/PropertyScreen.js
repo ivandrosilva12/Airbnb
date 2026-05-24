@@ -23,14 +23,29 @@ export default function PropertyScreen({ route, navigation }) {
     api.getProperty(id).then(setProperty).catch((e) => setError(e.message));
   }, [id]);
 
+  // Reflect whether this listing is already in the wishlist so the heart is
+  // correct on revisit (rather than always starting empty).
+  useEffect(() => {
+    if (!authenticated) return;
+    api
+      .listFavorites()
+      .then((res) => setSaved((res.items || []).some((p) => p.id === id)))
+      .catch(() => {});
+  }, [id, authenticated]);
+
   async function save() {
     if (!authenticated) {
       login();
       return;
     }
     try {
-      await api.addFavorite(id);
-      setSaved(true);
+      if (saved) {
+        await api.removeFavorite(id);
+        setSaved(false);
+      } else {
+        await api.addFavorite(id);
+        setSaved(true);
+      }
     } catch (e) {
       setError(e.message);
     }
