@@ -29,6 +29,7 @@ type Handlers struct {
 	Identity       *handler.IdentityHandler
 	Report         *handler.ReportHandler
 	PaymentWebhook *handler.PaymentWebhookHandler
+	Alert          *handler.AlertHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -186,6 +187,11 @@ func NewRouter(d Deps) *gin.Engine {
 
 			// Webhook dedupe-table retention/cleanup.
 			admin.POST("/webhooks/events/cleanup", h.PaymentWebhook.Cleanup)
+
+			// Alertmanager silences (maintenance windows that mute alerts).
+			admin.GET("/alerts/silences", h.Alert.ListSilences)
+			admin.POST("/alerts/silences", h.Alert.CreateSilence)
+			admin.DELETE("/alerts/silences/:id", h.Alert.DeleteSilence)
 		}
 	}
 

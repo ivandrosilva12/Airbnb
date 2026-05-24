@@ -37,12 +37,16 @@ func (r *WebhookEventRepository) Record(_ context.Context, provider, eventID str
 	return nil
 }
 
+// DeleteOlderThan prunes records recorded at or before the cutoff. The boundary
+// is inclusive (mirroring the Postgres store) so a sweep with a "now" cutoff
+// drops everything already recorded even when timestamps coincide with the
+// cutoff at the clock's resolution.
 func (r *WebhookEventRepository) DeleteOlderThan(_ context.Context, cutoff time.Time) (int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var deleted int64
 	for k, ts := range r.seen {
-		if ts.Before(cutoff) {
+		if !ts.After(cutoff) {
 			delete(r.seen, k)
 			deleted++
 		}

@@ -7,6 +7,7 @@ import (
 
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	"github.com/airhost/backend/internal/application/port"
 	reportapp "github.com/airhost/backend/internal/application/report"
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
@@ -533,4 +534,45 @@ type PageView[T any] struct {
 	Total  int64 `json:"total"`
 	Limit  int   `json:"limit"`
 	Offset int   `json:"offset"`
+}
+
+// SilenceMatcherView renders one Alertmanager silence matcher.
+type SilenceMatcherView struct {
+	Name    string `json:"name"`
+	Value   string `json:"value"`
+	IsRegex bool   `json:"isRegex"`
+	IsEqual bool   `json:"isEqual"`
+}
+
+// SilenceView renders an Alertmanager silence (a maintenance mute window).
+type SilenceView struct {
+	ID        string               `json:"id"`
+	Matchers  []SilenceMatcherView `json:"matchers"`
+	StartsAt  time.Time            `json:"startsAt"`
+	EndsAt    time.Time            `json:"endsAt"`
+	CreatedBy string               `json:"createdBy"`
+	Comment   string               `json:"comment"`
+	Status    string               `json:"status"`
+}
+
+// FromSilence maps a silence (from the AlertSilencer port) to its view.
+func FromSilence(s port.Silence) SilenceView {
+	matchers := make([]SilenceMatcherView, 0, len(s.Matchers))
+	for _, m := range s.Matchers {
+		matchers = append(matchers, SilenceMatcherView{
+			Name:    m.Name,
+			Value:   m.Value,
+			IsRegex: m.IsRegex,
+			IsEqual: m.IsEqual,
+		})
+	}
+	return SilenceView{
+		ID:        s.ID,
+		Matchers:  matchers,
+		StartsAt:  s.StartsAt,
+		EndsAt:    s.EndsAt,
+		CreatedBy: s.CreatedBy,
+		Comment:   s.Comment,
+		Status:    s.Status,
+	}
 }

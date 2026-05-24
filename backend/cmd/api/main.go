@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	alertingapp "github.com/airhost/backend/internal/application/alerting"
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	blockapp "github.com/airhost/backend/internal/application/block"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
@@ -34,6 +35,7 @@ import (
 	userapp "github.com/airhost/backend/internal/application/user"
 	"github.com/airhost/backend/internal/config"
 	domainuser "github.com/airhost/backend/internal/domain/user"
+	infraalerting "github.com/airhost/backend/internal/infrastructure/alerting"
 	"github.com/airhost/backend/internal/infrastructure/auth"
 	"github.com/airhost/backend/internal/infrastructure/email"
 	"github.com/airhost/backend/internal/infrastructure/observability"
@@ -129,6 +131,7 @@ func run() error {
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
 	identitySvc := identityapp.NewService(identityRepo, dispatcher)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
+	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
 	realtimeHub := realtime.NewHub()
 	realtimeSvc := realtimeapp.NewService(realtimeHub)
 
@@ -178,6 +181,7 @@ func run() error {
 			Identity:       handler.NewIdentityHandler(identitySvc),
 			Report:         handler.NewReportHandler(reportSvc),
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
+			Alert:          handler.NewAlertHandler(alertingSvc),
 		},
 	})
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	alertingapp "github.com/airhost/backend/internal/application/alerting"
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	blockapp "github.com/airhost/backend/internal/application/block"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
@@ -64,6 +65,7 @@ type harness struct {
 	userRepo    *memory.UserRepository
 	paymentRepo *memory.PaymentRepository
 	mailer      *email.RecordingMailer
+	silencer    *memSilencer
 }
 
 // webhookSecret is the GPay Angola webhook secret the harness registers so e2e
@@ -105,6 +107,8 @@ func newHarness(t *testing.T) *harness {
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
 	identitySvc := identityapp.NewService(identityRepo, dispatcher)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
+	silencer := newMemSilencer()
+	alertingSvc := alertingapp.NewService(silencer)
 	realtimeHub := realtime.NewHub()
 	realtimeSvc := realtimeapp.NewService(realtimeHub)
 	dispatcher.Subscribe(notificationSvc.EventHandler())
@@ -161,10 +165,11 @@ func newHarness(t *testing.T) *harness {
 			Identity:       handler.NewIdentityHandler(identitySvc),
 			Report:         handler.NewReportHandler(reportSvc),
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(config.PaymentConfig{GPayAngola: config.GPayAngolaConfig{WebhookSecret: webhookSecret}}), memory.NewWebhookEventRepository(), metrics),
+			Alert:          handler.NewAlertHandler(alertingSvc),
 		},
 	})
 
-	return &harness{t: t, router: router, userRepo: userRepo, paymentRepo: paymentRepo, mailer: mailer}
+	return &harness{t: t, router: router, userRepo: userRepo, paymentRepo: paymentRepo, mailer: mailer, silencer: silencer}
 }
 
 func (h *harness) seedUser(role domainuser.Role, email string) *domainuser.User {

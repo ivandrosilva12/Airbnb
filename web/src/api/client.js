@@ -107,6 +107,11 @@ export const api = {
   adminSuspendProperty: (id) => request('POST', `/admin/properties/${id}/suspend`, { auth: true }),
   adminUnsuspendProperty: (id) => request('POST', `/admin/properties/${id}/unsuspend`, { auth: true }),
 
+  // Alertmanager silences (maintenance windows that mute alerts)
+  adminListSilences: () => request('GET', '/admin/alerts/silences', { auth: true }),
+  adminCreateSilence: (body) => request('POST', '/admin/alerts/silences', { body, auth: true }),
+  adminDeleteSilence: (id) => request('DELETE', `/admin/alerts/silences/${id}`, { auth: true }),
+
   // Bookings
   createBooking: (body) => request('POST', '/bookings', { body, auth: true }),
   myBookings: () => request('GET', '/bookings/me', { auth: true }),

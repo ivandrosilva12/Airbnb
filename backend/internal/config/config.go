@@ -21,6 +21,14 @@ type Config struct {
 	Email    EmailConfig
 	Payment  PaymentConfig
 	Security SecurityConfig
+	Alerting AlertingConfig
+}
+
+// AlertingConfig holds settings for operating the alerting stack. When
+// AlertmanagerURL is empty, silence management is disabled (the endpoints report
+// the feature as unavailable rather than calling out).
+type AlertingConfig struct {
+	AlertmanagerURL string // e.g. http://alertmanager:9093
 }
 
 // PricingConfig holds platform pricing policy.
@@ -213,6 +221,9 @@ func Load() (*Config, error) {
 			WebhookRateBurst:       getInt("WEBHOOK_RATE_BURST", 20),
 			WebhookRetentionDays:   getInt("WEBHOOK_RETENTION_DAYS", 30),
 			WebhookCleanupInterval: getDuration("WEBHOOK_CLEANUP_INTERVAL", 24*time.Hour),
+		},
+		Alerting: AlertingConfig{
+			AlertmanagerURL: getEnv("ALERTMANAGER_URL", ""),
 		},
 	}
 

@@ -12,7 +12,165 @@ export default function Admin() {
       <h1>{t('admin.title')}</h1>
       <VerificationQueue />
       <ReportQueue />
+      <SilencesPanel />
     </div>
+  );
+}
+
+// Known alert targets a silence can match. The first group matches a single
+// alert by name; the last two mute everything at a severity.
+const SILENCE_TARGETS = [
+  { key: 'AirhostApiDown', matcher: { name: 'alertname', value: 'AirhostApiDown' } },
+  { key: 'AirhostHighErrorRate', matcher: { name: 'alertname', value: 'AirhostHighErrorRate' } },
+  { key: 'AirhostWebhookRejectionSpike', matcher: { name: 'alertname', value: 'AirhostWebhookRejectionSpike' } },
+  { key: 'AirhostRateLimitingSustained', matcher: { name: 'alertname', value: 'AirhostRateLimitingSustained' } },
+  { key: 'AirhostWebhookProcessingErrors', matcher: { name: 'alertname', value: 'AirhostWebhookProcessingErrors' } },
+  { key: 'allCritical', matcher: { name: 'severity', value: 'critical' } },
+  { key: 'allWarnings', matcher: { name: 'severity', value: 'warning' } },
+];
+
+function SilencesPanel() {
+  const { t } = useT();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [target, setTarget] = useState(SILENCE_TARGETS[0].key);
+  const [minutes, setMinutes] = useState(60);
+  const [comment, setComment] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.adminListSilences();
+      setItems(res.items || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function create(e) {
+    e.preventDefault();
+    const chosen = SILENCE_TARGETS.find((x) => x.key === target);
+    if (!chosen || !comment.trim()) {
+      setError(t('admin.silenceNeedsComment'));
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.adminCreateSilence({
+        matchers: [chosen.matcher],
+        durationMinutes: Number(minutes) || 0,
+        comment: comment.trim(),
+      });
+      setComment('');
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(id) {
+    setError(null);
+    try {
+      await api.adminDeleteSilence(id);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function describeMatchers(matchers) {
+    return (matchers || [])
+      .map((m) => `${m.name}${m.isRegex ? '=~' : '='}"${m.value}"`)
+      .join(', ');
+  }
+
+  return (
+    <section>
+      <h2>{t('admin.silencesTitle')}</h2>
+      <p className="muted">{t('admin.silencesHelp')}</p>
+      {error && <p className="error">{error}</p>}
+
+      <form className="silence-form" onSubmit={create}>
+        <label>
+          {t('admin.silenceTarget')}
+          <select value={target} onChange={(e) => setTarget(e.target.value)}>
+            {SILENCE_TARGETS.map((x) => (
+              <option key={x.key} value={x.key}>
+                {t(`admin.silenceTargets.${x.key}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {t('admin.silenceDuration')}
+          <input
+            type="number"
+            min="1"
+            value={minutes}
+            onChange={(e) => setMinutes(e.target.value)}
+          />
+        </label>
+        <label>
+          {t('admin.silenceComment')}
+          <input
+            type="text"
+            value={comment}
+            placeholder={t('admin.silenceCommentPlaceholder')}
+            onChange={(e) => setComment(e.target.value)}
+          />
+        </label>
+        <button className="btn btn-primary" type="submit" disabled={saving}>
+          {t('admin.silenceCreate')}
+        </button>
+      </form>
+
+      {loading ? (
+        <p>{t('common.loading')}</p>
+      ) : items.length === 0 ? (
+        <p className="muted">{t('admin.silencesEmpty')}</p>
+      ) : (
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>{t('admin.silenceMatchers')}</th>
+              <th>{t('admin.silenceStatus')}</th>
+              <th>{t('admin.silenceEnds')}</th>
+              <th>{t('admin.silenceBy')}</th>
+              <th>{t('admin.note')}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((s) => (
+              <tr key={s.id}>
+                <td>{describeMatchers(s.matchers)}</td>
+                <td>{t(`admin.silenceState.${s.status}`)}</td>
+                <td>{new Date(s.endsAt).toLocaleString()}</td>
+                <td>{s.createdBy}</td>
+                <td>{s.comment}</td>
+                <td className="admin-actions">
+                  <button className="btn btn-ghost" onClick={() => remove(s.id)}>
+                    {t('admin.silenceDelete')}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
 

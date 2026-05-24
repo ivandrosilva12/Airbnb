@@ -122,6 +122,9 @@ services:
       # Scheduled retention for the webhook dedupe table.
       WEBHOOK_RETENTION_DAYS: "${WEBHOOK_RETENTION_DAYS:-30}"
       WEBHOOK_CLEANUP_INTERVAL: "${WEBHOOK_CLEANUP_INTERVAL:-24h}"
+      # Alertmanager base URL: enables the admin silence endpoints
+      # (/api/v1/admin/alerts/silences). Leave empty to disable.
+      ALERTMANAGER_URL: "${ALERTMANAGER_URL:-http://alertmanager:9093}"
     ports:
       - "8081:8081"
 

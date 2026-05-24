@@ -38,8 +38,12 @@ func (r *WebhookEventRepository) Record(ctx context.Context, provider, eventID s
 	return mapError(err)
 }
 
+// DeleteOlderThan prunes records recorded at or before the cutoff. The boundary
+// is inclusive so a retention sweep with a "now" cutoff (olderThanDays=0) drops
+// everything already recorded, even when a record's timestamp coincides with the
+// cutoff to the resolution of the clock.
 func (r *WebhookEventRepository) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
-	ct, err := r.pool.Exec(ctx, `DELETE FROM webhook_events WHERE created_at < $1`, cutoff)
+	ct, err := r.pool.Exec(ctx, `DELETE FROM webhook_events WHERE created_at <= $1`, cutoff)
 	if err != nil {
 		return 0, mapError(err)
 	}

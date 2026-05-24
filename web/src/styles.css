@@ -227,6 +227,9 @@ a { color: inherit; text-decoration: none; }
 .admin-table th, .admin-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border, #eee); vertical-align: top; }
 .admin-table th { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
 .admin-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.silence-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 12px 0 20px; }
+.silence-form label { display: flex; flex-direction: column; font-size: .82rem; color: var(--muted); gap: 4px; }
+.silence-form input, .silence-form select { padding: 8px; border: 1px solid var(--border, #ddd); border-radius: 8px; font: inherit; }
 
 /* Listing report (on the detail page) */
 .btn-link-danger { background: none; border: none; color: #c0392b; cursor: pointer; font-size: .85rem; padding: 8px 0 0; text-decoration: underline; display: block; }
