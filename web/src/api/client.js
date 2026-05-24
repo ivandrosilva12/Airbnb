@@ -40,13 +40,15 @@ async function request(method, path, { body, formData, auth = false } = {}) {
 // downloadFile fetches an authenticated binary endpoint and triggers a browser
 // download, since a plain link cannot carry the bearer token.
 async function downloadFile(path, filename) {
-  if (keycloak.authenticated) {
-    try {
-      await keycloak.updateToken(30);
-    } catch {
-      keycloak.login();
-      return;
-    }
+  if (!keycloak.authenticated) {
+    keycloak.login();
+    return;
+  }
+  try {
+    await keycloak.updateToken(30);
+  } catch {
+    keycloak.login();
+    return;
   }
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { Authorization: `Bearer ${keycloak.token}` },

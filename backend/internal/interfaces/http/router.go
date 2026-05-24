@@ -49,6 +49,7 @@ func NewRouter(d Deps) *gin.Engine {
 
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.Metrics(d.Metrics))
 	r.Use(middleware.MaxBody(d.Config.Security.MaxRequestBodyBytes))
 	r.Use(cors.New(cors.Config{
