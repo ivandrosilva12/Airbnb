@@ -10,6 +10,7 @@ groups:
         annotations:
           summary: "AirHost API is down"
           description: "Prometheus has not scraped the AirHost API for over 1 minute."
+          runbook_url: "https://github.com/airhost/airhost/blob/main/docs/runbooks/AirhostApiDown.md"
 
       # Sustained 5xx error rate.
       - alert: AirhostHighErrorRate
@@ -20,6 +21,7 @@ groups:
         annotations:
           summary: "Elevated 5xx error rate"
           description: "The API is returning more than 1 server error per second (5m avg) for over 5 minutes."
+          runbook_url: "https://github.com/airhost/airhost/blob/main/docs/runbooks/AirhostHighErrorRate.md"
 
       # A spike in webhooks rejected for a bad signature suggests a
       # misconfigured secret or a forgery/replay attempt.
@@ -31,6 +33,7 @@ groups:
         annotations:
           summary: "Webhook signature rejections spiking for {{ $labels.provider }}"
           description: "More than 0.2 rejected webhook events/s (5m avg) for {{ $labels.provider }} — check the webhook secret or investigate a possible attack."
+          runbook_url: "https://github.com/airhost/airhost/blob/main/docs/runbooks/AirhostWebhookRejectionSpike.md"
 
       # Sustained rate-limiting means a client is hammering a route (or a flood).
       - alert: AirhostRateLimitingSustained
@@ -41,6 +44,7 @@ groups:
         annotations:
           summary: "Sustained rate limiting on {{ $labels.route }}"
           description: "More than 0.5 requests/s have been rate-limited on {{ $labels.route }} for over 10 minutes."
+          runbook_url: "https://github.com/airhost/airhost/blob/main/docs/runbooks/AirhostRateLimitingSustained.md"
 
       # Webhook processing errors (gateway event reconciliation failures).
       - alert: AirhostWebhookProcessingErrors
@@ -51,3 +55,4 @@ groups:
         annotations:
           summary: "Webhook reconciliation errors"
           description: "The API is failing to reconcile gateway webhook events; inspect the logs."
+          runbook_url: "https://github.com/airhost/airhost/blob/main/docs/runbooks/AirhostWebhookProcessingErrors.md"

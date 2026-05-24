@@ -9,6 +9,11 @@
 # mailbox / #airhost-resolved Slack channel) by templating the destination
 # fields on `.Status` — Alertmanager sends a "resolved" notification only once
 # every alert in the group has cleared, so .Status reliably distinguishes them.
+#
+# Each alert carries a `runbook_url` annotation (see infra/prometheus/alerts.yml).
+# The Slack `text` renders it as a clickable link; the default e-mail template
+# lists all annotations (including runbook_url) automatically, so on-call can jump
+# straight from the notification to docs/runbooks/<Alert>.md.
 global:
   resolve_timeout: 5m
 
@@ -45,7 +50,7 @@ receivers:
         channel: '{{ if eq .Status "resolved" }}#airhost-resolved{{ else }}#airhost-alerts{{ end }}'
         send_resolved: true
         title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
-        text: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\n{{ end }}"
+        text: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\n{{ if .Annotations.runbook_url }}Runbook: <{{ .Annotations.runbook_url }}|{{ .Labels.alertname }}>\n{{ end }}{{ end }}"
 
 inhibit_rules:
   # While the API is down, mute the noisier warnings it would trigger.
