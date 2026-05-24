@@ -4,6 +4,7 @@ package userapp
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
@@ -48,6 +49,27 @@ func (s *Service) SyncFromIdentity(ctx context.Context, id Identity) (*user.User
 	}
 	if !errors.Is(err, shared.ErrNotFound) {
 		return nil, err
+	}
+
+	// New subject for this identity. If a user with the token's (verified) email
+	// already exists — e.g. the IdP re-provisioned the account with a new subject
+	// — re-link that account to the new subject instead of failing on the unique
+	// email constraint.
+	if email := strings.TrimSpace(strings.ToLower(id.Email)); email != "" {
+		byEmail, e := s.repo.FindByEmail(ctx, email)
+		if e == nil {
+			changed := byEmail.RelinkKeycloakSub(id.Subject)
+			elevated := byEmail.ElevateRole(tokenRole)
+			if changed || elevated {
+				if err := s.repo.Update(ctx, byEmail); err != nil {
+					return nil, err
+				}
+			}
+			return byEmail, nil
+		}
+		if !errors.Is(e, shared.ErrNotFound) {
+			return nil, e
+		}
 	}
 
 	u, err := user.NewUser(id.Subject, id.Email, fallback(id.FullName, id.Email), tokenRole)

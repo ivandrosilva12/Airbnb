@@ -150,6 +150,20 @@ func (u *User) ElevateRole(r Role) bool {
 	return true
 }
 
+// RelinkKeycloakSub points this account at a new Keycloak subject. Used when the
+// identity provider re-provisions an account (issuing a new subject) for the
+// same verified email, so the existing local profile is preserved rather than
+// colliding on the unique email. Returns true when the subject changed.
+func (u *User) RelinkKeycloakSub(sub string) bool {
+	sub = strings.TrimSpace(sub)
+	if sub == "" || sub == u.KeycloakSub {
+		return false
+	}
+	u.KeycloakSub = sub
+	u.touch()
+	return true
+}
+
 // UpdateProfile changes mutable profile fields with validation.
 func (u *User) UpdateProfile(fullName, avatarURL string) error {
 	fullName = strings.TrimSpace(fullName)

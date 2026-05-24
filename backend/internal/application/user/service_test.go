@@ -9,6 +9,42 @@ import (
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 )
 
+func TestSyncFromIdentity_RelinksOnNewSubjectSameEmail(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewUserRepository()
+	svc := userapp.NewService(repo)
+
+	// First login under one subject provisions the account.
+	first, err := svc.SyncFromIdentity(ctx, userapp.Identity{
+		Subject: "sub-old", Email: "u@test.dev", FullName: "U", Roles: []string{"host"},
+	})
+	if err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+
+	// The IdP re-provisions the same email under a NEW subject. This must re-link
+	// the existing account (no unique-email conflict), preserving its id/role.
+	again, err := svc.SyncFromIdentity(ctx, userapp.Identity{
+		Subject: "sub-new", Email: "u@test.dev", FullName: "U", Roles: nil,
+	})
+	if err != nil {
+		t.Fatalf("relink sync: %v", err)
+	}
+	if again.ID != first.ID {
+		t.Fatalf("expected the same account (id %s), got %s", first.ID, again.ID)
+	}
+	if again.KeycloakSub != "sub-new" {
+		t.Fatalf("subject = %q, want re-linked to sub-new", again.KeycloakSub)
+	}
+	if again.Role != user.RoleHost {
+		t.Fatalf("role = %q, want host preserved", again.Role)
+	}
+	// A subsequent login under the new subject now resolves directly.
+	if u, err := svc.SyncFromIdentity(ctx, userapp.Identity{Subject: "sub-new", Email: "u@test.dev", FullName: "U"}); err != nil || u.ID != first.ID {
+		t.Fatalf("lookup by new subject: id=%v err=%v", u.ID, err)
+	}
+}
+
 func TestSyncFromIdentity_DerivesRoleFromRealmRoles(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewUserRepository()
