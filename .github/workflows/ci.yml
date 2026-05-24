@@ -80,3 +80,23 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+
+  mobile:
+    name: Mobile (Expo)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      # No emulator/test suite in CI; validate that dependencies resolve and the
+      # Expo project config is well-formed (the strongest non-flaky check here).
+      - name: Install
+        run: npm ci
+      - name: Expo config check
+        run: npx --yes expo config --type public >/dev/null
