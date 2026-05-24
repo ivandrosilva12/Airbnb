@@ -1,8 +1,12 @@
 package middleware
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestRateLimiter_BurstThenThrottleThenRefill(t *testing.T) {
@@ -29,5 +33,29 @@ func TestRateLimiter_BurstThenThrottleThenRefill(t *testing.T) {
 	b.last = time.Now().Add(-300 * time.Millisecond)
 	if !l.allow("1.2.3.4") {
 		t.Fatal("request after refill window should be allowed")
+	}
+}
+
+func TestRateLimit_Middleware429AndCallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rejects := 0
+	r := gin.New()
+	r.GET("/x", RateLimit(1, 1, func() { rejects++ }), func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	call := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := call(); code != http.StatusOK {
+		t.Fatalf("first request = %d, want 200", code)
+	}
+	if code := call(); code != http.StatusTooManyRequests {
+		t.Fatalf("second request = %d, want 429", code)
+	}
+	if rejects != 1 {
+		t.Fatalf("onReject called %d times, want 1", rejects)
 	}
 }

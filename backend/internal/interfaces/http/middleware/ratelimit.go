@@ -11,14 +11,18 @@ import (
 
 // RateLimit returns a middleware that throttles requests per client IP using an
 // in-memory token bucket: each IP starts with `burst` tokens, refilled at `rps`
-// tokens/second, and a request that finds no token gets HTTP 429.
+// tokens/second, and a request that finds no token gets HTTP 429. onReject, when
+// non-nil, is called once per rejection (e.g. to bump a metric).
 //
 // It suits a single instance (e.g. guarding the unauthenticated webhook route);
 // a multi-instance deployment would back the same limiter with a shared store.
-func RateLimit(rps float64, burst int) gin.HandlerFunc {
+func RateLimit(rps float64, burst int, onReject func()) gin.HandlerFunc {
 	lim := newRateLimiter(rps, float64(burst))
 	return func(c *gin.Context) {
 		if !lim.allow(c.ClientIP()) {
+			if onReject != nil {
+				onReject()
+			}
 			response.FailMessage(c, http.StatusTooManyRequests, "rate limit exceeded")
 			return
 		}

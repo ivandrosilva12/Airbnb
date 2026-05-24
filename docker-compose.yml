@@ -116,6 +116,9 @@ services:
       STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
       APPYPAY_WEBHOOK_SECRET: "${APPYPAY_WEBHOOK_SECRET:-}"
       GPAYANGOLA_WEBHOOK_SECRET: "${GPAYANGOLA_WEBHOOK_SECRET:-}"
+      # Per-IP token bucket guarding the webhook route.
+      WEBHOOK_RATE_RPS: "${WEBHOOK_RATE_RPS:-5}"
+      WEBHOOK_RATE_BURST: "${WEBHOOK_RATE_BURST:-20}"
     ports:
       - "8081:8081"
 

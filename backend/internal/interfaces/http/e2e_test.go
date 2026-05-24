@@ -136,7 +136,11 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	router := apphttp.NewRouter(apphttp.Deps{
-		Config:   &config.Config{App: config.AppConfig{Environment: "test"}, HTTP: config.HTTPConfig{AllowedOrigins: []string{"*"}}},
+		Config: &config.Config{
+			App:      config.AppConfig{Environment: "test"},
+			HTTP:     config.HTTPConfig{AllowedOrigins: []string{"*"}},
+			Security: config.SecurityConfig{WebhookRateRPS: 1000, WebhookRateBurst: 1000},
+		},
 		Metrics:  metrics,
 		Registry: registry,
 		Auth:     authMW,
@@ -156,7 +160,7 @@ func newHarness(t *testing.T) *harness {
 			Realtime:       handler.NewRealtimeHandler(realtimeHub),
 			Identity:       handler.NewIdentityHandler(identitySvc),
 			Report:         handler.NewReportHandler(reportSvc),
-			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(config.PaymentConfig{GPayAngola: config.GPayAngolaConfig{WebhookSecret: webhookSecret}})),
+			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(config.PaymentConfig{GPayAngola: config.GPayAngolaConfig{WebhookSecret: webhookSecret}}), metrics),
 		},
 	})
 

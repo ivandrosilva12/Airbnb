@@ -20,11 +20,20 @@ type Config struct {
 	Pricing  PricingConfig
 	Email    EmailConfig
 	Payment  PaymentConfig
+	Security SecurityConfig
 }
 
 // PricingConfig holds platform pricing policy.
 type PricingConfig struct {
 	ServiceFeeRate float64 // platform fee fraction, e.g. 0.12 for 12%
+}
+
+// SecurityConfig holds request-protection tunables.
+type SecurityConfig struct {
+	// WebhookRateRPS / WebhookRateBurst configure the per-IP token bucket
+	// guarding the unauthenticated payment-webhook route.
+	WebhookRateRPS   float64
+	WebhookRateBurst int
 }
 
 // PaymentConfig selects and configures the payment gateway. Provider is one of
@@ -194,6 +203,10 @@ func Load() (*Config, error) {
 				BaseURL:       getEnv("GPAYANGOLA_BASE_URL", "https://api.gpayangola.com"),
 				WebhookSecret: getEnv("GPAYANGOLA_WEBHOOK_SECRET", ""),
 			},
+		},
+		Security: SecurityConfig{
+			WebhookRateRPS:   getFloat("WEBHOOK_RATE_RPS", 5),
+			WebhookRateBurst: getInt("WEBHOOK_RATE_BURST", 20),
 		},
 	}
 

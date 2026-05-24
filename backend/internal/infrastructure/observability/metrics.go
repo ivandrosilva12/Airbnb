@@ -13,6 +13,8 @@ type Metrics struct {
 	HTTPInFlight        prometheus.Gauge
 	BookingsCreated     prometheus.Counter
 	PropertiesCreated   prometheus.Counter
+	WebhookEventsTotal  *prometheus.CounterVec
+	RateLimitedTotal    *prometheus.CounterVec
 }
 
 // NewMetrics registers and returns the metric collectors. It uses a dedicated
@@ -52,6 +54,20 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Name: "airhost_properties_created_total",
 				Help: "Total number of properties created.",
 			},
+		),
+		WebhookEventsTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "airhost_webhook_events_total",
+				Help: "Total payment-gateway webhook events, labeled by provider and outcome.",
+			},
+			[]string{"provider", "outcome"},
+		),
+		RateLimitedTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "airhost_rate_limited_total",
+				Help: "Total requests rejected by a rate limiter, labeled by route.",
+			},
+			[]string{"route"},
 		),
 	}
 }

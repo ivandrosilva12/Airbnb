@@ -76,8 +76,13 @@ func NewRouter(d Deps) *gin.Engine {
 
 	// Payment gateway webhooks (authenticated by per-provider signature, not by a
 	// user token, so they live outside the auth group). Rate-limited per IP to
-	// blunt floods/replay storms against the unauthenticated route.
-	api.POST("/webhooks/payments/:provider", middleware.RateLimit(5, 20), h.PaymentWebhook.Handle)
+	// blunt floods/replay storms against the unauthenticated route; rejections
+	// are counted in the rate-limited metric.
+	webhookLimiter := middleware.RateLimit(
+		d.Config.Security.WebhookRateRPS, d.Config.Security.WebhookRateBurst,
+		func() { d.Metrics.RateLimitedTotal.WithLabelValues("webhook").Inc() },
+	)
+	api.POST("/webhooks/payments/:provider", webhookLimiter, h.PaymentWebhook.Handle)
 
 	// Authenticated routes.
 	auth := api.Group("")
