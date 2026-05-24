@@ -21,6 +21,11 @@ func NewAuthMiddleware(verifier *auth.Verifier, sync SyncFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw := bearerToken(c.GetHeader("Authorization"))
 		if raw == "" {
+			// The browser EventSource API cannot set headers, so SSE clients pass
+			// the token as a query parameter instead.
+			raw = c.Query("access_token")
+		}
+		if raw == "" {
 			response.FailMessage(c, http.StatusUnauthorized, "missing bearer token")
 			return
 		}

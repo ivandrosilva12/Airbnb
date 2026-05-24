@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext';
 import { FavoritesProvider } from './context/FavoritesContext';
 import { NotificationsProvider } from './context/NotificationsContext';
 import { MessagesProvider } from './context/MessagesContext';
+import { RealtimeProvider } from './context/RealtimeContext';
 import { I18nProvider } from './i18n/I18nContext';
 import './styles.css';
 
@@ -17,7 +18,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <FavoritesProvider>
             <NotificationsProvider>
               <MessagesProvider>
-                <App />
+                <RealtimeProvider>
+                  <App />
+                </RealtimeProvider>
               </MessagesProvider>
             </NotificationsProvider>
           </FavoritesProvider>

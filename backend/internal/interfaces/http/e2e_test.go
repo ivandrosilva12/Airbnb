@@ -24,6 +24,7 @@ import (
 	paymentapp "github.com/airhost/backend/internal/application/payment"
 	payoutapp "github.com/airhost/backend/internal/application/payout"
 	propertyapp "github.com/airhost/backend/internal/application/property"
+	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	searchapp "github.com/airhost/backend/internal/application/search"
 	userapp "github.com/airhost/backend/internal/application/user"
@@ -33,6 +34,7 @@ import (
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
+	"github.com/airhost/backend/internal/infrastructure/realtime"
 	apphttp "github.com/airhost/backend/internal/interfaces/http"
 	"github.com/airhost/backend/internal/interfaces/http/handler"
 	"github.com/airhost/backend/internal/interfaces/http/middleware"
@@ -92,16 +94,22 @@ func newHarness(t *testing.T) *harness {
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
+	realtimeHub := realtime.NewHub()
+	realtimeSvc := realtimeapp.NewService(realtimeHub)
 	dispatcher.Subscribe(notificationSvc.EventHandler())
 	dispatcher.Subscribe(paymentSvc.EventHandler())
 	dispatcher.Subscribe(emailSvc.EventHandler())
 	dispatcher.Subscribe(payoutSvc.EventHandler())
+	dispatcher.Subscribe(realtimeSvc.EventHandler())
 
 	registry := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(registry)
 
 	authMW := func(c *gin.Context) {
 		raw := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+		if raw == "" {
+			raw = c.Query("access_token") // EventSource can't set headers
+		}
 		id, err := uuid.Parse(raw)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "bad token"})
@@ -134,6 +142,7 @@ func newHarness(t *testing.T) *harness {
 			Analytics:    handler.NewAnalyticsHandler(analyticsSvc),
 			Block:        handler.NewBlockHandler(blockSvc),
 			Payout:       handler.NewPayoutHandler(payoutSvc),
+			Realtime:     handler.NewRealtimeHandler(realtimeHub),
 		},
 	})
 

@@ -60,7 +60,8 @@ Cross-context reactions go through a small synchronous **domain-events** dispatc
 the notification context creates in-app notifications, the email service sends the
 matching transactional email via a `Mailer` port, the payment context authorizes,
 captures or refunds via a `PaymentGateway` port (a fake in-memory gateway by default),
-and the payout context credits/debits the host's earnings ledger.
+the payout context credits/debits the host's earnings ledger, and a realtime service
+pushes a live hint to the affected user over SSE.
 Dispatch is best-effort, so a failing subscriber never breaks the publishing use case.
 
 Key domain rules enforced in code:
@@ -182,6 +183,7 @@ Authenticated (Bearer token):
 - `GET /conversations/unread-count` (total unread, for the badge) · `POST /conversations/:id/read`
 - `GET /conversations/:id/messages` · `POST /conversations/:id/messages`
 - `GET /favorites` · `POST /favorites` · `DELETE /favorites/:propertyId` (wishlist)
+- `GET /realtime` — Server-Sent Events stream of live update hints (token via `?access_token=` for EventSource)
 - `GET /notifications` (with unread count) · `POST /notifications/:id/read` · `POST /notifications/read-all`
 - `GET /payments/me` · `GET /bookings/:id/payment` (payment status for the guest's booking)
 - `GET /bookings/:id/receipt` — downloadable PDF payment receipt
@@ -237,6 +239,7 @@ docker-compose.yml
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification/payment/email subscribe |
 | Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |
+| Real-time updates | Complete | SSE endpoint + in-process fan-out hub pushing live notification/message hints; web `EventSource` refreshes badges instantly (polling kept as fallback); covered by hub/service unit tests + a streaming e2e test |
 | Email notifications | Complete | Transactional HTML email (multipart/alternative with text fallback) via a `Mailer` port reacting to booking/message events; templated with `html/template` (auto-escaped); SMTP in prod, log mailer when unconfigured, MailHog locally; covered by unit + e2e tests |
 | Email preferences | Complete | Per-user opt-outs for booking/message emails (`PATCH /me/preferences`, migration 0013); the email subscriber honours them; web account settings page; covered by unit + e2e tests |
 | Payments | Complete | Authorize/capture/refund driven by booking events via a gateway port (fake by default); web shows payment status; covered by unit + e2e tests |
@@ -253,9 +256,12 @@ docker-compose.yml
 
 ### Notes & next steps
 
-- Payments are out of scope; bookings carry a derived total only.
 - Photo upload supports both server-proxied multipart and presigned direct PUT.
-- Suggested follow-ups: host payout/ledger context, full-text/geo search,
-  message read-receipts and real-time delivery (WebSocket/SSE), mobile messaging
-  UI, and full-stack e2e tests against a live Keycloak.
+- Real-time delivery uses an in-process SSE hub; horizontal scaling would put an
+  external bus (e.g. Redis pub/sub) behind the same `Broadcaster` interface. The
+  SSE token travels as a query parameter because `EventSource` cannot set headers.
+- Suggested follow-ups: a real payment gateway (Stripe) behind the existing
+  `PaymentGateway` port, map-based search, photo management (reorder/cover),
+  iCal calendar sync, completing the mobile app, and full-stack e2e tests against
+  a live Keycloak.
 ```

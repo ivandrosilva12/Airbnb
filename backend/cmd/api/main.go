@@ -25,6 +25,7 @@ import (
 	paymentapp "github.com/airhost/backend/internal/application/payment"
 	payoutapp "github.com/airhost/backend/internal/application/payout"
 	propertyapp "github.com/airhost/backend/internal/application/property"
+	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	searchapp "github.com/airhost/backend/internal/application/search"
 	userapp "github.com/airhost/backend/internal/application/user"
@@ -35,6 +36,7 @@ import (
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/postgres"
+	"github.com/airhost/backend/internal/infrastructure/realtime"
 	"github.com/airhost/backend/internal/infrastructure/storage"
 	apphttp "github.com/airhost/backend/internal/interfaces/http"
 	"github.com/airhost/backend/internal/interfaces/http/handler"
@@ -118,13 +120,16 @@ func run() error {
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo)
+	realtimeHub := realtime.NewHub()
+	realtimeSvc := realtimeapp.NewService(realtimeHub)
 
-	// Notifications, payments, emails and host payouts are produced by reacting
-	// to domain events.
+	// Notifications, payments, emails, host payouts and live updates are produced
+	// by reacting to domain events.
 	dispatcher.Subscribe(notificationSvc.EventHandler())
 	dispatcher.Subscribe(paymentSvc.EventHandler())
 	dispatcher.Subscribe(emailSvc.EventHandler())
 	dispatcher.Subscribe(payoutSvc.EventHandler())
+	dispatcher.Subscribe(realtimeSvc.EventHandler())
 
 	// --- Observability -----------------------------------------------------
 	registry := prometheus.NewRegistry()
@@ -160,6 +165,7 @@ func run() error {
 			Analytics:    handler.NewAnalyticsHandler(analyticsSvc),
 			Block:        handler.NewBlockHandler(blockSvc),
 			Payout:       handler.NewPayoutHandler(payoutSvc),
+			Realtime:     handler.NewRealtimeHandler(realtimeHub),
 		},
 	})
 

@@ -25,6 +25,7 @@ type Handlers struct {
 	Analytics    *handler.AnalyticsHandler
 	Block        *handler.BlockHandler
 	Payout       *handler.PayoutHandler
+	Realtime     *handler.RealtimeHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -103,6 +104,9 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.GET("/favorites", h.Favorite.List)
 		auth.POST("/favorites", h.Favorite.Add)
 		auth.DELETE("/favorites/:propertyId", h.Favorite.Remove)
+
+		// Live updates (SSE) — token passed via ?access_token= for EventSource.
+		auth.GET("/realtime", h.Realtime.Stream)
 
 		// In-app notifications.
 		auth.GET("/notifications", h.Notification.List)
