@@ -74,11 +74,12 @@ func NewBooking(
 	guests int,
 	pricePerNight, cleaningFee shared.Money,
 	serviceFeeRate float64,
+	discounts Discounts,
 ) (*Booking, error) {
 	if guests < 1 {
 		return nil, shared.NewValidationError("at least one guest is required")
 	}
-	pricing, err := ComputePricing(pricePerNight, cleaningFee, dates.Nights(), serviceFeeRate)
+	pricing, err := ComputePricing(pricePerNight, cleaningFee, dates.Nights(), serviceFeeRate, discounts)
 	if err != nil {
 		return nil, err
 	}

@@ -102,6 +102,13 @@ export default function PropertyDetail() {
   })();
   const subtotalCents = nights * property.pricePerNight.amountCents;
   const cleaningCents = property.cleaningFee?.amountCents || 0;
+  const discountPct =
+    nights >= 28 && property.monthlyDiscountPct > 0
+      ? property.monthlyDiscountPct
+      : nights >= 7 && property.weeklyDiscountPct > 0
+        ? property.weeklyDiscountPct
+        : 0;
+  const discountCents = Math.round(subtotalCents * discountPct);
 
   return (
     <div className="container detail">
@@ -166,9 +173,10 @@ export default function PropertyDetail() {
             {nights > 0 && (
               <div className="price-breakdown">
                 <div><span>{t('detail.nights', { price: property.pricePerNight.display, n: nights })}</span><span>{fmt(subtotalCents)}</span></div>
+                {discountCents > 0 && <div className="bd-discount"><span>{t('detail.discount', { pct: Math.round(discountPct * 100) })}</span><span>-{fmt(discountCents)}</span></div>}
                 {cleaningCents > 0 && <div><span>{t('detail.cleaningFee')}</span><span>{fmt(cleaningCents)}</span></div>}
                 <div className="muted">{t('detail.serviceNote')}</div>
-                <div className="bd-total"><span>{t('detail.beforeFees')}</span><span>{fmt(subtotalCents + cleaningCents)}</span></div>
+                <div className="bd-total"><span>{t('detail.beforeFees')}</span><span>{fmt(subtotalCents - discountCents + cleaningCents)}</span></div>
               </div>
             )}
             <button className="btn btn-primary block" type="submit">

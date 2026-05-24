@@ -58,8 +58,10 @@ type ReceiptData struct {
 	Nights        int
 	Guests        int
 	Subtotal      shared.Money
+	Discount      shared.Money
 	CleaningFee   shared.Money
 	ServiceFee    shared.Money
+	Tax           shared.Money
 	Total         shared.Money
 }
 
@@ -91,8 +93,10 @@ func (s *Service) Receipt(ctx context.Context, actorID, bookingID uuid.UUID) (Re
 		Nights:        b.Dates.Nights(),
 		Guests:        b.Guests,
 		Subtotal:      b.Pricing.Subtotal,
+		Discount:      b.Pricing.Discount,
 		CleaningFee:   b.Pricing.CleaningFee,
 		ServiceFee:    b.Pricing.ServiceFee,
+		Tax:           b.Pricing.Tax,
 		Total:         b.Pricing.Total,
 	}, nil
 }

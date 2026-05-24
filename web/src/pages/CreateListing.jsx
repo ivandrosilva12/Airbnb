@@ -23,6 +23,9 @@ const initial = {
   bathrooms: 1,
   amenities: [],
   cancellationPolicy: 'flexible',
+  weeklyDiscount: '',
+  monthlyDiscount: '',
+  taxRate: '',
 };
 
 export default function CreateListing() {
@@ -71,6 +74,9 @@ export default function CreateListing() {
         bathrooms: Number(form.bathrooms),
         amenities: form.amenities,
         cancellationPolicy: form.cancellationPolicy,
+        weeklyDiscountPct: Number(form.weeklyDiscount || 0) / 100,
+        monthlyDiscountPct: Number(form.monthlyDiscount || 0) / 100,
+        taxRatePct: Number(form.taxRate || 0) / 100,
       });
       if (photo) {
         await api.uploadPhoto(created.id, photo);
@@ -119,6 +125,9 @@ export default function CreateListing() {
             <option value="strict">{t('create.policyStrict')}</option>
           </select>
         </label>
+        <label>{t('create.fWeeklyDiscount')}<input type="number" min="0" max="100" step="1" value={form.weeklyDiscount} onChange={set('weeklyDiscount')} /></label>
+        <label>{t('create.fMonthlyDiscount')}<input type="number" min="0" max="100" step="1" value={form.monthlyDiscount} onChange={set('monthlyDiscount')} /></label>
+        <label>{t('create.fTaxRate')}<input type="number" min="0" max="100" step="0.1" value={form.taxRate} onChange={set('taxRate')} /></label>
         <div className="full">
           <span className="form-label">{t('home.amenities')}</span>
           <div className="amenity-filter">

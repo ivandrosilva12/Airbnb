@@ -77,7 +77,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		return nil, shared.NewValidationError("selected dates are blocked by the host")
 	}
 
-	b, err := booking.NewBooking(in.PropertyID, in.GuestID, dates, in.Guests, prop.PricePerNight, prop.CleaningFee, s.serviceFeeRate)
+	b, err := booking.NewBooking(in.PropertyID, in.GuestID, dates, in.Guests, prop.PricePerNight, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
+		WeeklyPct:  prop.PricingPolicy.WeeklyDiscountPct,
+		MonthlyPct: prop.PricingPolicy.MonthlyDiscountPct,
+		TaxPct:     prop.PricingPolicy.TaxRatePct,
+	})
 	if err != nil {
 		return nil, err
 	}

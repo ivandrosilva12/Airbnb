@@ -46,6 +46,9 @@ type CreateInput struct {
 	Bathrooms          int
 	Amenities          []string
 	CancellationPolicy string
+	WeeklyDiscountPct  float64
+	MonthlyDiscountPct float64
+	TaxRatePct         float64
 }
 
 // Create builds and persists a draft listing.
@@ -76,6 +79,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*property.Propert
 	if in.CancellationPolicy != "" {
 		p.SetCancellationPolicy(property.CancellationPolicy(in.CancellationPolicy))
 	}
+	p.SetPricingPolicy(property.PricingPolicy{
+		WeeklyDiscountPct:  in.WeeklyDiscountPct,
+		MonthlyDiscountPct: in.MonthlyDiscountPct,
+		TaxRatePct:         in.TaxRatePct,
+	})
 	if err := s.repo.Create(ctx, p); err != nil {
 		return nil, err
 	}
@@ -106,6 +114,9 @@ type UpdateInput struct {
 	Currency           string
 	MaxGuests          int
 	CancellationPolicy string
+	WeeklyDiscountPct  float64
+	MonthlyDiscountPct float64
+	TaxRatePct         float64
 }
 
 // Update mutates a listing after verifying ownership.
@@ -128,6 +139,11 @@ func (s *Service) Update(ctx context.Context, actorID, propertyID uuid.UUID, in 
 	if in.CancellationPolicy != "" {
 		p.SetCancellationPolicy(property.CancellationPolicy(in.CancellationPolicy))
 	}
+	p.SetPricingPolicy(property.PricingPolicy{
+		WeeklyDiscountPct:  in.WeeklyDiscountPct,
+		MonthlyDiscountPct: in.MonthlyDiscountPct,
+		TaxRatePct:         in.TaxRatePct,
+	})
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err
 	}

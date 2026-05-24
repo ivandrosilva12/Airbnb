@@ -99,6 +99,9 @@ type PropertyView struct {
 	Amenities          []string    `json:"amenities"`
 	Photos             []PhotoView `json:"photos"`
 	CancellationPolicy string      `json:"cancellationPolicy"`
+	WeeklyDiscountPct  float64     `json:"weeklyDiscountPct"`
+	MonthlyDiscountPct float64     `json:"monthlyDiscountPct"`
+	TaxRatePct         float64     `json:"taxRatePct"`
 	AverageRating      float64     `json:"averageRating"`
 	ReviewCount        int         `json:"reviewCount"`
 	CreatedAt          time.Time   `json:"createdAt"`
@@ -134,6 +137,9 @@ func FromProperty(p *property.Property) PropertyView {
 		Amenities:          p.Amenities,
 		Photos:             photos,
 		CancellationPolicy: string(p.CancellationPolicy),
+		WeeklyDiscountPct:  p.PricingPolicy.WeeklyDiscountPct,
+		MonthlyDiscountPct: p.PricingPolicy.MonthlyDiscountPct,
+		TaxRatePct:         p.PricingPolicy.TaxRatePct,
 		AverageRating:      p.AverageRating,
 		ReviewCount:        p.ReviewCount,
 		CreatedAt:          p.CreatedAt,
@@ -151,8 +157,10 @@ type BookingView struct {
 	Nights      int       `json:"nights"`
 	Guests      int       `json:"guests"`
 	Subtotal    MoneyView `json:"subtotal"`
+	Discount    MoneyView `json:"discount"`
 	CleaningFee MoneyView `json:"cleaningFee"`
 	ServiceFee  MoneyView `json:"serviceFee"`
+	Tax         MoneyView `json:"tax"`
 	TotalPrice  MoneyView `json:"totalPrice"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"createdAt"`
@@ -169,8 +177,10 @@ func FromBooking(b *booking.Booking) BookingView {
 		Nights:      b.Dates.Nights(),
 		Guests:      b.Guests,
 		Subtotal:    fromMoney(b.Pricing.Subtotal),
+		Discount:    fromMoney(b.Pricing.Discount),
 		CleaningFee: fromMoney(b.Pricing.CleaningFee),
 		ServiceFee:  fromMoney(b.Pricing.ServiceFee),
+		Tax:         fromMoney(b.Pricing.Tax),
 		TotalPrice:  fromMoney(b.Pricing.Total),
 		Status:      string(b.Status),
 		CreatedAt:   b.CreatedAt,

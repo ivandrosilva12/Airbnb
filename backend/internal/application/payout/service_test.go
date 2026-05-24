@@ -38,7 +38,7 @@ func seed(t *testing.T, props *memory.PropertyRepository, bookings *memory.Booki
 	if err != nil {
 		t.Fatalf("date range: %v", err)
 	}
-	b, err := booking.NewBooking(prop.ID, uuid.New(), dates, 2, price, cleaning, 0.10)
+	b, err := booking.NewBooking(prop.ID, uuid.New(), dates, 2, price, cleaning, 0.10, booking.Discounts{})
 	if err != nil {
 		t.Fatalf("new booking: %v", err)
 	}

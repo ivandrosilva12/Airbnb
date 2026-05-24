@@ -88,6 +88,35 @@ func (p CancellationPolicy) RefundFraction(daysUntilCheckIn int) float64 {
 	}
 }
 
+// PricingPolicy holds the optional discounts and taxes a host configures for a
+// listing. All values are fractions in [0,1]. Defaults are zero (no discount or
+// tax). Length-of-stay discounts reduce the nightly subtotal; the tax applies to
+// the discounted accommodation base plus the cleaning fee.
+type PricingPolicy struct {
+	WeeklyDiscountPct  float64 // applied to the subtotal for stays of >= 7 nights
+	MonthlyDiscountPct float64 // applied to the subtotal for stays of >= 28 nights
+	TaxRatePct         float64 // occupancy tax on the (discounted) accommodation base
+}
+
+func clampFraction(f float64) float64 {
+	if f < 0 {
+		return 0
+	}
+	if f > 1 {
+		return 1
+	}
+	return f
+}
+
+// Normalised returns the policy with each field clamped to [0,1].
+func (p PricingPolicy) Normalised() PricingPolicy {
+	return PricingPolicy{
+		WeeklyDiscountPct:  clampFraction(p.WeeklyDiscountPct),
+		MonthlyDiscountPct: clampFraction(p.MonthlyDiscountPct),
+		TaxRatePct:         clampFraction(p.TaxRatePct),
+	}
+}
+
 // Address is a value object describing where a property is located.
 type Address struct {
 	Line1      string
@@ -134,6 +163,7 @@ type Property struct {
 	Amenities          []string
 	Photos             []Photo
 	CancellationPolicy CancellationPolicy
+	PricingPolicy      PricingPolicy
 	// AverageRating and ReviewCount are a denormalised read-model of the
 	// property's guest reviews, refreshed when a review is published.
 	AverageRating float64
@@ -152,6 +182,12 @@ func (p *Property) SetRating(average float64, count int) {
 // SetCancellationPolicy sets the listing's cancellation policy (normalised).
 func (p *Property) SetCancellationPolicy(policy CancellationPolicy) {
 	p.CancellationPolicy = ValidCancellationPolicy(policy)
+	p.touch()
+}
+
+// SetPricingPolicy sets the listing's discounts/tax policy (clamped to [0,1]).
+func (p *Property) SetPricingPolicy(policy PricingPolicy) {
+	p.PricingPolicy = policy.Normalised()
 	p.touch()
 }
 

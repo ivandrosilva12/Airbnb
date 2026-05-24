@@ -47,6 +47,9 @@ type createPropertyRequest struct {
 	Bathrooms          int      `json:"bathrooms"`
 	Amenities          []string `json:"amenities"`
 	CancellationPolicy string   `json:"cancellationPolicy"`
+	WeeklyDiscountPct  float64  `json:"weeklyDiscountPct"`
+	MonthlyDiscountPct float64  `json:"monthlyDiscountPct"`
+	TaxRatePct         float64  `json:"taxRatePct"`
 }
 
 // Create publishes a new draft listing for the authenticated host.
@@ -80,6 +83,9 @@ func (h *PropertyHandler) Create(c *gin.Context) {
 		Bathrooms:          req.Bathrooms,
 		Amenities:          req.Amenities,
 		CancellationPolicy: req.CancellationPolicy,
+		WeeklyDiscountPct:  req.WeeklyDiscountPct,
+		MonthlyDiscountPct: req.MonthlyDiscountPct,
+		TaxRatePct:         req.TaxRatePct,
 	})
 	if err != nil {
 		response.Fail(c, err)
@@ -156,13 +162,16 @@ func (h *PropertyHandler) Get(c *gin.Context) {
 }
 
 type updatePropertyRequest struct {
-	Title              string `json:"title" binding:"required"`
-	Description        string `json:"description"`
-	PriceCents         int64  `json:"priceCents" binding:"required"`
-	CleaningFeeCents   int64  `json:"cleaningFeeCents"`
-	Currency           string `json:"currency" binding:"required"`
-	MaxGuests          int    `json:"maxGuests" binding:"required"`
-	CancellationPolicy string `json:"cancellationPolicy"`
+	Title              string  `json:"title" binding:"required"`
+	Description        string  `json:"description"`
+	PriceCents         int64   `json:"priceCents" binding:"required"`
+	CleaningFeeCents   int64   `json:"cleaningFeeCents"`
+	Currency           string  `json:"currency" binding:"required"`
+	MaxGuests          int     `json:"maxGuests" binding:"required"`
+	CancellationPolicy string  `json:"cancellationPolicy"`
+	WeeklyDiscountPct  float64 `json:"weeklyDiscountPct"`
+	MonthlyDiscountPct float64 `json:"monthlyDiscountPct"`
+	TaxRatePct         float64 `json:"taxRatePct"`
 }
 
 // Update edits an owned listing.
@@ -188,6 +197,9 @@ func (h *PropertyHandler) Update(c *gin.Context) {
 		Currency:           req.Currency,
 		MaxGuests:          req.MaxGuests,
 		CancellationPolicy: req.CancellationPolicy,
+		WeeklyDiscountPct:  req.WeeklyDiscountPct,
+		MonthlyDiscountPct: req.MonthlyDiscountPct,
+		TaxRatePct:         req.TaxRatePct,
 	})
 	if err != nil {
 		response.Fail(c, err)

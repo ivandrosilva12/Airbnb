@@ -21,8 +21,10 @@ type Receipt struct {
 	Nights        int
 	Guests        int
 	Subtotal      string
+	Discount      string // empty when there is no discount
 	CleaningFee   string
 	ServiceFee    string
+	Tax           string // empty when there is no tax
 	Total         string
 }
 
@@ -76,8 +78,14 @@ func RenderReceipt(r Receipt) ([]byte, error) {
 		pdf.CellFormat(0, 8, value, "", 1, "R", false, 0, "")
 	}
 	line("Subtotal", r.Subtotal, false)
+	if r.Discount != "" {
+		line("Length-of-stay discount", "-"+r.Discount, false)
+	}
 	line("Cleaning fee", r.CleaningFee, false)
 	line("Service fee", r.ServiceFee, false)
+	if r.Tax != "" {
+		line("Tax", r.Tax, false)
+	}
 	pdf.SetDrawColor(200, 200, 200)
 	pdf.Line(20, pdf.GetY(), 190, pdf.GetY())
 	pdf.Ln(1)

@@ -56,7 +56,7 @@ func makeBooking(t *testing.T, guestID, propertyID uuid.UUID, status booking.Sta
 	if err != nil {
 		t.Fatalf("date range: %v", err)
 	}
-	b, err := booking.NewBooking(propertyID, guestID, dr, 1, price, cleaning, 0)
+	b, err := booking.NewBooking(propertyID, guestID, dr, 1, price, cleaning, 0, booking.Discounts{})
 	if err != nil {
 		t.Fatalf("new booking: %v", err)
 	}

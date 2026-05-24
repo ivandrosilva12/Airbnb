@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	paymentapp "github.com/airhost/backend/internal/application/payment"
+	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/infrastructure/pdf"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
@@ -79,8 +80,10 @@ func (h *PaymentHandler) Receipt(c *gin.Context) {
 		Nights:        data.Nights,
 		Guests:        data.Guests,
 		Subtotal:      data.Subtotal.String(),
+		Discount:      moneyOrEmpty(data.Discount),
 		CleaningFee:   data.CleaningFee.String(),
 		ServiceFee:    data.ServiceFee.String(),
+		Tax:           moneyOrEmpty(data.Tax),
 		Total:         data.Total.String(),
 	})
 	if err != nil {
@@ -89,4 +92,13 @@ func (h *PaymentHandler) Receipt(c *gin.Context) {
 	}
 	c.Header("Content-Disposition", `attachment; filename="airhost-receipt-`+bookingID.String()+`.pdf"`)
 	c.Data(http.StatusOK, "application/pdf", body)
+}
+
+// moneyOrEmpty renders a money value, or "" when it is zero (so optional receipt
+// lines like discount/tax are omitted rather than shown as 0.00).
+func moneyOrEmpty(m shared.Money) string {
+	if m.AmountCents() == 0 {
+		return ""
+	}
+	return m.String()
 }

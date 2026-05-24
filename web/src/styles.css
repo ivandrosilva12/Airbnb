@@ -171,6 +171,7 @@ a { color: inherit; text-decoration: none; }
 .badge-pay-failed { background: #fde8e8; color: #c0392b; }
 .muted-text { color: var(--muted); }
 .muted { color: var(--muted); font-size: .9rem; }
+.price-breakdown .bd-discount { color: #1a7f47; }
 .settings-list { display: flex; flex-direction: column; gap: 12px; max-width: 560px; }
 .settings-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .settings-row input { width: 18px; height: 18px; }

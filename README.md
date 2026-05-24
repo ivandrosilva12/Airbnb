@@ -69,8 +69,10 @@ Key domain rules enforced in code:
 - Bookings use half-open date ranges `[checkIn, checkOut)` — same-day turnover is
   allowed, overlapping active bookings are rejected.
 - Pricing is derived in the domain, never trusted from the client: the booking
-  total is `subtotal (pricePerNight × nights) + cleaning fee + platform service
-  fee`, where the service fee rate is configurable (`SERVICE_FEE_RATE`, default 12%).
+  total is `subtotal (pricePerNight × nights) − length-of-stay discount + cleaning
+  fee + platform service fee + tax`, where the service fee rate is configurable
+  (`SERVICE_FEE_RATE`, default 12%) and each listing may set optional weekly/monthly
+  discounts and an occupancy tax rate.
 - Money is stored as integer minor units (cents) with an ISO currency.
 - Reviews are bidirectional and tied to a *completed* booking: the guest reviews
   the property and the host reviews the guest — at most one review per direction
@@ -236,6 +238,7 @@ docker-compose.yml
 | Canonical amenities | Complete | Shared canonical code set; backend normalizes on create + search (drops unknowns); `GET /amenities` drives the create form and filter; covered by unit + e2e tests |
 | Host calendar blocks | Complete | New `block` context; blocked ranges reject bookings, show in availability, and exclude from date search; host UI to add/remove; covered by unit + e2e tests |
 | Price breakdown (fees) | Complete | Cleaning + service fee derived in the domain; covered by tests |
+| Advanced pricing | Complete | Per-listing weekly/monthly length-of-stay discounts + occupancy tax (migration 0014); derived in the domain and stored on the booking; create-listing form + detail/receipt breakdown; covered by unit + e2e tests |
 | Admin moderation | Complete | RequireAdmin + suspend/unsuspend listings; covered by the e2e test |
 | Domain events | Complete | In-process dispatcher; booking/message publish, notification/payment/email subscribe |
 | Notifications | Complete | In-app notifications with unread badge; covered by unit + e2e tests |

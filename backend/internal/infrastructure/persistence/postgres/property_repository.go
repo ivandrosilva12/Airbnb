@@ -25,18 +25,21 @@ func NewPropertyRepository(pool *pgxpool.Pool) *PropertyRepository {
 const propertyColumns = `id, host_id, title, description, type, status,
 	address_line1, city, country, postal_code, latitude, longitude,
 	price_cents, currency, cleaning_fee_cents, max_guests, bedrooms, beds, bathrooms, amenities,
-	cancellation_policy, average_rating, review_count, created_at, updated_at`
+	cancellation_policy, average_rating, review_count,
+	weekly_discount_pct, monthly_discount_pct, tax_rate_pct, created_at, updated_at`
 
 func (r *PropertyRepository) Create(ctx context.Context, p *property.Property) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO properties (`+propertyColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
 		p.ID, p.HostID, p.Title, p.Description, string(p.Type), string(p.Status),
 		p.Address.Line1, p.Address.City, p.Address.Country, p.Address.PostalCode,
 		p.Address.Latitude, p.Address.Longitude,
 		p.PricePerNight.AmountCents(), p.PricePerNight.Currency(), p.CleaningFee.AmountCents(),
 		p.MaxGuests, p.Bedrooms, p.Beds, p.Bathrooms, p.Amenities,
-		string(p.CancellationPolicy), p.AverageRating, p.ReviewCount, p.CreatedAt, p.UpdatedAt,
+		string(p.CancellationPolicy), p.AverageRating, p.ReviewCount,
+		p.PricingPolicy.WeeklyDiscountPct, p.PricingPolicy.MonthlyDiscountPct, p.PricingPolicy.TaxRatePct,
+		p.CreatedAt, p.UpdatedAt,
 	)
 	return mapError(err)
 }
@@ -73,13 +76,15 @@ func (r *PropertyRepository) Update(ctx context.Context, p *property.Property) e
 			title=$2, description=$3, type=$4, status=$5,
 			address_line1=$6, city=$7, country=$8, postal_code=$9, latitude=$10, longitude=$11,
 			price_cents=$12, currency=$13, cleaning_fee_cents=$14, max_guests=$15, bedrooms=$16, beds=$17, bathrooms=$18,
-			amenities=$19, cancellation_policy=$20, updated_at=$21
+			amenities=$19, cancellation_policy=$20,
+			weekly_discount_pct=$21, monthly_discount_pct=$22, tax_rate_pct=$23, updated_at=$24
 		WHERE id=$1`,
 		p.ID, p.Title, p.Description, string(p.Type), string(p.Status),
 		p.Address.Line1, p.Address.City, p.Address.Country, p.Address.PostalCode,
 		p.Address.Latitude, p.Address.Longitude,
 		p.PricePerNight.AmountCents(), p.PricePerNight.Currency(), p.CleaningFee.AmountCents(),
-		p.MaxGuests, p.Bedrooms, p.Beds, p.Bathrooms, p.Amenities, string(p.CancellationPolicy), p.UpdatedAt,
+		p.MaxGuests, p.Bedrooms, p.Beds, p.Bathrooms, p.Amenities, string(p.CancellationPolicy),
+		p.PricingPolicy.WeeklyDiscountPct, p.PricingPolicy.MonthlyDiscountPct, p.PricingPolicy.TaxRatePct, p.UpdatedAt,
 	)
 	if err != nil {
 		return mapError(err)
@@ -283,7 +288,9 @@ func scanProperty(row rowScanner) (*property.Property, error) {
 		&p.Address.Line1, &p.Address.City, &p.Address.Country, &p.Address.PostalCode,
 		&p.Address.Latitude, &p.Address.Longitude,
 		&priceCents, &currency, &cleaningCents, &p.MaxGuests, &p.Bedrooms, &p.Beds, &p.Bathrooms, &p.Amenities,
-		&policy, &p.AverageRating, &p.ReviewCount, &p.CreatedAt, &p.UpdatedAt,
+		&policy, &p.AverageRating, &p.ReviewCount,
+		&p.PricingPolicy.WeeklyDiscountPct, &p.PricingPolicy.MonthlyDiscountPct, &p.PricingPolicy.TaxRatePct,
+		&p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
