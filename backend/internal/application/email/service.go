@@ -40,8 +40,13 @@ func (s *Service) EventHandler() event.Handler {
 	return func(ctx context.Context, e event.Event) {
 		switch ev := e.(type) {
 		case event.BookingRequested:
-			s.send(ctx, ev.HostID, catBookings, "New booking request",
-				fmt.Sprintf("A guest requested to book %q. Review it in your host dashboard.", ev.PropertyTitle))
+			if ev.Instant {
+				s.send(ctx, ev.HostID, catBookings, "New booking",
+					fmt.Sprintf("A guest just booked %q (instant book). See it in your host dashboard.", ev.PropertyTitle))
+			} else {
+				s.send(ctx, ev.HostID, catBookings, "New booking request",
+					fmt.Sprintf("A guest requested to book %q. Review it in your host dashboard.", ev.PropertyTitle))
+			}
 
 		case event.BookingConfirmed:
 			s.send(ctx, ev.GuestID, catBookings, "Booking confirmed",

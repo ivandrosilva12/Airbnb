@@ -7,6 +7,7 @@ import (
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
@@ -62,6 +63,45 @@ func TestCreate_HappyPathDerivesPrice(t *testing.T) {
 	}
 	if b.TotalPrice().AmountCents() != 30000 { // 3 nights * 100.00, no fees in fixture
 		t.Errorf("total = %d, want 30000", b.TotalPrice().AmountCents())
+	}
+}
+
+func TestCreate_RequestToBookStaysPending(t *testing.T) {
+	f := newFixture(t)
+	b, err := f.svc.Create(context.Background(), bookingapp.CreateInput{
+		GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if b.Status != booking.StatusPending {
+		t.Fatalf("status = %q, want pending (request to book)", b.Status)
+	}
+}
+
+func TestCreate_InstantBookAutoConfirms(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.prop.SetInstantBook(true)
+	if err := f.properties.Update(ctx, f.prop); err != nil {
+		t.Fatalf("enable instant book: %v", err)
+	}
+	b, err := f.svc.Create(ctx, bookingapp.CreateInput{
+		GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 2,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if b.Status != booking.StatusConfirmed {
+		t.Fatalf("returned status = %q, want confirmed (instant book)", b.Status)
+	}
+	// The reservation is persisted confirmed, so no host approval step remains.
+	stored, err := f.bookings.FindByID(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if stored.Status != booking.StatusConfirmed {
+		t.Fatalf("persisted status = %q, want confirmed", stored.Status)
 	}
 }
 

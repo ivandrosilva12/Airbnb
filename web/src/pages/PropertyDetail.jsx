@@ -157,6 +157,9 @@ export default function PropertyDetail() {
           <div className="booking-price">
             <strong>{property.pricePerNight.display}</strong> {t('common.perNight')}
           </div>
+          {property.instantBook && (
+            <div className="instant-badge" title={t('detail.instantBookHint')}>⚡ {t('detail.instantBook')}</div>
+          )}
           <form onSubmit={book}>
             <label>
               {t('common.checkIn')}
@@ -180,7 +183,11 @@ export default function PropertyDetail() {
               </div>
             )}
             <button className="btn btn-primary block" type="submit">
-              {authenticated ? t('detail.reserve') : t('detail.signInReserve')}
+              {!authenticated
+                ? t('detail.signInReserve')
+                : property.instantBook
+                  ? t('detail.bookInstantly')
+                  : t('detail.reserve')}
             </button>
           </form>
           {!isOwnListing && (

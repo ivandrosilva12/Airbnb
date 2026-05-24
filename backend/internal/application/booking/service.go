@@ -32,18 +32,25 @@ func NewService(bookings booking.Repository, properties property.Repository, blo
 	return &Service{bookings: bookings, properties: properties, blocks: blocks, serviceFeeRate: serviceFeeRate, uow: uow}
 }
 
-// emit runs the booking write and records the event in one transaction, so the
-// two commit together (or roll back together).
-func (s *Service) emit(ctx context.Context, write func(tx port.Tx) error, ev event.Event) error {
+// emit runs the booking write and records the event(s) in one transaction, so
+// they commit together (or roll back together). When several events are passed
+// they are appended in order; the relay dispatches them in that order after the
+// commit (e.g. BookingRequested before BookingConfirmed for an instant book).
+func (s *Service) emit(ctx context.Context, write func(tx port.Tx) error, evs ...event.Event) error {
 	return s.uow.Run(ctx, func(tx port.Tx) error {
 		if err := write(tx); err != nil {
 			return err
 		}
-		rec, err := event.NewRecord(ev)
-		if err != nil {
-			return err
+		for _, ev := range evs {
+			rec, err := event.NewRecord(ev)
+			if err != nil {
+				return err
+			}
+			if err := tx.Outbox.Append(ctx, rec); err != nil {
+				return err
+			}
 		}
-		return tx.Outbox.Append(ctx, rec)
+		return nil
 	})
 }
 
@@ -98,8 +105,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	if err != nil {
 		return nil, err
 	}
-	if err := s.emit(ctx,
-		func(tx port.Tx) error { return tx.Bookings.Create(ctx, b) },
+	// Instant book: auto-confirm the reservation now instead of holding it for
+	// the host. Both events are published in the same transaction; the relay
+	// dispatches BookingRequested (payment authorize) before BookingConfirmed
+	// (capture + host-earning credit + guest notification).
+	events := []event.Event{
 		event.BookingRequested{
 			BookingID:     b.ID,
 			PropertyID:    prop.ID,
@@ -108,7 +118,23 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 			GuestID:       in.GuestID,
 			TotalCents:    b.Pricing.Total.AmountCents(),
 			Currency:      b.Pricing.Total.Currency(),
+			Instant:       prop.InstantBook,
 		},
+	}
+	if prop.InstantBook {
+		if err := b.Confirm(); err != nil {
+			return nil, err
+		}
+		events = append(events, event.BookingConfirmed{
+			BookingID:     b.ID,
+			PropertyID:    prop.ID,
+			PropertyTitle: prop.Title,
+			GuestID:       in.GuestID,
+		})
+	}
+	if err := s.emit(ctx,
+		func(tx port.Tx) error { return tx.Bookings.Create(ctx, b) },
+		events...,
 	); err != nil {
 		return nil, err
 	}

@@ -44,6 +44,7 @@ export default function PropertyCard({ property }) {
         <div className="card-price">
           <strong>{property.pricePerNight.display}</strong> {t('common.perNight')}
         </div>
+        {property.instantBook && <div className="card-instant">⚡ {t('detail.instantBook')}</div>}
       </div>
     </Link>
   );

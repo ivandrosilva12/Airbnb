@@ -65,6 +65,7 @@ type createPropertyRequest struct {
 	WeeklyDiscountPct  float64  `json:"weeklyDiscountPct"`
 	MonthlyDiscountPct float64  `json:"monthlyDiscountPct"`
 	TaxRatePct         float64  `json:"taxRatePct"`
+	InstantBook        bool     `json:"instantBook"`
 }
 
 // Create publishes a new draft listing for the authenticated host.
@@ -100,6 +101,7 @@ func (h *PropertyHandler) Create(c *gin.Context) {
 		WeeklyDiscountPct:  req.WeeklyDiscountPct,
 		MonthlyDiscountPct: req.MonthlyDiscountPct,
 		TaxRatePct:         req.TaxRatePct,
+		InstantBook:        req.InstantBook,
 	})
 	if err != nil {
 		response.Fail(c, err)

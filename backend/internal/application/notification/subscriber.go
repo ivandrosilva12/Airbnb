@@ -17,9 +17,11 @@ func (s *Service) EventHandler() event.Handler {
 		var err error
 		switch ev := e.(type) {
 		case event.BookingRequested:
-			err = s.create(ctx, ev.HostID, notification.TypeBookingRequested,
-				"New booking request",
-				fmt.Sprintf("A guest requested to book %q.", ev.PropertyTitle), ev.BookingID)
+			title, body := "New booking request", fmt.Sprintf("A guest requested to book %q.", ev.PropertyTitle)
+			if ev.Instant {
+				title, body = "New booking", fmt.Sprintf("A guest just booked %q (instant book).", ev.PropertyTitle)
+			}
+			err = s.create(ctx, ev.HostID, notification.TypeBookingRequested, title, body, ev.BookingID)
 
 		case event.BookingConfirmed:
 			err = s.create(ctx, ev.GuestID, notification.TypeBookingConfirmed,

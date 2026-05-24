@@ -49,6 +49,7 @@ type CreateInput struct {
 	WeeklyDiscountPct  float64
 	MonthlyDiscountPct float64
 	TaxRatePct         float64
+	InstantBook        bool
 }
 
 // Create builds and persists a draft listing.
@@ -84,6 +85,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*property.Propert
 		MonthlyDiscountPct: in.MonthlyDiscountPct,
 		TaxRatePct:         in.TaxRatePct,
 	})
+	p.SetInstantBook(in.InstantBook)
 	if err := s.repo.Create(ctx, p); err != nil {
 		return nil, err
 	}
@@ -117,6 +119,7 @@ type UpdateInput struct {
 	WeeklyDiscountPct  float64
 	MonthlyDiscountPct float64
 	TaxRatePct         float64
+	InstantBook        bool
 }
 
 // Update mutates a listing after verifying ownership.
@@ -144,6 +147,7 @@ func (s *Service) Update(ctx context.Context, actorID, propertyID uuid.UUID, in 
 		MonthlyDiscountPct: in.MonthlyDiscountPct,
 		TaxRatePct:         in.TaxRatePct,
 	})
+	p.SetInstantBook(in.InstantBook)
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err
 	}

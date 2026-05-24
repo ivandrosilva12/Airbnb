@@ -108,6 +108,7 @@ type PropertyView struct {
 	WeeklyDiscountPct  float64     `json:"weeklyDiscountPct"`
 	MonthlyDiscountPct float64     `json:"monthlyDiscountPct"`
 	TaxRatePct         float64     `json:"taxRatePct"`
+	InstantBook        bool        `json:"instantBook"`
 	AverageRating      float64     `json:"averageRating"`
 	ReviewCount        int         `json:"reviewCount"`
 	CreatedAt          time.Time   `json:"createdAt"`
@@ -146,6 +147,7 @@ func FromProperty(p *property.Property) PropertyView {
 		WeeklyDiscountPct:  p.PricingPolicy.WeeklyDiscountPct,
 		MonthlyDiscountPct: p.PricingPolicy.MonthlyDiscountPct,
 		TaxRatePct:         p.PricingPolicy.TaxRatePct,
+		InstantBook:        p.InstantBook,
 		AverageRating:      p.AverageRating,
 		ReviewCount:        p.ReviewCount,
 		CreatedAt:          p.CreatedAt,

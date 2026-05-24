@@ -26,6 +26,7 @@ const initial = {
   weeklyDiscount: '',
   monthlyDiscount: '',
   taxRate: '',
+  instantBook: false,
 };
 
 export default function CreateListing() {
@@ -77,6 +78,7 @@ export default function CreateListing() {
         weeklyDiscountPct: Number(form.weeklyDiscount || 0) / 100,
         monthlyDiscountPct: Number(form.monthlyDiscount || 0) / 100,
         taxRatePct: Number(form.taxRate || 0) / 100,
+        instantBook: form.instantBook,
       });
       if (photo) {
         await api.uploadPhoto(created.id, photo);
@@ -143,6 +145,17 @@ export default function CreateListing() {
             ))}
           </div>
         </div>
+        <label className="full instant-book-toggle">
+          <input
+            type="checkbox"
+            checked={form.instantBook}
+            onChange={(e) => setForm({ ...form, instantBook: e.target.checked })}
+          />
+          <span>
+            <strong>{t('create.fInstantBook')}</strong>
+            <small>{t('create.fInstantBookHint')}</small>
+          </span>
+        </label>
         <label className="full">{t('create.fCover')}<input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files[0])} /></label>
         <div className="full">
           <button className="btn btn-primary" type="submit" disabled={submitting}>

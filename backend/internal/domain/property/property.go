@@ -164,6 +164,9 @@ type Property struct {
 	Photos             []Photo
 	CancellationPolicy CancellationPolicy
 	PricingPolicy      PricingPolicy
+	// InstantBook, when true, auto-confirms a guest's reservation instead of
+	// holding it for the host's approval.
+	InstantBook bool
 	// AverageRating and ReviewCount are a denormalised read-model of the
 	// property's guest reviews, refreshed when a review is published.
 	AverageRating float64
@@ -188,6 +191,13 @@ func (p *Property) SetCancellationPolicy(policy CancellationPolicy) {
 // SetPricingPolicy sets the listing's discounts/tax policy (clamped to [0,1]).
 func (p *Property) SetPricingPolicy(policy PricingPolicy) {
 	p.PricingPolicy = policy.Normalised()
+	p.touch()
+}
+
+// SetInstantBook toggles whether reservations are auto-confirmed (true) or held
+// for the host's approval (false).
+func (p *Property) SetInstantBook(v bool) {
+	p.InstantBook = v
 	p.touch()
 }
 

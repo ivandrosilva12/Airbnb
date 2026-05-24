@@ -105,15 +105,16 @@ export default function PropertyScreen({ route, navigation }) {
         <Text style={styles.title}>{property.title}</Text>
         <Text style={styles.meta}>{property.address.city}, {property.address.country} · up to {property.maxGuests} guests</Text>
         <Text style={styles.price}>{property.pricePerNight.display} / night</Text>
+        {property.instantBook && <Text style={styles.instant}>⚡ Instant Book — confirmed instantly</Text>}
         <Text style={styles.desc}>{property.description || 'No description provided.'}</Text>
 
         <View style={styles.bookBox}>
-          <Text style={styles.bookTitle}>Reserve</Text>
+          <Text style={styles.bookTitle}>{property.instantBook ? 'Book instantly' : 'Reserve'}</Text>
           <TextInput style={styles.input} placeholder="Check in (YYYY-MM-DD)" value={checkIn} onChangeText={setCheckIn} />
           <TextInput style={styles.input} placeholder="Check out (YYYY-MM-DD)" value={checkOut} onChangeText={setCheckOut} />
           <TextInput style={styles.input} placeholder="Guests" keyboardType="number-pad" value={guests} onChangeText={setGuests} />
           <Pressable style={styles.btn} onPress={book}>
-            <Text style={styles.btnText}>{authenticated ? 'Reserve' : 'Sign in to reserve'}</Text>
+            <Text style={styles.btnText}>{!authenticated ? 'Sign in to reserve' : property.instantBook ? '⚡ Book instantly' : 'Reserve'}</Text>
           </Pressable>
           {message && <Text style={styles.success}>{message}</Text>}
           {error && <Text style={styles.error}>{error}</Text>}
@@ -185,6 +186,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '800' },
   meta: { color: '#717171', marginVertical: 4 },
   price: { fontSize: 16, fontWeight: '600', marginVertical: 4 },
+  instant: { color: '#ff385c', fontWeight: '700', marginTop: 2 },
   desc: { marginVertical: 12, lineHeight: 20 },
   bookBox: { borderWidth: 1, borderColor: '#ddd', borderRadius: 12, padding: 16, marginTop: 8 },
   bookTitle: { fontWeight: '700', fontSize: 16, marginBottom: 10 },

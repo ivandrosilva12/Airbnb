@@ -14,7 +14,9 @@ func init() {
 }
 
 // BookingRequested is published when a guest creates a booking. The host should
-// be notified, and the payment context authorizes the total.
+// be notified, and the payment context authorizes the total. Instant is true
+// when the listing has instant-book enabled, in which case a BookingConfirmed
+// event is published in the same transaction and the booking starts confirmed.
 type BookingRequested struct {
 	BookingID     uuid.UUID
 	PropertyID    uuid.UUID
@@ -23,6 +25,7 @@ type BookingRequested struct {
 	GuestID       uuid.UUID
 	TotalCents    int64
 	Currency      string
+	Instant       bool
 }
 
 func (BookingRequested) EventName() string { return "booking.requested" }
