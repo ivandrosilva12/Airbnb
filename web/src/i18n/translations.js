@@ -27,6 +27,10 @@ export const translations = {
     'privacy.delete': 'Delete my account',
     'privacy.deleteConfirm': 'Permanently delete your account? Your profile will be anonymised and you will be signed out. This cannot be undone.',
 
+    'security.title': 'Two-factor authentication',
+    'security.hint': 'Add a one-time code from an authenticator app to your sign-in for extra protection. You will be taken to the secure sign-in page to set it up.',
+    'security.enable2fa': 'Set up two-factor authentication',
+
     'verify.title': 'Identity verification',
     'verify.hint': 'Verify your identity to earn a verified badge and build trust with hosts and guests.',
     'verify.statusLabel': 'Status',
@@ -365,6 +369,10 @@ export const translations = {
     'privacy.export': 'Exportar os meus dados',
     'privacy.delete': 'Apagar a minha conta',
     'privacy.deleteConfirm': 'Apagar permanentemente a sua conta? O seu perfil será anonimizado e a sessão terminada. Esta ação é irreversível.',
+
+    'security.title': 'Autenticação de dois fatores',
+    'security.hint': 'Adicione um código único de uma app autenticadora ao seu início de sessão para mais proteção. Será encaminhado para a página segura de início de sessão para configurar.',
+    'security.enable2fa': 'Configurar autenticação de dois fatores',
 
     'verify.title': 'Verificação de identidade',
     'verify.hint': 'Verifique a sua identidade para obter um selo de verificado e ganhar a confiança de anfitriões e hóspedes.',

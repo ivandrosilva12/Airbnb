@@ -8,6 +8,12 @@
   "resetPasswordAllowed": true,
   "editUsernameAllowed": false,
   "accessTokenLifespan": 1800,
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "otpPolicyLookAheadWindow": 1,
+  "otpSupportedApplications": ["totpAppFreeOTPName", "totpAppGoogleName", "totpAppMicrosoftAuthenticatorName"],
   "roles": {
     "realm": [
       { "name": "guest", "description": "Default platform guest" },

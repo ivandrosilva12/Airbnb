@@ -57,8 +57,30 @@ export default function Settings() {
       )}
 
       <VerificationPanel />
+      <SecurityPanel />
       <PrivacyPanel />
     </div>
+  );
+}
+
+// SecurityPanel lets the user enable two-factor authentication. 2FA is fully
+// delegated to Keycloak: the button launches Keycloak's CONFIGURE_TOTP
+// application-initiated action, so the OTP credential is set up and stored by
+// the identity provider, then the user is returned here.
+function SecurityPanel() {
+  const { t } = useT();
+
+  function setupTotp() {
+    // keycloak-js forwards `action` as kc_action, triggering the AIA flow.
+    keycloak.login({ action: 'CONFIGURE_TOTP', redirectUri: window.location.href });
+  }
+
+  return (
+    <section className="security-panel">
+      <h2>{t('security.title')}</h2>
+      <p className="muted">{t('security.hint')}</p>
+      <button className="btn btn-ghost" onClick={setupTotp}>{t('security.enable2fa')}</button>
+    </section>
   );
 }
 
