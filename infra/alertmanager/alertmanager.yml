@@ -4,6 +4,11 @@
 # in production). Critical alerts are additionally sent to Slack when a webhook
 # URL is provided — the docker-compose entrypoint writes $SLACK_WEBHOOK_URL to
 # /tmp/slack_url, which the Slack receiver reads via `api_url_file`.
+#
+# Resolved notifications are routed to a separate destination (the resolved
+# mailbox / #airhost-resolved Slack channel) by templating the destination
+# fields on `.Status` — Alertmanager sends a "resolved" notification only once
+# every alert in the group has cleared, so .Status reliably distinguishes them.
 global:
   resolve_timeout: 5m
 
@@ -22,7 +27,7 @@ route:
 receivers:
   - name: team-email
     email_configs:
-      - to: 'oncall@airhost.dev'
+      - to: '{{ if eq .Status "resolved" }}resolved@airhost.dev{{ else }}oncall@airhost.dev{{ end }}'
         from: 'alertmanager@airhost.dev'
         smarthost: 'mailhog:1025'
         require_tls: false
@@ -30,14 +35,14 @@ receivers:
 
   - name: critical
     email_configs:
-      - to: 'oncall@airhost.dev'
+      - to: '{{ if eq .Status "resolved" }}resolved@airhost.dev{{ else }}oncall@airhost.dev{{ end }}'
         from: 'alertmanager@airhost.dev'
         smarthost: 'mailhog:1025'
         require_tls: false
         send_resolved: true
     slack_configs:
       - api_url_file: /tmp/slack_url
-        channel: '#airhost-alerts'
+        channel: '{{ if eq .Status "resolved" }}#airhost-resolved{{ else }}#airhost-alerts{{ end }}'
         send_resolved: true
         title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
         text: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}\n{{ end }}"
