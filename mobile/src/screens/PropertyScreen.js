@@ -3,7 +3,7 @@ import { View, Text, Image, ScrollView, TextInput, Pressable, StyleSheet, Activi
 import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
 
-export default function PropertyScreen({ route }) {
+export default function PropertyScreen({ route, navigation }) {
   const { id } = route.params;
   const api = useApi();
   const { authenticated, login } = useAuth();
@@ -12,11 +12,38 @@ export default function PropertyScreen({ route }) {
   const [checkOut, setCheckOut] = useState('');
   const [guests, setGuests] = useState('1');
   const [message, setMessage] = useState(null);
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     api.getProperty(id).then(setProperty).catch((e) => setError(e.message));
   }, [id]);
+
+  async function save() {
+    if (!authenticated) {
+      login();
+      return;
+    }
+    try {
+      await api.addFavorite(id);
+      setSaved(true);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function contactHost() {
+    if (!authenticated) {
+      login();
+      return;
+    }
+    try {
+      const conv = await api.startConversation(id);
+      navigation.navigate('Conversation', { id: conv.id, title: property?.title || 'Conversation' });
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   async function book() {
     setError(null);
@@ -57,6 +84,15 @@ export default function PropertyScreen({ route }) {
           {message && <Text style={styles.success}>{message}</Text>}
           {error && <Text style={styles.error}>{error}</Text>}
         </View>
+
+        <View style={styles.secondaryActions}>
+          <Pressable style={styles.secondaryBtn} onPress={save}>
+            <Text style={styles.secondaryText}>{saved ? '♥ Saved' : '♡ Save to wishlist'}</Text>
+          </Pressable>
+          <Pressable style={styles.secondaryBtn} onPress={contactHost}>
+            <Text style={styles.secondaryText}>Contact host</Text>
+          </Pressable>
+        </View>
       </View>
     </ScrollView>
   );
@@ -77,4 +113,7 @@ const styles = StyleSheet.create({
   btnText: { color: '#fff', fontWeight: '700' },
   success: { color: '#1a7f47', marginTop: 10 },
   error: { color: '#c0392b', marginTop: 10 },
+  secondaryActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  secondaryBtn: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
+  secondaryText: { fontWeight: '600', color: '#222' },
 });

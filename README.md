@@ -255,7 +255,7 @@ docker-compose.yml
 | CI | Complete | `.github/workflows/ci.yml` — Go fmt/vet/build/test + web build |
 | SQL schema | Complete | Applied by the startup migrator |
 | Web (React) | Complete | `npm run build` passes |
-| Mobile (Expo) | Runnable scaffold | Builds require an emulator/device; not auto-verified |
+| Mobile (Expo) | Guest app | Explore, listing + booking, account hub, trips, saved, notifications, messages (thread + send), contact host. Builds require an emulator/device; not auto-verified |
 | Infra (compose) | Complete | Config authored; bring up with `docker compose up` |
 | Observability | Complete | `/metrics` endpoint + Prometheus scrape + Grafana dashboard |
 
@@ -266,7 +266,6 @@ docker-compose.yml
   external bus (e.g. Redis pub/sub) behind the same `Broadcaster` interface. The
   SSE token travels as a query parameter because `EventSource` cannot set headers.
 - Suggested follow-ups: a real payment gateway (Stripe) behind the existing
-  `PaymentGateway` port, map-based search, photo management (reorder/cover),
-  iCal calendar sync, completing the mobile app, and full-stack e2e tests against
-  a live Keycloak.
+  `PaymentGateway` port, map-based search, iCal calendar sync, host-side screens
+  on mobile, and full-stack e2e tests against a live Keycloak.
 ```

@@ -9,11 +9,11 @@ export function HeaderAuthButton() {
   if (authenticated) {
     return (
       <Pressable
-        onPress={() => navigation.navigate('Trips')}
+        onPress={() => navigation.navigate('Account')}
         onLongPress={logout}
         hitSlop={10}
       >
-        <Text style={{ color: '#ff385c', fontWeight: '600' }}>Trips</Text>
+        <Text style={{ color: '#ff385c', fontWeight: '600' }}>Account</Text>
       </Pressable>
     );
   }

@@ -34,5 +34,22 @@ export function createApi(getAccessToken) {
     createBooking: (body) => request('POST', '/bookings', { body, auth: true }),
     myBookings: () => request('GET', '/bookings/me', { auth: true }),
     cancelBooking: (id) => request('POST', `/bookings/${id}/cancel`, { auth: true }),
+
+    // Favorites (wishlist)
+    listFavorites: () => request('GET', '/favorites', { auth: true }),
+    addFavorite: (propertyId) => request('POST', '/favorites', { body: { propertyId }, auth: true }),
+    removeFavorite: (propertyId) => request('DELETE', `/favorites/${propertyId}`, { auth: true }),
+
+    // In-app notifications
+    listNotifications: () => request('GET', '/notifications', { auth: true }),
+    markNotificationRead: (id) => request('POST', `/notifications/${id}/read`, { auth: true }),
+    markAllNotificationsRead: () => request('POST', '/notifications/read-all', { auth: true }),
+
+    // Messaging
+    listConversations: () => request('GET', '/conversations', { auth: true }),
+    startConversation: (propertyId) => request('POST', '/conversations', { body: { propertyId }, auth: true }),
+    listMessages: (id) => request('GET', `/conversations/${id}/messages`, { auth: true }),
+    sendMessage: (id, body) => request('POST', `/conversations/${id}/messages`, { body: { body }, auth: true }),
+    markConversationRead: (id) => request('POST', `/conversations/${id}/read`, { auth: true }),
   };
 }
