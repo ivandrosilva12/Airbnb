@@ -79,7 +79,7 @@ export default function HostDashboard() {
       </div>
       {metrics && (
         <div className="metrics-grid">
-          {earnings && <div className="metric"><div className="metric-value">{earnings.net.display}</div><div className="metric-label">{t('host.metric.earnings')}</div></div>}
+          {earnings && <Link to="/host/earnings" className="metric metric-link"><div className="metric-value">{earnings.net.display}</div><div className="metric-label">{t('host.metric.earnings')} ›</div></Link>}
           <div className="metric"><div className="metric-value">{metrics.capturedRevenue.display}</div><div className="metric-label">{t('host.metric.revenue')}</div></div>
           <div className="metric"><div className="metric-value">{metrics.pendingRevenue.display}</div><div className="metric-label">{t('host.metric.pending')}</div></div>
           <div className="metric"><div className="metric-value">{metrics.bookings}</div><div className="metric-label">{t('host.metric.bookings', { confirmed: metrics.confirmed })}</div></div>

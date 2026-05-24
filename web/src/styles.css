@@ -209,6 +209,19 @@ a { color: inherit; text-decoration: none; }
 .verify-approved { background: #e6f7ee; color: #1a7f47; }
 .verify-rejected { background: #fdecea; color: #c0392b; }
 
+/* Host earnings / payouts panel */
+.metric-link { text-decoration: none; color: inherit; display: block; transition: box-shadow .15s; }
+.metric-link:hover { box-shadow: 0 0 0 2px var(--primary, #ff385c) inset; }
+.balance-grid { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+.balance-card { border: 1px solid var(--border, #eee); border-radius: 12px; padding: 16px 20px; min-width: 200px; }
+.balance-currency { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+.balance-net { font-size: 1.6rem; font-weight: 800; margin: 4px 0; }
+.balance-breakdown { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: .85rem; }
+.amount-credit { color: #1a7f47; font-weight: 600; }
+.amount-debit { color: #c0392b; font-weight: 600; }
+.badge-payout-earning { background: #e6f7ee; color: #1a7f47; }
+.badge-payout-refund { background: #fdecea; color: #c0392b; }
+
 /* Admin moderation tables */
 .admin-table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
 .admin-table th, .admin-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border, #eee); vertical-align: top; }
