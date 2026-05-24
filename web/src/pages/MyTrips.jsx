@@ -135,10 +135,10 @@ export default function MyTrips() {
                 <td>{b.checkIn} → {b.checkOut} ({b.nights}n)</td>
                 <td>{b.guests}</td>
                 <td>{b.totalPrice.display}</td>
-                <td><span className={`badge badge-${b.status}`}>{b.status}</span></td>
+                <td><span className={`badge badge-${b.status}`}>{t(`status.${b.status}`)}</span></td>
                 <td>
                   {payments[b.id]
-                    ? <span className={`badge badge-pay-${payments[b.id].status}`}>{payments[b.id].status}</span>
+                    ? <span className={`badge badge-pay-${payments[b.id].status}`}>{t(`pay.${payments[b.id].status}`)}</span>
                     : <span className="muted-text">—</span>}
                   {payments[b.id]?.refundedCents > 0 && (
                     <div className="muted-text" style={{ fontSize: '.78rem' }}>

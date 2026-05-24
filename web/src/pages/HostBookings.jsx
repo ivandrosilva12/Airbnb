@@ -138,7 +138,7 @@ export default function HostBookings() {
                 <td>{b.checkIn} → {b.checkOut} ({b.nights}n)</td>
                 <td>{b.guests}</td>
                 <td>{b.totalPrice.display}</td>
-                <td><span className={`badge badge-${b.status}`}>{b.status}</span></td>
+                <td><span className={`badge badge-${b.status}`}>{t(`status.${b.status}`)}</span></td>
                 <td className="actions">
                   {b.status === 'pending' && (
                     <button className="btn btn-ghost" onClick={() => act(api.confirmBooking, b.id)}>{t('host.confirm')}</button>

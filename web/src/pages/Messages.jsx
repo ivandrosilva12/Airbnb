@@ -44,13 +44,24 @@ export default function Messages() {
   }, []);
 
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId) return undefined;
     loadMessages(activeId);
     setSearchParams({ conversation: activeId }, { replace: true });
     // Opening a thread clears its unread count locally and on the server.
     setConversations((prev) => prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c)));
     markRead(activeId);
+    // Poll the open thread so inbound messages appear without a manual reload
+    // (the SSE stream refreshes the unread badge, not the message list).
+    const id = setInterval(() => loadMessages(activeId), 8000);
+    return () => clearInterval(id);
   }, [activeId]);
+
+  // Refresh the conversation list periodically so last-message time and unread
+  // counts stay current.
+  useEffect(() => {
+    const id = setInterval(loadConversations, 20000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -90,7 +101,7 @@ export default function Messages() {
                     <span>{role}</span>
                     {c.unreadCount > 0 && <span className="count-badge">{c.unreadCount}</span>}
                   </div>
-                  <small>{new Date(c.lastMessageAt).toLocaleString()}</small>
+                  <small>{c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleString() : ''}</small>
                 </div>
               );
             })}

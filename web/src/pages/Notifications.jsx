@@ -45,7 +45,7 @@ export default function Notifications() {
               <div className="notif-body">
                 <div className="notif-title">{n.title}</div>
                 <div className="notif-text">{n.body}</div>
-                <div className="notif-time">{new Date(n.createdAt).toLocaleString()}</div>
+                <div className="notif-time">{n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}</div>
               </div>
               {!n.read && <span className="notif-dot" />}
             </li>
