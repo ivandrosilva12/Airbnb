@@ -53,6 +53,11 @@ export function createApi(getAccessToken) {
     // Host
     hostMetrics: () => request('GET', '/host/metrics', { auth: true }),
     hostEarnings: () => request('GET', '/host/earnings', { auth: true }),
+    payoutAvailable: () => request('GET', '/host/payouts/available', { auth: true }),
+    listDisbursements: () => request('GET', '/host/payouts', { auth: true }),
+    requestPayout: (currency) => request('POST', '/host/payouts', { body: { currency }, auth: true }),
+    onboardPayouts: (body) => request('POST', '/host/payouts/onboard', { body, auth: true }),
+    refreshPayoutAccount: () => request('POST', '/host/payouts/account/refresh', { auth: true }),
     myProperties: () => request('GET', '/host/properties', { auth: true }),
     propertyBookings: (id) => request('GET', `/properties/${id}/bookings`, { auth: true }),
     confirmBooking: (id) => request('POST', `/bookings/${id}/confirm`, { auth: true }),

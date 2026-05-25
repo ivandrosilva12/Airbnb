@@ -40,11 +40,18 @@ export default function AccountScreen({ navigation }) {
         </Pressable>
       ))}
       {isHost && (
-        <Pressable style={styles.row} onPress={() => navigation.navigate('HostListings')}>
-          <Text style={styles.icon}>🏠</Text>
-          <Text style={styles.label}>Host dashboard</Text>
-          <Text style={styles.chevron}>›</Text>
-        </Pressable>
+        <>
+          <Pressable style={styles.row} onPress={() => navigation.navigate('HostListings')}>
+            <Text style={styles.icon}>🏠</Text>
+            <Text style={styles.label}>Host dashboard</Text>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
+          <Pressable style={styles.row} onPress={() => navigation.navigate('HostEarnings')}>
+            <Text style={styles.icon}>💸</Text>
+            <Text style={styles.label}>Earnings & payouts</Text>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
+        </>
       )}
       <Pressable
         style={styles.row}

@@ -13,6 +13,7 @@ import MessagesScreen from './src/screens/MessagesScreen';
 import ConversationScreen from './src/screens/ConversationScreen';
 import VerificationScreen from './src/screens/VerificationScreen';
 import HostListingsScreen from './src/screens/HostListingsScreen';
+import HostEarningsScreen from './src/screens/HostEarningsScreen';
 import HostPropertyBookingsScreen from './src/screens/HostPropertyBookingsScreen';
 import { HeaderAuthButton } from './src/screens/HeaderAuthButton';
 
@@ -41,6 +42,7 @@ export default function App() {
           <Stack.Screen name="Messages" component={MessagesScreen} options={{ title: 'Messages' }} />
           <Stack.Screen name="Conversation" component={ConversationScreen} options={{ title: 'Conversation' }} />
           <Stack.Screen name="HostListings" component={HostListingsScreen} options={{ title: 'Host dashboard' }} />
+          <Stack.Screen name="HostEarnings" component={HostEarningsScreen} options={{ title: 'Earnings & payouts' }} />
           <Stack.Screen name="HostPropertyBookings" component={HostPropertyBookingsScreen} options={{ title: 'Bookings' }} />
         </Stack.Navigator>
       </NavigationContainer>
