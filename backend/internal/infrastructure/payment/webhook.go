@@ -62,10 +62,14 @@ type stripeWebhookVerifier struct {
 	now       func() time.Time // injectable clock for tests
 }
 
-func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.GatewayEvent, bool, error) {
+// verifyStripeSignature authenticates a Stripe webhook: it parses the
+// `Stripe-Signature` header (t=…,v1=…), recomputes the HMAC-SHA256 of
+// "<timestamp>.<body>" (accepting any v1 during a secret rotation), and rejects
+// timestamps outside the tolerance window to prevent replay.
+func verifyStripeSignature(secret string, tolerance time.Duration, now func() time.Time, header http.Header, body []byte) error {
 	sig := header.Get("Stripe-Signature")
 	if sig == "" {
-		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: missing signature")
+		return fmt.Errorf("stripe webhook: missing signature")
 	}
 	var timestamp string
 	var v1s []string
@@ -78,40 +82,43 @@ func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.Ga
 		case "t":
 			timestamp = val
 		case "v1":
-			// Stripe may include several v1 signatures during a secret rotation;
-			// accept the delivery if any of them matches.
 			v1s = append(v1s, val)
 		}
 	}
 	if timestamp == "" || len(v1s) == 0 {
-		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: malformed signature")
+		return fmt.Errorf("stripe webhook: malformed signature")
 	}
 	signedPayload := append([]byte(timestamp+"."), body...)
 	matched := false
 	for _, v1 := range v1s {
-		if hmacHexEqual(v.secret, v1, signedPayload) {
+		if hmacHexEqual(secret, v1, signedPayload) {
 			matched = true
 			break
 		}
 	}
 	if !matched {
-		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: signature mismatch")
+		return fmt.Errorf("stripe webhook: signature mismatch")
 	}
-	// Anti-replay: reject timestamps outside the tolerance window.
 	ts, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
-		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: bad timestamp")
+		return fmt.Errorf("stripe webhook: bad timestamp")
 	}
-	tolerance := v.tolerance
 	if tolerance <= 0 {
 		tolerance = stripeReplayTolerance
 	}
-	clock := v.now
+	clock := now
 	if clock == nil {
 		clock = time.Now
 	}
 	if age := clock().Sub(time.Unix(ts, 0)); age > tolerance || age < -tolerance {
-		return port.GatewayEvent{}, false, fmt.Errorf("stripe webhook: timestamp outside tolerance")
+		return fmt.Errorf("stripe webhook: timestamp outside tolerance")
+	}
+	return nil
+}
+
+func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.GatewayEvent, bool, error) {
+	if err := verifyStripeSignature(v.secret, v.tolerance, v.now, header, body); err != nil {
+		return port.GatewayEvent{}, false, err
 	}
 
 	var evt struct {
@@ -148,6 +155,58 @@ func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.Ga
 		base.Type = port.GatewayIgnored
 		return base, false, nil
 	}
+}
+
+// --- Stripe Connect (account.updated) ----------------------------------------
+
+// NewConnectWebhookVerifiers builds the Connect webhook verifiers keyed by
+// provider. Only Stripe is supported, enabled when a webhook secret is set
+// (reusing STRIPE_WEBHOOK_SECRET; a production Connect endpoint may use its own
+// signing secret). Without a secret the Connect webhook route returns 404.
+func NewConnectWebhookVerifiers(cfg config.PaymentConfig) map[string]port.ConnectWebhookVerifier {
+	out := map[string]port.ConnectWebhookVerifier{}
+	if cfg.Stripe.WebhookSecret != "" {
+		out[nameStripe] = &stripeConnectWebhookVerifier{secret: cfg.Stripe.WebhookSecret, tolerance: stripeReplayTolerance}
+	}
+	if len(out) == 0 {
+		slog.Info("payout: no Connect webhook secret configured; Connect webhook endpoint disabled")
+	}
+	return out
+}
+
+// stripeConnectWebhookVerifier authenticates a Stripe Connect webhook and maps
+// account.updated events to a normalized ConnectAccountEvent.
+type stripeConnectWebhookVerifier struct {
+	secret    string
+	tolerance time.Duration
+	now       func() time.Time // injectable clock for tests
+}
+
+func (v *stripeConnectWebhookVerifier) Verify(header http.Header, body []byte) (port.ConnectAccountEvent, bool, error) {
+	if err := verifyStripeSignature(v.secret, v.tolerance, v.now, header, body); err != nil {
+		return port.ConnectAccountEvent{}, false, err
+	}
+	var evt struct {
+		ID   string `json:"id"`
+		Type string `json:"type"`
+		Data struct {
+			Object struct {
+				ID             string `json:"id"`
+				PayoutsEnabled bool   `json:"payouts_enabled"`
+			} `json:"object"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &evt); err != nil {
+		return port.ConnectAccountEvent{}, false, fmt.Errorf("stripe connect webhook: %w", err)
+	}
+	if evt.Type != "account.updated" {
+		return port.ConnectAccountEvent{EventID: evt.ID}, false, nil
+	}
+	return port.ConnectAccountEvent{
+		EventID:        evt.ID,
+		AccountID:      evt.Data.Object.ID,
+		PayoutsEnabled: evt.Data.Object.PayoutsEnabled,
+	}, true, nil
 }
 
 // --- AppyPay / GPay Angola ---------------------------------------------------

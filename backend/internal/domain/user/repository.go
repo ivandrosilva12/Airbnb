@@ -14,4 +14,7 @@ type Repository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*User, error)
 	FindByKeycloakSub(ctx context.Context, sub string) (*User, error)
 	FindByEmail(ctx context.Context, email string) (*User, error)
+	// FindByPayoutAccountID resolves the host that owns a connected payout
+	// account (a Stripe acct_…), used to reconcile Connect webhooks.
+	FindByPayoutAccountID(ctx context.Context, accountID string) (*User, error)
 }

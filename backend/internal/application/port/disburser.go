@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
@@ -31,4 +32,20 @@ type ConnectGateway interface {
 	CreateAccount(ctx context.Context, email string) (ConnectAccount, error)
 	CreateOnboardingLink(ctx context.Context, accountID, refreshURL, returnURL string) (url string, err error)
 	GetAccount(ctx context.Context, accountID string) (ConnectAccount, error)
+}
+
+// ConnectAccountEvent is a normalized connected-account webhook (e.g. Stripe's
+// account.updated), carrying the account id and its current payout capability.
+type ConnectAccountEvent struct {
+	EventID        string // provider delivery id (evt_…), for storage-level dedup
+	AccountID      string // the connected account (acct_…)
+	PayoutsEnabled bool
+}
+
+// ConnectWebhookVerifier authenticates and parses an inbound Connect webhook
+// into a ConnectAccountEvent. Inbound port; infrastructure implements the
+// provider-specific signature check and payload mapping. ok=false means the
+// request was authentic but is not an account-state event we act on.
+type ConnectWebhookVerifier interface {
+	Verify(header http.Header, body []byte) (event ConnectAccountEvent, ok bool, err error)
 }

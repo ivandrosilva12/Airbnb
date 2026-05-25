@@ -270,6 +270,43 @@ func TestStartOnboarding_EnablesPayoutsViaFakeRail(t *testing.T) {
 	}
 }
 
+func TestSyncAccountFromWebhook_TogglesPayouts(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	hostID := uuid.New()
+	host := &user.User{
+		ID: hostID, KeycloakSub: "sub-" + hostID.String(), Email: "h@ex.dev", FullName: "H",
+		Role: user.RoleHost, IsActive: true, PayoutAccountID: "acct_42", PayoutsEnabled: false,
+	}
+	if err := users.Create(ctx, host); err != nil {
+		t.Fatalf("seed host: %v", err)
+	}
+	svc := payoutapp.NewService(
+		memory.NewPayoutRepository(), memory.NewBookingRepository(), memory.NewPropertyRepository(),
+		users, infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway(),
+	)
+
+	// An unknown account is a harmless no-op.
+	if changed, err := svc.SyncAccountFromWebhook(ctx, "acct_unknown", true); err != nil || changed {
+		t.Fatalf("unknown account: changed=%v err=%v, want no-op", changed, err)
+	}
+
+	// The host's account flips to enabled.
+	changed, err := svc.SyncAccountFromWebhook(ctx, "acct_42", true)
+	if err != nil || !changed {
+		t.Fatalf("sync: changed=%v err=%v, want changed", changed, err)
+	}
+	st, err := svc.AccountStatus(ctx, hostID)
+	if err != nil || !st.Enabled {
+		t.Fatalf("status = %+v err=%v, want enabled", st, err)
+	}
+
+	// Re-delivery of the same state is idempotent (no change).
+	if changed, err := svc.SyncAccountFromWebhook(ctx, "acct_42", true); err != nil || changed {
+		t.Fatalf("redelivery: changed=%v err=%v, want no-op", changed, err)
+	}
+}
+
 func TestRequestDisbursement_BlockedWithoutOnboarding(t *testing.T) {
 	ctx := context.Background()
 	props := memory.NewPropertyRepository()

@@ -55,6 +55,10 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*user.U
 	return r.findBy(ctx, `WHERE email=$1`, email)
 }
 
+func (r *UserRepository) FindByPayoutAccountID(ctx context.Context, accountID string) (*user.User, error) {
+	return r.findBy(ctx, `WHERE payout_account_id=$1`, accountID)
+}
+
 func (r *UserRepository) findBy(ctx context.Context, where string, arg any) (*user.User, error) {
 	row := r.pool.QueryRow(ctx, `SELECT `+userColumns+` FROM users `+where, arg)
 	var (

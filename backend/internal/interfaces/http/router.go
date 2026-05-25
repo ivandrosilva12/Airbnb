@@ -29,6 +29,7 @@ type Handlers struct {
 	Identity       *handler.IdentityHandler
 	Report         *handler.ReportHandler
 	PaymentWebhook *handler.PaymentWebhookHandler
+	ConnectWebhook *handler.ConnectWebhookHandler
 	Alert          *handler.AlertHandler
 	Privacy        *handler.PrivacyHandler
 }
@@ -99,6 +100,10 @@ func NewRouter(d Deps) *gin.Engine {
 		func() { d.Metrics.RateLimitedTotal.WithLabelValues("webhook").Inc() },
 	)
 	api.POST("/webhooks/payments/:provider", webhookLimiter, h.PaymentWebhook.Handle)
+
+	// Stripe Connect account webhooks (account.updated → host payouts_enabled),
+	// signature-authenticated and rate-limited like the payment webhook route.
+	api.POST("/webhooks/connect/:provider", webhookLimiter, h.ConnectWebhook.Handle)
 
 	// Alertmanager pushes firing/resolved notifications here so the internal UI
 	// can reflect alert state. Authenticated by network placement (internal),

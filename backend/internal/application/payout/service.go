@@ -108,6 +108,30 @@ func (s *Service) RefreshAccountStatus(ctx context.Context, hostID uuid.UUID) (P
 	return PayoutAccountStatus{HasAccount: true, Enabled: u.PayoutsEnabled}, nil
 }
 
+// SyncAccountFromWebhook applies an inbound Connect account.updated event,
+// flipping the owning host's payouts-enabled flag. An unknown account id is a
+// no-op (the event may be for another platform). Returns whether anything
+// changed. Safe to call repeatedly (idempotent).
+func (s *Service) SyncAccountFromWebhook(ctx context.Context, accountID string, payoutsEnabled bool) (bool, error) {
+	if strings.TrimSpace(accountID) == "" {
+		return false, nil
+	}
+	u, err := s.users.FindByPayoutAccountID(ctx, accountID)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !u.SetPayoutsEnabled(payoutsEnabled) {
+		return false, nil
+	}
+	if err := s.users.Update(ctx, u); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // Summary returns the host's balance per currency.
 func (s *Service) Summary(ctx context.Context, hostID uuid.UUID) ([]payout.Balance, error) {
 	return s.payouts.BalancesByHost(ctx, hostID)

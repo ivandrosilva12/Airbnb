@@ -193,6 +193,7 @@ func run() error {
 			Identity:       handler.NewIdentityHandler(identitySvc),
 			Report:         handler.NewReportHandler(reportSvc),
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
+			ConnectWebhook: handler.NewConnectWebhookHandler(payoutSvc, paymentgw.NewConnectWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
 			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc, cfg.Alerting.WebhookToken),
 			Privacy:        handler.NewPrivacyHandler(privacySvc),
 		},

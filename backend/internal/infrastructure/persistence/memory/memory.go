@@ -94,6 +94,10 @@ func (r *UserRepository) FindByEmail(_ context.Context, email string) (*user.Use
 	return r.findBy(func(u user.User) bool { return u.Email == email })
 }
 
+func (r *UserRepository) FindByPayoutAccountID(_ context.Context, accountID string) (*user.User, error) {
+	return r.findBy(func(u user.User) bool { return u.PayoutAccountID == accountID })
+}
+
 func (r *UserRepository) findBy(pred func(user.User) bool) (*user.User, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
