@@ -30,7 +30,30 @@ type Review struct {
 	Kind       Kind
 	Rating     int // 1..5
 	Comment    string
-	CreatedAt  time.Time
+	// Response is the host's public reply to a guest's property review (only
+	// meaningful for KindGuestToProperty); empty when there is none.
+	Response    string
+	RespondedAt *time.Time
+	CreatedAt   time.Time
+}
+
+// SetResponse records (or replaces) the host's public reply to a property
+// review. Only guest-to-property reviews can receive a host response.
+func (r *Review) SetResponse(text string) error {
+	if r.Kind != KindGuestToProperty {
+		return shared.NewValidationError("only a guest's property review can receive a host response")
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return shared.NewValidationError("a response is required")
+	}
+	if len(text) > 2000 {
+		return shared.NewValidationError("response is too long")
+	}
+	now := time.Now().UTC()
+	r.Response = text
+	r.RespondedAt = &now
+	return nil
 }
 
 func newReview(kind Kind, bookingID, propertyID, authorID, guestID uuid.UUID, rating int, comment string) (*Review, error) {

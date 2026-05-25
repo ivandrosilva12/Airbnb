@@ -48,6 +48,32 @@ func (h *ReviewHandler) Create(c *gin.Context) {
 	response.Created(c, dto.FromReview(r))
 }
 
+type respondReviewRequest struct {
+	Response string `json:"response" binding:"required"`
+}
+
+// Respond publishes the host's public reply to a guest's property review.
+func (h *ReviewHandler) Respond(c *gin.Context) {
+	hostID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	var req respondReviewRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	r, err := h.svc.RespondToReview(c.Request.Context(), hostID, id, req.Response)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromReview(r))
+}
+
 // CreateGuest publishes the host's review of the guest for a completed booking.
 func (h *ReviewHandler) CreateGuest(c *gin.Context) {
 	hostID, ok := requireUser(c)

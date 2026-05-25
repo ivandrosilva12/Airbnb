@@ -19,15 +19,38 @@ func NewReviewRepository(pool *pgxpool.Pool) *ReviewRepository {
 	return &ReviewRepository{pool: pool}
 }
 
-const reviewColumns = `id, booking_id, property_id, author_id, guest_id, kind, rating, comment, created_at`
+const reviewColumns = `id, booking_id, property_id, author_id, guest_id, kind, rating, comment, response, responded_at, created_at`
 
 func (r *ReviewRepository) Create(ctx context.Context, rv *review.Review) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO reviews (`+reviewColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		rv.ID, rv.BookingID, rv.PropertyID, rv.AuthorID, rv.GuestID, string(rv.Kind), rv.Rating, rv.Comment, rv.CreatedAt,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		rv.ID, rv.BookingID, rv.PropertyID, rv.AuthorID, rv.GuestID, string(rv.Kind), rv.Rating, rv.Comment,
+		rv.Response, rv.RespondedAt, rv.CreatedAt,
 	)
 	return mapError(err)
+}
+
+func (r *ReviewRepository) FindByID(ctx context.Context, id uuid.UUID) (*review.Review, error) {
+	rv, err := scanReview(r.pool.QueryRow(ctx, `SELECT `+reviewColumns+` FROM reviews WHERE id=$1`, id))
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return rv, nil
+}
+
+func (r *ReviewRepository) Update(ctx context.Context, rv *review.Review) error {
+	ct, err := r.pool.Exec(ctx,
+		`UPDATE reviews SET comment=$2, response=$3, responded_at=$4 WHERE id=$1`,
+		rv.ID, rv.Comment, rv.Response, rv.RespondedAt,
+	)
+	if err != nil {
+		return mapError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
 }
 
 func (r *ReviewRepository) ExistsForBookingKind(ctx context.Context, bookingID uuid.UUID, kind review.Kind) (bool, error) {
@@ -107,7 +130,7 @@ func scanReview(row rowScanner) (*review.Review, error) {
 		rv   review.Review
 		kind string
 	)
-	err := row.Scan(&rv.ID, &rv.BookingID, &rv.PropertyID, &rv.AuthorID, &rv.GuestID, &kind, &rv.Rating, &rv.Comment, &rv.CreatedAt)
+	err := row.Scan(&rv.ID, &rv.BookingID, &rv.PropertyID, &rv.AuthorID, &rv.GuestID, &kind, &rv.Rating, &rv.Comment, &rv.Response, &rv.RespondedAt, &rv.CreatedAt)
 	if err != nil {
 		return nil, err
 	}

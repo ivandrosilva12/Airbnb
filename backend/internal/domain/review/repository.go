@@ -10,6 +10,10 @@ import (
 // Repository is the persistence port for the Review aggregate.
 type Repository interface {
 	Create(ctx context.Context, r *Review) error
+	// FindByID loads a single review.
+	FindByID(ctx context.Context, id uuid.UUID) (*Review, error)
+	// Update persists mutable fields (currently the host response).
+	Update(ctx context.Context, r *Review) error
 	// ExistsForBookingKind reports whether a review of the given kind already
 	// exists for the booking (at most one per direction).
 	ExistsForBookingKind(ctx context.Context, bookingID uuid.UUID, kind Kind) (bool, error)

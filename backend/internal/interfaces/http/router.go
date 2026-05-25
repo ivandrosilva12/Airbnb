@@ -136,6 +136,7 @@ func NewRouter(d Deps) *gin.Engine {
 
 		// Reviews (guest -> property, and host -> guest).
 		auth.POST("/reviews", h.Review.Create)
+		auth.POST("/reviews/:id/response", h.Review.Respond)
 		auth.POST("/reviews/guest", h.Review.CreateGuest)
 		auth.GET("/me/guest-reviews", h.Review.MyGuestReviews)
 		auth.GET("/me/reviews/pending", h.Review.MyPendingReviews)

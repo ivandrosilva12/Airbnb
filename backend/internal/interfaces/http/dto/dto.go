@@ -224,22 +224,26 @@ type ReviewView struct {
 	PropertyID uuid.UUID `json:"propertyId"`
 	AuthorID   uuid.UUID `json:"authorId"`
 	GuestID    uuid.UUID `json:"guestId"`
-	Rating     int       `json:"rating"`
-	Comment    string    `json:"comment"`
-	CreatedAt  time.Time `json:"createdAt"`
+	Rating      int        `json:"rating"`
+	Comment     string     `json:"comment"`
+	Response    string     `json:"response,omitempty"`
+	RespondedAt *time.Time `json:"respondedAt,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
 }
 
 // FromReview maps a review aggregate to its view.
 func FromReview(r *review.Review) ReviewView {
 	return ReviewView{
-		ID:         r.ID,
-		Kind:       string(r.Kind),
-		PropertyID: r.PropertyID,
-		AuthorID:   r.AuthorID,
-		GuestID:    r.GuestID,
-		Rating:     r.Rating,
-		Comment:    r.Comment,
-		CreatedAt:  r.CreatedAt,
+		ID:          r.ID,
+		Kind:        string(r.Kind),
+		PropertyID:  r.PropertyID,
+		AuthorID:    r.AuthorID,
+		GuestID:     r.GuestID,
+		Rating:      r.Rating,
+		Comment:     r.Comment,
+		Response:    r.Response,
+		RespondedAt: r.RespondedAt,
+		CreatedAt:   r.CreatedAt,
 	}
 }
 

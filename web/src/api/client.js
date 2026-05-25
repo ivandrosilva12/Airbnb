@@ -128,6 +128,7 @@ export const api = {
 
   // Reviews
   createReview: (body) => request('POST', '/reviews', { body, auth: true }),
+  respondToReview: (reviewId, response) => request('POST', `/reviews/${reviewId}/response`, { body: { response }, auth: true }),
   createGuestReview: (body) => request('POST', '/reviews/guest', { body, auth: true }),
   myGuestReviews: () => request('GET', '/me/guest-reviews', { auth: true }),
   myPendingReviews: () => request('GET', '/me/reviews/pending', { auth: true }),

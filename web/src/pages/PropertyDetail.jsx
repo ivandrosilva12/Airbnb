@@ -146,10 +146,12 @@ export default function PropertyDetail() {
           <h3>{t('detail.reviews')}</h3>
           {reviews.length === 0 && <p>{t('detail.noReviews')}</p>}
           {reviews.map((r) => (
-            <div key={r.id} className="review">
-              <strong>★ {r.rating}</strong>
-              <p>{r.comment}</p>
-            </div>
+            <ReviewItem
+              key={r.id}
+              review={r}
+              canRespond={isOwnListing}
+              onResponded={(updated) => setReviews((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))}
+            />
           ))}
         </div>
 
@@ -205,6 +207,63 @@ export default function PropertyDetail() {
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+// ReviewItem renders a guest review and the host's reply. The owning host can
+// post one public response inline when a review has none yet.
+function ReviewItem({ review: r, canRespond, onResponded }) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.respondToReview(r.id, text.trim());
+      onResponded(updated);
+      setOpen(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="review">
+      <strong>★ {r.rating}</strong>
+      <p>{r.comment}</p>
+      {r.response ? (
+        <div className="review-response">
+          <strong>{t('detail.hostResponse')}</strong>
+          <p>{r.response}</p>
+        </div>
+      ) : canRespond && open ? (
+        <form className="review-respond" onSubmit={submit}>
+          <textarea
+            rows="2"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={t('detail.respondPlaceholder')}
+            required
+          />
+          {error && <p className="error">{error}</p>}
+          <div className="report-actions">
+            <button className="btn btn-primary" type="submit" disabled={busy}>
+              {busy ? t('detail.responding') : t('detail.respondSubmit')}
+            </button>
+            <button className="btn btn-ghost" type="button" onClick={() => setOpen(false)}>{t('common.cancel')}</button>
+          </div>
+        </form>
+      ) : canRespond ? (
+        <button className="btn-link-danger" onClick={() => setOpen(true)}>{t('detail.respond')}</button>
+      ) : null}
     </div>
   );
 }

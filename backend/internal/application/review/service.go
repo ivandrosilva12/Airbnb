@@ -27,6 +27,29 @@ func NewService(reviews review.Repository, bookings booking.Repository, properti
 	return &Service{reviews: reviews, bookings: bookings, properties: properties}
 }
 
+// RespondToReview lets the property's host publish a public reply to a guest's
+// review. Only the owning host may respond, and only to a property review.
+func (s *Service) RespondToReview(ctx context.Context, hostID, reviewID uuid.UUID, text string) (*review.Review, error) {
+	rv, err := s.reviews.FindByID(ctx, reviewID)
+	if err != nil {
+		return nil, err
+	}
+	prop, err := s.properties.FindByID(ctx, rv.PropertyID)
+	if err != nil {
+		return nil, err
+	}
+	if !prop.IsOwnedBy(hostID) {
+		return nil, shared.ErrForbidden
+	}
+	if err := rv.SetResponse(text); err != nil {
+		return nil, err
+	}
+	if err := s.reviews.Update(ctx, rv); err != nil {
+		return nil, err
+	}
+	return rv, nil
+}
+
 // CreateInput carries data to publish a property review (guest -> property).
 type CreateInput struct {
 	GuestID   uuid.UUID

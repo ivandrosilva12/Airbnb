@@ -425,6 +425,26 @@ func (r *ReviewRepository) Create(_ context.Context, rv *review.Review) error {
 	return nil
 }
 
+func (r *ReviewRepository) FindByID(_ context.Context, id uuid.UUID) (*review.Review, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if rv, ok := r.m[id]; ok {
+		c := rv
+		return &c, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *ReviewRepository) Update(_ context.Context, rv *review.Review) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[rv.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[rv.ID] = *rv
+	return nil
+}
+
 func (r *ReviewRepository) ExistsForBookingKind(_ context.Context, bookingID uuid.UUID, kind review.Kind) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
