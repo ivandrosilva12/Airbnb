@@ -197,6 +197,9 @@ a { color: inherit; text-decoration: none; }
 .muted-text { color: var(--muted); }
 .muted { color: var(--muted); font-size: .9rem; }
 .price-breakdown .bd-discount { color: #1a7f47; }
+.coupon-row { display: flex; gap: 8px; margin: 8px 0; }
+.coupon-row input { flex: 1; min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 8px; font-size: .9rem; text-transform: uppercase; }
+.coupon-msg { font-size: .82rem; margin: 4px 0; }
 .results-bar { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 16px; }
 .results-count { color: var(--muted); font-size: .9rem; }
 .view-toggle { display: inline-flex; border: 1px solid #ddd; border-radius: 999px; overflow: hidden; }

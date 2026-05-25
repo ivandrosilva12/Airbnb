@@ -8,6 +8,7 @@ import (
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/coupon"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
@@ -18,6 +19,7 @@ type fixture struct {
 	svc        *bookingapp.Service
 	bookings   *memory.BookingRepository
 	properties *memory.PropertyRepository
+	coupons    *memory.CouponRepository
 	hostID     uuid.UUID
 	guestID    uuid.UUID
 	prop       *property.Property
@@ -27,10 +29,11 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	bookings := memory.NewBookingRepository()
 	properties := memory.NewPropertyRepository()
+	coupons := memory.NewCouponRepository()
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
 	uow := memory.NewUnitOfWork(bookings, nil, nil, outbox, relay)
-	svc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), 0, uow)
+	svc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), coupons, 0, uow)
 
 	hostID := uuid.New()
 	price, _ := shared.NewMoney(10000, "EUR") // 100.00/night
@@ -48,7 +51,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatalf("store property: %v", err)
 	}
 
-	return &fixture{svc: svc, bookings: bookings, properties: properties, hostID: hostID, guestID: uuid.New(), prop: prop}
+	return &fixture{svc: svc, bookings: bookings, properties: properties, coupons: coupons, hostID: hostID, guestID: uuid.New(), prop: prop}
 }
 
 func days(n int) time.Time { return time.Now().UTC().AddDate(0, 0, n) }
@@ -63,6 +66,52 @@ func TestCreate_HappyPathDerivesPrice(t *testing.T) {
 	}
 	if b.TotalPrice().AmountCents() != 30000 { // 3 nights * 100.00, no fees in fixture
 		t.Errorf("total = %d, want 30000", b.TotalPrice().AmountCents())
+	}
+}
+
+func TestCreate_AppliesCouponAndRedeems(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	c, err := coupon.NewPercentage("SAVE10", 0.10, 0, 5, nil)
+	if err != nil {
+		t.Fatalf("new coupon: %v", err)
+	}
+	if err := f.coupons.Create(ctx, c); err != nil {
+		t.Fatalf("store coupon: %v", err)
+	}
+
+	b, err := f.svc.Create(ctx, bookingapp.CreateInput{
+		GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 2,
+		CouponCode: "save10", // case-insensitive
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// 3 nights * 100.00 = 30000; 10% promo => 3000 discount, no fees in fixture.
+	if b.Pricing.Discount.AmountCents() != 3000 {
+		t.Errorf("discount = %d, want 3000", b.Pricing.Discount.AmountCents())
+	}
+	if b.TotalPrice().AmountCents() != 27000 {
+		t.Errorf("total = %d, want 27000", b.TotalPrice().AmountCents())
+	}
+	// The redemption was recorded.
+	reloaded, err := f.coupons.FindByCode(ctx, "SAVE10")
+	if err != nil {
+		t.Fatalf("reload coupon: %v", err)
+	}
+	if reloaded.Redemptions != 1 {
+		t.Errorf("redemptions = %d, want 1", reloaded.Redemptions)
+	}
+}
+
+func TestCreate_InvalidCouponFailsBooking(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.svc.Create(context.Background(), bookingapp.CreateInput{
+		GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 2,
+		CouponCode: "NOPE",
+	})
+	if err == nil {
+		t.Fatal("expected an unknown coupon code to fail the booking")
 	}
 }
 

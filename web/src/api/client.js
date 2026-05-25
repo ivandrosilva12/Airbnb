@@ -113,6 +113,11 @@ export const api = {
   adminSuspendProperty: (id) => request('POST', `/admin/properties/${id}/suspend`, { auth: true }),
   adminUnsuspendProperty: (id) => request('POST', `/admin/properties/${id}/unsuspend`, { auth: true }),
 
+  // Promo codes (admin)
+  adminListCoupons: () => request('GET', '/admin/coupons', { auth: true }),
+  adminCreateCoupon: (body) => request('POST', '/admin/coupons', { body, auth: true }),
+  adminDeactivateCoupon: (id) => request('POST', `/admin/coupons/${id}/deactivate`, { auth: true }),
+
   // Live alert state (firing + recently resolved), pushed by Alertmanager
   adminListAlerts: () => request('GET', '/admin/alerts', { auth: true }),
 
@@ -123,6 +128,7 @@ export const api = {
 
   // Bookings
   createBooking: (body) => request('POST', '/bookings', { body, auth: true }),
+  previewCoupon: (body) => request('POST', '/bookings/preview-coupon', { body, auth: true }),
   myBookings: () => request('GET', '/bookings/me', { auth: true }),
   cancelBooking: (id) => request('POST', `/bookings/${id}/cancel`, { auth: true }),
 

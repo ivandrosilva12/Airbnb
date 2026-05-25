@@ -13,6 +13,7 @@ import (
 
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/coupon"
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
@@ -41,6 +42,7 @@ var (
 	_ block.Repository        = (*BlockRepository)(nil)
 	_ identity.Repository     = (*IdentityRepository)(nil)
 	_ report.Repository       = (*ReportRepository)(nil)
+	_ coupon.Repository       = (*CouponRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -1421,4 +1423,74 @@ func containsAll(haystack, needles []string) bool {
 		}
 	}
 	return true
+}
+
+// --- Coupons -----------------------------------------------------------------
+
+// CouponRepository is an in-memory coupon.Repository.
+type CouponRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]coupon.Coupon
+}
+
+// NewCouponRepository builds an empty in-memory coupon repository.
+func NewCouponRepository() *CouponRepository {
+	return &CouponRepository{m: map[uuid.UUID]coupon.Coupon{}}
+}
+
+func (r *CouponRepository) Create(_ context.Context, c *coupon.Coupon) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, existing := range r.m {
+		if strings.EqualFold(existing.Code, c.Code) {
+			return shared.ErrConflict
+		}
+	}
+	r.m[c.ID] = *c
+	return nil
+}
+
+func (r *CouponRepository) Update(_ context.Context, c *coupon.Coupon) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[c.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[c.ID] = *c
+	return nil
+}
+
+func (r *CouponRepository) FindByID(_ context.Context, id uuid.UUID) (*coupon.Coupon, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if c, ok := r.m[id]; ok {
+		cp := c
+		return &cp, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *CouponRepository) FindByCode(_ context.Context, code string) (*coupon.Coupon, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	code = coupon.NormalizeCode(code)
+	for _, c := range r.m {
+		if strings.EqualFold(c.Code, code) {
+			cp := c
+			return &cp, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *CouponRepository) List(_ context.Context, page shared.Page) (shared.PageResult[*coupon.Coupon], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*coupon.Coupon
+	for _, c := range r.m {
+		cp := c
+		all = append(all, &cp)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
+	return paginate(all, page), nil
 }

@@ -32,6 +32,7 @@ type Handlers struct {
 	ConnectWebhook *handler.ConnectWebhookHandler
 	Alert          *handler.AlertHandler
 	Privacy        *handler.PrivacyHandler
+	Coupon         *handler.CouponHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -130,6 +131,7 @@ func NewRouter(d Deps) *gin.Engine {
 
 		// Bookings.
 		auth.POST("/bookings", h.Booking.Create)
+		auth.POST("/bookings/preview-coupon", h.Booking.PreviewCoupon)
 		auth.GET("/bookings/me", h.Booking.ListMine)
 		auth.GET("/bookings/:id", h.Booking.Get)
 		auth.POST("/bookings/:id/cancel", h.Booking.Cancel)
@@ -227,6 +229,11 @@ func NewRouter(d Deps) *gin.Engine {
 			admin.GET("/reports", h.Report.ListOpen)
 			admin.POST("/reports/:id/resolve", h.Report.Resolve)
 			admin.POST("/reports/:id/dismiss", h.Report.Dismiss)
+
+			// Promo codes
+			admin.GET("/coupons", h.Coupon.List)
+			admin.POST("/coupons", h.Coupon.Create)
+			admin.POST("/coupons/:id/deactivate", h.Coupon.Deactivate)
 
 			// Webhook dedupe-table retention/cleanup.
 			admin.POST("/webhooks/events/cleanup", h.PaymentWebhook.Cleanup)

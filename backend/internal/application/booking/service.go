@@ -5,12 +5,14 @@ package bookingapp
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/coupon"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
@@ -21,6 +23,7 @@ type Service struct {
 	bookings       booking.Repository
 	properties     property.Repository
 	blocks         block.Repository
+	coupons        coupon.Repository
 	serviceFeeRate float64
 	uow            port.UnitOfWork
 }
@@ -28,8 +31,8 @@ type Service struct {
 // NewService wires the booking application service. serviceFeeRate is the
 // platform fee applied to each booking (e.g. 0.12 for 12%). The UnitOfWork makes
 // the booking write and its domain event commit atomically.
-func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, serviceFeeRate float64, uow port.UnitOfWork) *Service {
-	return &Service{bookings: bookings, properties: properties, blocks: blocks, serviceFeeRate: serviceFeeRate, uow: uow}
+func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, coupons coupon.Repository, serviceFeeRate float64, uow port.UnitOfWork) *Service {
+	return &Service{bookings: bookings, properties: properties, blocks: blocks, coupons: coupons, serviceFeeRate: serviceFeeRate, uow: uow}
 }
 
 // emit runs the booking write and records the event(s) in one transaction, so
@@ -61,6 +64,7 @@ type CreateInput struct {
 	CheckIn    time.Time
 	CheckOut   time.Time
 	Guests     int
+	CouponCode string // optional promo code
 }
 
 // Create makes a reservation, enforcing availability and capacity rules.
@@ -97,10 +101,29 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		return nil, shared.NewValidationError("selected dates are blocked by the host")
 	}
 
+	// Resolve an optional promo code into an absolute discount before pricing.
+	// An invalid/expired/inapplicable code fails the booking so the guest learns
+	// why rather than being silently charged full price.
+	couponCents := int64(0)
+	var appliedCoupon *coupon.Coupon
+	if code := coupon.NormalizeCode(in.CouponCode); code != "" {
+		cp, err := s.couponByCode(ctx, code)
+		if err != nil {
+			return nil, err
+		}
+		grossSubtotal := prop.PricePerNight.AmountCents() * int64(dates.Nights())
+		couponCents, err = cp.DiscountFor(grossSubtotal, prop.PricePerNight.Currency(), dates.Nights())
+		if err != nil {
+			return nil, err
+		}
+		appliedCoupon = cp
+	}
+
 	b, err := booking.NewBooking(in.PropertyID, in.GuestID, dates, in.Guests, prop.PricePerNight, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
-		WeeklyPct:  prop.PricingPolicy.WeeklyDiscountPct,
-		MonthlyPct: prop.PricingPolicy.MonthlyDiscountPct,
-		TaxPct:     prop.PricingPolicy.TaxRatePct,
+		WeeklyPct:   prop.PricingPolicy.WeeklyDiscountPct,
+		MonthlyPct:  prop.PricingPolicy.MonthlyDiscountPct,
+		TaxPct:      prop.PricingPolicy.TaxRatePct,
+		CouponCents: couponCents,
 	})
 	if err != nil {
 		return nil, err
@@ -138,7 +161,59 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	); err != nil {
 		return nil, err
 	}
+	// Record the redemption once the booking is safely persisted. Best-effort: a
+	// failure here must not undo a confirmed reservation. (Under heavy concurrency
+	// this can slightly overshoot MaxRedemptions; acceptable for a promo code.)
+	if appliedCoupon != nil {
+		if err := appliedCoupon.Redeem(); err == nil {
+			_ = s.coupons.Update(ctx, appliedCoupon)
+		}
+	}
 	return b, nil
+}
+
+// couponByCode loads a coupon, mapping a missing code to a friendly validation
+// error rather than a bare not-found.
+func (s *Service) couponByCode(ctx context.Context, code string) (*coupon.Coupon, error) {
+	cp, err := s.coupons.FindByCode(ctx, code)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil, shared.NewValidationError("invalid coupon code")
+		}
+		return nil, err
+	}
+	return cp, nil
+}
+
+// CouponPreview is the read-model behind "apply code" in the booking UI: the
+// discount a code would yield for a given property and date range.
+type CouponPreview struct {
+	Code          string
+	DiscountCents int64
+	Currency      string
+}
+
+// PreviewCoupon computes (without redeeming) the discount a code yields for a
+// property and stay length, so the UI can show it before the guest books.
+func (s *Service) PreviewCoupon(ctx context.Context, propertyID uuid.UUID, code string, checkIn, checkOut time.Time) (CouponPreview, error) {
+	prop, err := s.properties.FindByID(ctx, propertyID)
+	if err != nil {
+		return CouponPreview{}, err
+	}
+	dates, err := booking.NewDateRange(checkIn, checkOut)
+	if err != nil {
+		return CouponPreview{}, err
+	}
+	cp, err := s.couponByCode(ctx, coupon.NormalizeCode(code))
+	if err != nil {
+		return CouponPreview{}, err
+	}
+	grossSubtotal := prop.PricePerNight.AmountCents() * int64(dates.Nights())
+	cents, err := cp.DiscountFor(grossSubtotal, prop.PricePerNight.Currency(), dates.Nights())
+	if err != nil {
+		return CouponPreview{}, err
+	}
+	return CouponPreview{Code: cp.Code, DiscountCents: cents, Currency: prop.PricePerNight.Currency()}, nil
 }
 
 // GetByID fetches a reservation, ensuring the actor is a participant.

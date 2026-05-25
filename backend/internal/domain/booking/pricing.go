@@ -13,14 +13,13 @@ const (
 )
 
 // Pricing is a value object describing the full cost breakdown of a stay:
-// the nightly subtotal, any length-of-stay discount, the host's cleaning fee,
-// the platform service fee, occupancy tax and the resulting total. Computing
-// this in the domain keeps pricing rules in one place and out of the
-// transport/UI layers.
+// the nightly subtotal, any discount, the host's cleaning fee, the platform
+// service fee, occupancy tax and the resulting total. Computing this in the
+// domain keeps pricing rules in one place and out of the transport/UI layers.
 type Pricing struct {
 	Nights      int
 	Subtotal    shared.Money // pricePerNight * nights (gross, before discount)
-	Discount    shared.Money // length-of-stay discount deducted from the subtotal
+	Discount    shared.Money // total discount: length-of-stay plus any promo code
 	CleaningFee shared.Money
 	ServiceFee  shared.Money // round((subtotal - discount + cleaning) * serviceFeeRate)
 	Tax         shared.Money // round((subtotal - discount + cleaning) * taxRate)
@@ -28,11 +27,13 @@ type Pricing struct {
 }
 
 // Discounts carries the length-of-stay discount and tax fractions a listing
-// applies. All values are fractions in [0,1]; zero means no discount/tax.
+// applies, plus any absolute promo-code discount. The fractions are in [0,1];
+// CouponCents is an absolute amount in the nightly price's currency.
 type Discounts struct {
-	WeeklyPct  float64
-	MonthlyPct float64
-	TaxPct     float64
+	WeeklyPct   float64
+	MonthlyPct  float64
+	TaxPct      float64
+	CouponCents int64
 }
 
 // discountPctForNights picks the best qualifying length-of-stay discount.
@@ -60,7 +61,17 @@ func ComputePricing(pricePerNight, cleaningFee shared.Money, nights int, service
 
 	subtotal := pricePerNight.Mul(int64(nights))
 
-	discountCents := int64(math.Round(float64(subtotal.AmountCents()) * discounts.discountPctForNights(nights)))
+	// Length-of-stay discount plus any promo-code discount, folded into a single
+	// discount line and capped so it never exceeds the accommodation subtotal.
+	losCents := int64(math.Round(float64(subtotal.AmountCents()) * discounts.discountPctForNights(nights)))
+	couponCents := discounts.CouponCents
+	if couponCents < 0 {
+		couponCents = 0
+	}
+	discountCents := losCents + couponCents
+	if discountCents > subtotal.AmountCents() {
+		discountCents = subtotal.AmountCents()
+	}
 	discount, err := shared.NewMoney(discountCents, currency)
 	if err != nil {
 		return Pricing{}, err

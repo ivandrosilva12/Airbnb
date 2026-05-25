@@ -15,6 +15,7 @@ import (
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/coupon"
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
@@ -328,6 +329,58 @@ func FromCollection(c favorite.CollectionWithCount) CollectionView {
 // FromNewCollection maps a freshly created collection (count 0) to its view.
 func FromNewCollection(c *favorite.Collection) CollectionView {
 	return CollectionView{ID: c.ID, Name: c.Name, Count: 0, CreatedAt: c.CreatedAt}
+}
+
+// CouponView is the public representation of a promo code.
+type CouponView struct {
+	ID             uuid.UUID  `json:"id"`
+	Code           string     `json:"code"`
+	Kind           string     `json:"kind"`
+	Percent        float64    `json:"percent,omitempty"`
+	Amount         *MoneyView `json:"amount,omitempty"`
+	MinNights      int        `json:"minNights"`
+	MaxRedemptions int        `json:"maxRedemptions"`
+	Redemptions    int        `json:"redemptions"`
+	ExpiresAt      *time.Time `json:"expiresAt,omitempty"`
+	Active         bool       `json:"active"`
+	CreatedAt      time.Time  `json:"createdAt"`
+}
+
+// FromCoupon maps a coupon aggregate to its view.
+func FromCoupon(c *coupon.Coupon) CouponView {
+	v := CouponView{
+		ID:             c.ID,
+		Code:           c.Code,
+		Kind:           string(c.Kind),
+		MinNights:      c.MinNights,
+		MaxRedemptions: c.MaxRedemptions,
+		Redemptions:    c.Redemptions,
+		ExpiresAt:      c.ExpiresAt,
+		Active:         c.Active,
+		CreatedAt:      c.CreatedAt,
+	}
+	switch c.Kind {
+	case coupon.KindPercentage:
+		v.Percent = c.Percent
+	case coupon.KindFixed:
+		if m, err := shared.NewMoney(c.AmountCents, c.Currency); err == nil {
+			mv := fromMoney(m)
+			v.Amount = &mv
+		}
+	}
+	return v
+}
+
+// CouponPreviewView renders the discount a code would yield for a stay.
+type CouponPreviewView struct {
+	Code     string    `json:"code"`
+	Discount MoneyView `json:"discount"`
+}
+
+// FromCouponPreview maps a coupon preview to its view.
+func FromCouponPreview(p bookingapp.CouponPreview) CouponPreviewView {
+	m, _ := shared.NewMoney(p.DiscountCents, p.Currency)
+	return CouponPreviewView{Code: p.Code, Discount: fromMoney(m)}
 }
 
 // ConversationView is the public representation of a message thread.

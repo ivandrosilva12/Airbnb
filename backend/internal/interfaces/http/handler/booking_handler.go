@@ -29,6 +29,7 @@ type createBookingRequest struct {
 	CheckIn    string `json:"checkIn" binding:"required"`
 	CheckOut   string `json:"checkOut" binding:"required"`
 	Guests     int    `json:"guests" binding:"required"`
+	CouponCode string `json:"couponCode"`
 }
 
 // Create makes a reservation for the authenticated guest.
@@ -61,6 +62,7 @@ func (h *BookingHandler) Create(c *gin.Context) {
 		CheckIn:    checkIn,
 		CheckOut:   checkOut,
 		Guests:     req.Guests,
+		CouponCode: req.CouponCode,
 	})
 	if err != nil {
 		response.Fail(c, err)
@@ -68,6 +70,45 @@ func (h *BookingHandler) Create(c *gin.Context) {
 	}
 	h.metrics.BookingsCreated.Inc()
 	response.Created(c, dto.FromBooking(b))
+}
+
+type previewCouponRequest struct {
+	PropertyID string `json:"propertyId" binding:"required"`
+	CheckIn    string `json:"checkIn" binding:"required"`
+	CheckOut   string `json:"checkOut" binding:"required"`
+	Code       string `json:"code" binding:"required"`
+}
+
+// PreviewCoupon returns the discount a promo code would yield for a stay, so the
+// guest can see it before reserving.
+func (h *BookingHandler) PreviewCoupon(c *gin.Context) {
+	if _, ok := requireUser(c); !ok {
+		return
+	}
+	var req previewCouponRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	propertyID, ok := parseUUID(c, req.PropertyID, "propertyId")
+	if !ok {
+		return
+	}
+	checkIn, err := time.Parse("2006-01-02", req.CheckIn)
+	if err != nil {
+		response.FailMessage(c, http.StatusBadRequest, "checkIn must be YYYY-MM-DD")
+		return
+	}
+	checkOut, err := time.Parse("2006-01-02", req.CheckOut)
+	if err != nil {
+		response.FailMessage(c, http.StatusBadRequest, "checkOut must be YYYY-MM-DD")
+		return
+	}
+	preview, err := h.svc.PreviewCoupon(c.Request.Context(), propertyID, req.Code, checkIn, checkOut)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromCouponPreview(preview))
 }
 
 // Get returns a single reservation the actor participates in.

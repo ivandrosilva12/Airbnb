@@ -39,6 +39,9 @@ export default function PropertyDetail() {
   const [summary, setSummary] = useState(null);
   const [booked, setBooked] = useState([]);
   const [form, setForm] = useState({ checkIn: '', checkOut: '', guests: 1 });
+  const [coupon, setCoupon] = useState('');
+  const [couponInfo, setCouponInfo] = useState(null);
+  const [couponError, setCouponError] = useState(null);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
 
@@ -67,11 +70,36 @@ export default function PropertyDetail() {
         checkIn: form.checkIn,
         checkOut: form.checkOut,
         guests: Number(form.guests),
+        couponCode: coupon.trim() || undefined,
       });
       setMessage(t('detail.booked', { nights: booking.nights, total: booking.totalPrice.display, status: booking.status }));
       api.availability(id).then((a) => setBooked(a.booked || [])).catch(() => {});
     } catch (e) {
       setError(e.message);
+    }
+  }
+
+  async function applyCoupon() {
+    setCouponError(null);
+    setCouponInfo(null);
+    if (!authenticated) {
+      login();
+      return;
+    }
+    if (!form.checkIn || !form.checkOut) {
+      setCouponError(t('detail.couponNeedDates'));
+      return;
+    }
+    try {
+      const res = await api.previewCoupon({
+        propertyId: id,
+        checkIn: form.checkIn,
+        checkOut: form.checkOut,
+        code: coupon.trim(),
+      });
+      setCouponInfo(res);
+    } catch (e) {
+      setCouponError(e.message);
     }
   }
 
@@ -110,6 +138,7 @@ export default function PropertyDetail() {
         ? property.weeklyDiscountPct
         : 0;
   const discountCents = Math.round(subtotalCents * discountPct);
+  const couponCents = couponInfo?.discount?.amountCents || 0;
 
   return (
     <div className="container detail">
@@ -195,11 +224,25 @@ export default function PropertyDetail() {
               <div className="price-breakdown">
                 <div><span>{t('detail.nights', { price: property.pricePerNight.display, n: nights })}</span><span>{fmt(subtotalCents)}</span></div>
                 {discountCents > 0 && <div className="bd-discount"><span>{t('detail.discount', { pct: Math.round(discountPct * 100) })}</span><span>-{fmt(discountCents)}</span></div>}
+                {couponCents > 0 && <div className="bd-discount"><span>{t('detail.couponDiscount', { code: couponInfo.code })}</span><span>-{fmt(couponCents)}</span></div>}
                 {cleaningCents > 0 && <div><span>{t('detail.cleaningFee')}</span><span>{fmt(cleaningCents)}</span></div>}
                 <div className="muted">{t('detail.serviceNote')}</div>
-                <div className="bd-total"><span>{t('detail.beforeFees')}</span><span>{fmt(subtotalCents - discountCents + cleaningCents)}</span></div>
+                <div className="bd-total"><span>{t('detail.beforeFees')}</span><span>{fmt(Math.max(0, subtotalCents - discountCents - couponCents) + cleaningCents)}</span></div>
               </div>
             )}
+            <div className="coupon-row">
+              <input
+                placeholder={t('detail.couponPlaceholder')}
+                value={coupon}
+                aria-label={t('detail.couponPlaceholder')}
+                onChange={(e) => { setCoupon(e.target.value); setCouponInfo(null); setCouponError(null); }}
+              />
+              <button className="btn btn-ghost" type="button" onClick={applyCoupon} disabled={!coupon.trim()}>
+                {t('detail.couponApply')}
+              </button>
+            </div>
+            {couponInfo && <p className="success coupon-msg">{t('detail.couponApplied', { discount: couponInfo.discount.display })}</p>}
+            {couponError && <p className="error coupon-msg">{couponError}</p>}
             <button className="btn btn-primary block" type="submit">
               {!authenticated
                 ? t('detail.signInReserve')

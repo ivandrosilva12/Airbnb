@@ -20,6 +20,7 @@ import (
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	blockapp "github.com/airhost/backend/internal/application/block"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	couponapp "github.com/airhost/backend/internal/application/coupon"
 	emailapp "github.com/airhost/backend/internal/application/email"
 	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
@@ -111,6 +112,7 @@ func run() error {
 	blockRepo := postgres.NewBlockRepository(pool)
 	identityRepo := postgres.NewIdentityRepository(pool)
 	reportRepo := postgres.NewReportRepository(pool)
+	couponRepo := postgres.NewCouponRepository(pool)
 	webhookEventRepo := postgres.NewWebhookEventRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
@@ -127,7 +129,7 @@ func run() error {
 	// --- Application services ---------------------------------------------
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, objectStore)
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, cfg.Pricing.ServiceFeeRate, uow)
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, cfg.Pricing.ServiceFeeRate, uow)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, objectStore, uow)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
@@ -141,6 +143,7 @@ func run() error {
 	privacySvc := privacyapp.NewService(userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo)
 	identitySvc := identityapp.NewService(identityRepo, uow)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
+	couponSvc := couponapp.NewService(couponRepo)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
 	alertStateSvc := alertstateapp.NewService()
 	realtimeHub := realtime.NewHub()
@@ -196,6 +199,7 @@ func run() error {
 			ConnectWebhook: handler.NewConnectWebhookHandler(payoutSvc, paymentgw.NewConnectWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
 			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc, cfg.Alerting.WebhookToken),
 			Privacy:        handler.NewPrivacyHandler(privacySvc),
+			Coupon:         handler.NewCouponHandler(couponSvc),
 		},
 	})
 

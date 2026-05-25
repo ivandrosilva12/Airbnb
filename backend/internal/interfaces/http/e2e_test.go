@@ -17,6 +17,7 @@ import (
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	blockapp "github.com/airhost/backend/internal/application/block"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	couponapp "github.com/airhost/backend/internal/application/coupon"
 	emailapp "github.com/airhost/backend/internal/application/email"
 	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
@@ -90,6 +91,7 @@ func newHarness(t *testing.T) *harness {
 	blockRepo := memory.NewBlockRepository()
 	identityRepo := memory.NewIdentityRepository()
 	reportRepo := memory.NewReportRepository()
+	couponRepo := memory.NewCouponRepository()
 
 	dispatcher := event.NewDispatcher()
 	outbox := event.NewMemoryOutbox()
@@ -98,7 +100,7 @@ func newHarness(t *testing.T) *harness {
 
 	userSvc := userapp.NewService(userRepo)
 	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{})
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, 0.10, uow) // 10% service fee
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, 0.10, uow) // 10% service fee
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, fakeStorage{}, uow)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
@@ -112,6 +114,7 @@ func newHarness(t *testing.T) *harness {
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewFakeDisburser(), paymentgw.NewFakeConnectGateway())
 	identitySvc := identityapp.NewService(identityRepo, uow)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
+	couponSvc := couponapp.NewService(couponRepo)
 	silencer := newMemSilencer()
 	alertingSvc := alertingapp.NewService(silencer)
 	alertStateSvc := alertstateapp.NewService()
@@ -173,6 +176,7 @@ func newHarness(t *testing.T) *harness {
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(config.PaymentConfig{GPayAngola: config.GPayAngolaConfig{WebhookSecret: webhookSecret}}), memory.NewWebhookEventRepository(), metrics),
 			ConnectWebhook: handler.NewConnectWebhookHandler(payoutSvc, nil, memory.NewWebhookEventRepository(), metrics),
 			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc, ""),
+			Coupon:         handler.NewCouponHandler(couponSvc),
 		},
 	})
 

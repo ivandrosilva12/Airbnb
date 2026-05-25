@@ -13,8 +13,176 @@ export default function Admin() {
       <ActiveAlertsPanel />
       <VerificationQueue />
       <ReportQueue />
+      <CouponsPanel />
       <SilencesPanel />
     </div>
+  );
+}
+
+// CouponsPanel lets an admin mint promo codes (percentage or fixed amount) and
+// deactivate existing ones.
+function CouponsPanel() {
+  const { t } = useT();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [form, setForm] = useState({
+    code: '', kind: 'percentage', percent: 10, amountCents: 1000,
+    currency: 'EUR', minNights: 0, maxRedemptions: 0, expiresAt: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.adminListCoupons();
+      setItems(res.items || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function create(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const body = {
+        code: form.code.trim(),
+        kind: form.kind,
+        minNights: Number(form.minNights) || 0,
+        maxRedemptions: Number(form.maxRedemptions) || 0,
+        expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : '',
+      };
+      if (form.kind === 'percentage') {
+        body.percent = Number(form.percent) / 100; // UI is whole percent
+      } else {
+        body.amountCents = Math.round(Number(form.amountCents));
+        body.currency = form.currency.trim().toUpperCase();
+      }
+      await api.adminCreateCoupon(body);
+      setForm({ ...form, code: '' });
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deactivate(id) {
+    setError(null);
+    try {
+      await api.adminDeactivateCoupon(id);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function describe(c) {
+    if (c.kind === 'percentage') return `${Math.round(c.percent * 100)}%`;
+    return c.amount ? c.amount.display : '';
+  }
+
+  return (
+    <section>
+      <h2>{t('admin.couponsTitle')}</h2>
+      <p className="muted">{t('admin.couponsHelp')}</p>
+      {error && <p className="error">{error}</p>}
+
+      <form className="silence-form" onSubmit={create}>
+        <label>
+          {t('admin.couponCode')}
+          <input type="text" value={form.code} placeholder="SUMMER25" onChange={(e) => setForm({ ...form, code: e.target.value })} required />
+        </label>
+        <label>
+          {t('admin.couponKind')}
+          <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+            <option value="percentage">{t('admin.couponPercentage')}</option>
+            <option value="fixed">{t('admin.couponFixed')}</option>
+          </select>
+        </label>
+        {form.kind === 'percentage' ? (
+          <label>
+            {t('admin.couponPercent')}
+            <input type="number" min="1" max="100" value={form.percent} onChange={(e) => setForm({ ...form, percent: e.target.value })} />
+          </label>
+        ) : (
+          <>
+            <label>
+              {t('admin.couponAmountCents')}
+              <input type="number" min="1" value={form.amountCents} onChange={(e) => setForm({ ...form, amountCents: e.target.value })} />
+            </label>
+            <label>
+              {t('admin.couponCurrency')}
+              <input type="text" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
+            </label>
+          </>
+        )}
+        <label>
+          {t('admin.couponMinNights')}
+          <input type="number" min="0" value={form.minNights} onChange={(e) => setForm({ ...form, minNights: e.target.value })} />
+        </label>
+        <label>
+          {t('admin.couponMaxRedemptions')}
+          <input type="number" min="0" value={form.maxRedemptions} onChange={(e) => setForm({ ...form, maxRedemptions: e.target.value })} />
+        </label>
+        <label>
+          {t('admin.couponExpires')}
+          <input type="date" value={form.expiresAt} onChange={(e) => setForm({ ...form, expiresAt: e.target.value })} />
+        </label>
+        <button className="btn btn-primary" type="submit" disabled={saving}>{t('admin.couponCreate')}</button>
+      </form>
+
+      {loading ? (
+        <p>{t('common.loading')}</p>
+      ) : items.length === 0 ? (
+        <p className="muted">{t('admin.couponsEmpty')}</p>
+      ) : (
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>{t('admin.couponCode')}</th>
+              <th>{t('admin.couponValue')}</th>
+              <th>{t('admin.couponMinNights')}</th>
+              <th>{t('admin.couponUses')}</th>
+              <th>{t('admin.couponExpires')}</th>
+              <th>{t('admin.silenceStatus')}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((c) => (
+              <tr key={c.id} className={c.active ? '' : 'row-muted'}>
+                <td><code>{c.code}</code></td>
+                <td>{describe(c)}</td>
+                <td>{c.minNights || '—'}</td>
+                <td>{c.redemptions}{c.maxRedemptions > 0 ? ` / ${c.maxRedemptions}` : ''}</td>
+                <td>{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : '—'}</td>
+                <td>
+                  <span className={`badge ${c.active ? 'badge-ok' : 'badge-firing'}`}>
+                    {c.active ? t('admin.couponActive') : t('admin.couponInactive')}
+                  </span>
+                </td>
+                <td className="admin-actions">
+                  {c.active && (
+                    <button className="btn btn-ghost" onClick={() => deactivate(c.id)}>{t('admin.couponDeactivate')}</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
 
