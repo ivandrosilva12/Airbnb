@@ -10,6 +10,7 @@ import Notifications from './pages/Notifications';
 import HostDashboard from './pages/HostDashboard';
 import HostBookings from './pages/HostBookings';
 import CreateListing from './pages/CreateListing';
+import EditListing from './pages/EditListing';
 import HostPhotos from './pages/HostPhotos';
 import HostEarnings from './pages/HostEarnings';
 import Settings from './pages/Settings';
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="/admin" element={<Protected><Admin /></Protected>} />
             <Route path="/host" element={<Protected><HostDashboard /></Protected>} />
             <Route path="/host/new" element={<Protected><CreateListing /></Protected>} />
+            <Route path="/host/properties/:id/edit" element={<Protected><EditListing /></Protected>} />
             <Route path="/host/earnings" element={<Protected><HostEarnings /></Protected>} />
             <Route path="/host/properties/:id/bookings" element={<Protected><HostBookings /></Protected>} />
             <Route path="/host/properties/:id/photos" element={<Protected><HostPhotos /></Protected>} />

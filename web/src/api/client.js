@@ -144,6 +144,7 @@ export const api = {
   refreshPayoutAccount: () => request('POST', '/host/payouts/account/refresh', { auth: true }),
   myProperties: () => request('GET', '/host/properties', { auth: true }),
   createProperty: (body) => request('POST', '/properties', { body, auth: true }),
+  updateProperty: (id, body) => request('PATCH', `/properties/${id}`, { body, auth: true }),
   publishProperty: (id) => request('POST', `/properties/${id}/publish`, { auth: true }),
   deleteProperty: (id) => request('DELETE', `/properties/${id}`, { auth: true }),
   uploadPhoto: (id, file) => {
