@@ -84,11 +84,25 @@ func (g *StripeGateway) do(ctx context.Context, path string, form url.Values, id
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+g.secretKey)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if idempotencyKey != "" {
 		req.Header.Set("Idempotency-Key", idempotencyKey)
 	}
+	return g.send(req, out)
+}
+
+// get performs a GET against the Stripe API, decoding the JSON body into out.
+func (g *StripeGateway) get(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	return g.send(req, out)
+}
+
+// send authenticates the request, executes it, and maps Stripe API errors.
+func (g *StripeGateway) send(req *http.Request, out any) error {
+	req.Header.Set("Authorization", "Bearer "+g.secretKey)
 
 	res, err := g.http.Do(req)
 	if err != nil {

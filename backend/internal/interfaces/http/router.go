@@ -177,6 +177,8 @@ func NewRouter(d Deps) *gin.Engine {
 			host.GET("/host/payouts/available", h.Payout.Available)
 			host.GET("/host/payouts", h.Payout.ListDisbursements)
 			host.POST("/host/payouts", h.Payout.RequestDisbursement)
+			host.POST("/host/payouts/onboard", h.Payout.Onboard)
+			host.POST("/host/payouts/account/refresh", h.Payout.RefreshAccount)
 			host.POST("/properties", h.Property.Create)
 			host.PATCH("/properties/:id", h.Property.Update)
 			host.DELETE("/properties/:id", h.Property.Delete)

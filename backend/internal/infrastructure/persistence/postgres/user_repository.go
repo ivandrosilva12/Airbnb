@@ -19,14 +19,14 @@ func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 }
 
 const userColumns = `id, keycloak_sub, email, full_name, role, avatar_url, is_active,
-	email_opt_bookings, email_opt_messages, created_at, updated_at`
+	email_opt_bookings, email_opt_messages, payout_account_id, payouts_enabled, created_at, updated_at`
 
 func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO users (`+userColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 		u.ID, u.KeycloakSub, u.Email, u.FullName, string(u.Role), u.AvatarURL, u.IsActive,
-		u.EmailPrefs.Bookings, u.EmailPrefs.Messages, u.CreatedAt, u.UpdatedAt,
+		u.EmailPrefs.Bookings, u.EmailPrefs.Messages, u.PayoutAccountID, u.PayoutsEnabled, u.CreatedAt, u.UpdatedAt,
 	)
 	return mapError(err)
 }
@@ -35,10 +35,10 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 	_, err := r.pool.Exec(ctx, `
 		UPDATE users
 		SET email=$2, full_name=$3, role=$4, avatar_url=$5, is_active=$6,
-			email_opt_bookings=$7, email_opt_messages=$8, updated_at=$9
+			email_opt_bookings=$7, email_opt_messages=$8, payout_account_id=$9, payouts_enabled=$10, updated_at=$11
 		WHERE id=$1`,
 		u.ID, u.Email, u.FullName, string(u.Role), u.AvatarURL, u.IsActive,
-		u.EmailPrefs.Bookings, u.EmailPrefs.Messages, u.UpdatedAt,
+		u.EmailPrefs.Bookings, u.EmailPrefs.Messages, u.PayoutAccountID, u.PayoutsEnabled, u.UpdatedAt,
 	)
 	return mapError(err)
 }
@@ -62,7 +62,7 @@ func (r *UserRepository) findBy(ctx context.Context, where string, arg any) (*us
 		role string
 	)
 	err := row.Scan(&u.ID, &u.KeycloakSub, &u.Email, &u.FullName, &role, &u.AvatarURL, &u.IsActive,
-		&u.EmailPrefs.Bookings, &u.EmailPrefs.Messages, &u.CreatedAt, &u.UpdatedAt)
+		&u.EmailPrefs.Bookings, &u.EmailPrefs.Messages, &u.PayoutAccountID, &u.PayoutsEnabled, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, mapError(err)
 	}

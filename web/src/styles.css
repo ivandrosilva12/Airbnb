@@ -236,6 +236,8 @@ a { color: inherit; text-decoration: none; }
 .badge-payout-pending { background: #fff4e5; color: #b26a00; }
 .badge-payout-failed { background: #fdecea; color: #c0392b; }
 .balance-card .btn { margin-top: 12px; }
+.payout-onboard { border: 1px dashed var(--border, #ddd); border-radius: 12px; padding: 20px; max-width: 560px; margin-bottom: 24px; }
+.payout-onboard .muted { margin: 0 0 12px; }
 
 /* Admin moderation tables */
 .admin-table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }

@@ -86,8 +86,14 @@ type User struct {
 	AvatarURL   string
 	IsActive    bool
 	EmailPrefs  EmailPreferences
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// PayoutAccountID is the host's Stripe Connect connected-account id (acct_…),
+	// set when they begin payout onboarding. PayoutsEnabled mirrors the account's
+	// payouts_enabled flag — true once onboarding is complete and the host can
+	// receive disbursements.
+	PayoutAccountID string
+	PayoutsEnabled  bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // NewUser creates a User aggregate, enforcing invariants.
@@ -195,6 +201,34 @@ func (u *User) Anonymize() {
 	u.KeycloakSub = "deleted-" + u.ID.String()
 	u.IsActive = false
 	u.touch()
+}
+
+// LinkPayoutAccount records the host's Stripe Connect account id. Returns true
+// when it changed (so the caller knows to persist).
+func (u *User) LinkPayoutAccount(accountID string) bool {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" || accountID == u.PayoutAccountID {
+		return false
+	}
+	u.PayoutAccountID = accountID
+	u.touch()
+	return true
+}
+
+// SetPayoutsEnabled records whether the host's payout account can receive
+// disbursements (mirrors Stripe's payouts_enabled). Returns true when changed.
+func (u *User) SetPayoutsEnabled(enabled bool) bool {
+	if u.PayoutsEnabled == enabled {
+		return false
+	}
+	u.PayoutsEnabled = enabled
+	u.touch()
+	return true
+}
+
+// CanReceivePayouts reports whether the host has completed payout onboarding.
+func (u *User) CanReceivePayouts() bool {
+	return u.PayoutAccountID != "" && u.PayoutsEnabled
 }
 
 // IsHost reports whether the user can act as a host.

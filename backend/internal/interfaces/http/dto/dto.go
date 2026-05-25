@@ -465,6 +465,17 @@ func FromAvailableBalances(balances []payoutapp.AvailableBalance) []AvailableBal
 	return out
 }
 
+// PayoutAccountStatusView renders a host's payout-onboarding state.
+type PayoutAccountStatusView struct {
+	HasAccount bool `json:"hasAccount"`
+	Enabled    bool `json:"enabled"`
+}
+
+// FromPayoutAccountStatus maps the payout-account status to its view.
+func FromPayoutAccountStatus(s payoutapp.PayoutAccountStatus) PayoutAccountStatusView {
+	return PayoutAccountStatusView{HasAccount: s.HasAccount, Enabled: s.Enabled}
+}
+
 // DisbursementView is the public representation of a host payout.
 type DisbursementView struct {
 	ID         uuid.UUID `json:"id"`

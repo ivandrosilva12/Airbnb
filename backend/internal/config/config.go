@@ -80,11 +80,9 @@ type StripeConfig struct {
 	SecretKey     string // sk_test_… / sk_live_…
 	BaseURL       string // override for tests; defaults to https://api.stripe.com
 	WebhookSecret string // whsec_…; verifies inbound webhook signatures
-	// ConnectAccount is the Stripe Connect connected-account id (acct_…) used as
-	// the destination for host payouts. Until per-host Connect onboarding exists,
-	// a single configured account routes all transfers; when empty, payouts use
-	// the fake rail so the system still runs end-to-end.
-	ConnectAccount string
+	// ConnectCountry is the country code used when creating hosts' Stripe Connect
+	// Express accounts (must be a Connect-supported country); defaults to US.
+	ConnectCountry string
 }
 
 // AppyPayConfig holds AppyPay REST API settings. Token is a pre-minted OAuth2
@@ -226,7 +224,7 @@ func Load() (*Config, error) {
 				SecretKey:      getEnv("STRIPE_SECRET_KEY", ""),
 				BaseURL:        getEnv("STRIPE_BASE_URL", "https://api.stripe.com"),
 				WebhookSecret:  getEnv("STRIPE_WEBHOOK_SECRET", ""),
-				ConnectAccount: getEnv("STRIPE_CONNECT_ACCOUNT", ""),
+				ConnectCountry: getEnv("STRIPE_CONNECT_COUNTRY", "US"),
 			},
 			AppyPay: AppyPayConfig{
 				Token:         getEnv("APPYPAY_TOKEN", ""),

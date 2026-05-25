@@ -54,7 +54,8 @@ func (h *PayoutHandler) ListEntries(c *gin.Context) {
 }
 
 // Available returns the authenticated host's withdrawable balance per currency
-// (net earnings minus payouts already in flight or completed).
+// (net earnings minus payouts already in flight or completed) along with their
+// payout-account onboarding state, so the client knows whether payouts can run.
 func (h *PayoutHandler) Available(c *gin.Context) {
 	hostID, ok := requireUser(c)
 	if !ok {
@@ -65,7 +66,54 @@ func (h *PayoutHandler) Available(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
-	response.OK(c, gin.H{"available": dto.FromAvailableBalances(balances)})
+	account, err := h.svc.AccountStatus(c.Request.Context(), hostID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{
+		"available": dto.FromAvailableBalances(balances),
+		"account":   dto.FromPayoutAccountStatus(account),
+	})
+}
+
+type onboardRequest struct {
+	ReturnURL  string `json:"returnUrl"`
+	RefreshURL string `json:"refreshUrl"`
+}
+
+// Onboard starts (or resumes) the host's Stripe Connect payout onboarding and
+// returns a hosted link for them to complete it.
+func (h *PayoutHandler) Onboard(c *gin.Context) {
+	hostID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	var req onboardRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	url, err := h.svc.StartOnboarding(c.Request.Context(), hostID, req.RefreshURL, req.ReturnURL)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"url": url})
+}
+
+// RefreshAccount re-checks the host's connected account with the provider and
+// returns its current payout state — called when the host returns from onboarding.
+func (h *PayoutHandler) RefreshAccount(c *gin.Context) {
+	hostID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	account, err := h.svc.RefreshAccountStatus(c.Request.Context(), hostID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromPayoutAccountStatus(account))
 }
 
 // ListDisbursements returns the authenticated host's payouts, newest first.

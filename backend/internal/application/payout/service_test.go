@@ -11,6 +11,7 @@ import (
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/domain/user"
 	infrapayment "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 	"github.com/google/uuid"
@@ -57,7 +58,7 @@ func TestEventHandler_CreditsHostOnConfirm(t *testing.T) {
 	hostID := uuid.New()
 	b := seed(t, props, bookings, hostID)
 
-	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
+	svc := payoutapp.NewService(payouts, bookings, props, memory.NewUserRepository(), infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway())
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())
 
@@ -88,7 +89,7 @@ func TestEventHandler_DuplicateConfirmCreditsOnce(t *testing.T) {
 	hostID := uuid.New()
 	b := seed(t, props, bookings, hostID)
 
-	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
+	svc := payoutapp.NewService(payouts, bookings, props, memory.NewUserRepository(), infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway())
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())
 
@@ -119,7 +120,7 @@ func TestEventHandler_DebitsRefundOnCancel(t *testing.T) {
 	hostID := uuid.New()
 	b := seed(t, props, bookings, hostID)
 
-	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
+	svc := payoutapp.NewService(payouts, bookings, props, memory.NewUserRepository(), infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway())
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())
 
@@ -147,7 +148,7 @@ func TestExportEntries_FlattensLedgerWithTitlesAndSign(t *testing.T) {
 	hostID := uuid.New()
 	b := seed(t, props, bookings, hostID)
 
-	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
+	svc := payoutapp.NewService(payouts, bookings, props, memory.NewUserRepository(), infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway())
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())
 
@@ -193,10 +194,20 @@ func TestRequestDisbursement_PaysAvailableThenExhausts(t *testing.T) {
 	props := memory.NewPropertyRepository()
 	bookings := memory.NewBookingRepository()
 	payouts := memory.NewPayoutRepository()
+	users := memory.NewUserRepository()
 	hostID := uuid.New()
 	b := seed(t, props, bookings, hostID)
 
-	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
+	// The host must have an onboarded, payouts-enabled connected account.
+	host := &user.User{
+		ID: hostID, KeycloakSub: "sub-" + hostID.String(), Email: "host@ex.dev", FullName: "Host",
+		Role: user.RoleHost, IsActive: true, PayoutAccountID: "acct_test", PayoutsEnabled: true,
+	}
+	if err := users.Create(ctx, host); err != nil {
+		t.Fatalf("seed host: %v", err)
+	}
+
+	svc := payoutapp.NewService(payouts, bookings, props, users, infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway())
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())
 	dispatcher.Publish(ctx, event.BookingConfirmed{BookingID: b.ID, PropertyID: b.PropertyID, GuestID: b.GuestID})
@@ -227,6 +238,64 @@ func TestRequestDisbursement_PaysAvailableThenExhausts(t *testing.T) {
 	}
 }
 
+func TestStartOnboarding_EnablesPayoutsViaFakeRail(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	hostID := uuid.New()
+	host := &user.User{
+		ID: hostID, KeycloakSub: "sub-" + hostID.String(), Email: "h@ex.dev", FullName: "H",
+		Role: user.RoleHost, IsActive: true,
+	}
+	if err := users.Create(ctx, host); err != nil {
+		t.Fatalf("seed host: %v", err)
+	}
+	svc := payoutapp.NewService(
+		memory.NewPayoutRepository(), memory.NewBookingRepository(), memory.NewPropertyRepository(),
+		users, infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway(),
+	)
+
+	url, err := svc.StartOnboarding(ctx, hostID, "https://app/refresh", "https://app/return")
+	if err != nil {
+		t.Fatalf("onboard: %v", err)
+	}
+	if url == "" {
+		t.Fatal("expected an onboarding url")
+	}
+	st, err := svc.AccountStatus(ctx, hostID)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !st.HasAccount || !st.Enabled {
+		t.Fatalf("status = %+v, want onboarded + enabled (fake rail)", st)
+	}
+}
+
+func TestRequestDisbursement_BlockedWithoutOnboarding(t *testing.T) {
+	ctx := context.Background()
+	props := memory.NewPropertyRepository()
+	bookings := memory.NewBookingRepository()
+	payouts := memory.NewPayoutRepository()
+	users := memory.NewUserRepository()
+	hostID := uuid.New()
+	b := seed(t, props, bookings, hostID)
+	// Host exists but has not onboarded a payout account.
+	host := &user.User{
+		ID: hostID, KeycloakSub: "sub-" + hostID.String(), Email: "h@ex.dev", FullName: "H",
+		Role: user.RoleHost, IsActive: true,
+	}
+	if err := users.Create(ctx, host); err != nil {
+		t.Fatalf("seed host: %v", err)
+	}
+	svc := payoutapp.NewService(payouts, bookings, props, users, infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway())
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+	dispatcher.Publish(ctx, event.BookingConfirmed{BookingID: b.ID, PropertyID: b.PropertyID, GuestID: b.GuestID})
+
+	if _, err := svc.RequestDisbursement(ctx, hostID, "EUR"); err == nil {
+		t.Fatal("expected disbursement to be blocked before payout onboarding")
+	}
+}
+
 func TestEventHandler_NoRefundWithoutPriorEarning(t *testing.T) {
 	ctx := context.Background()
 	props := memory.NewPropertyRepository()
@@ -235,7 +304,7 @@ func TestEventHandler_NoRefundWithoutPriorEarning(t *testing.T) {
 	hostID := uuid.New()
 	b := seed(t, props, bookings, hostID)
 
-	svc := payoutapp.NewService(payouts, bookings, props, infrapayment.NewFakeDisburser())
+	svc := payoutapp.NewService(payouts, bookings, props, memory.NewUserRepository(), infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway())
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(svc.EventHandler())
 

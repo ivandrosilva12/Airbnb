@@ -109,7 +109,7 @@ func newHarness(t *testing.T) *harness {
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
-	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, paymentgw.NewFakeDisburser())
+	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewFakeDisburser(), paymentgw.NewFakeConnectGateway())
 	identitySvc := identityapp.NewService(identityRepo, uow)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo)
 	silencer := newMemSilencer()

@@ -15,6 +15,7 @@ import (
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/domain/user"
 	"github.com/google/uuid"
 )
 
@@ -23,15 +24,88 @@ type Service struct {
 	payouts    payout.Repository
 	bookings   booking.Repository
 	properties property.Repository
+	users      user.Repository
 	disburser  port.Disburser
+	connect    port.ConnectGateway
 }
 
 // NewService wires the payout application service. The booking and property
-// repositories are read-only dependencies used to resolve the host and the net
-// payout amount when reacting to booking events; the disburser is the rail that
-// pays out a host's available balance.
-func NewService(payouts payout.Repository, bookings booking.Repository, properties property.Repository, disburser port.Disburser) *Service {
-	return &Service{payouts: payouts, bookings: bookings, properties: properties, disburser: disburser}
+// repositories resolve the host and net payout amount off booking events; the
+// users repository holds each host's connected payout account; the disburser
+// sends transfers and the connect gateway onboards accounts.
+func NewService(
+	payouts payout.Repository,
+	bookings booking.Repository,
+	properties property.Repository,
+	users user.Repository,
+	disburser port.Disburser,
+	connect port.ConnectGateway,
+) *Service {
+	return &Service{
+		payouts: payouts, bookings: bookings, properties: properties,
+		users: users, disburser: disburser, connect: connect,
+	}
+}
+
+// PayoutAccountStatus is the host's payout-onboarding state.
+type PayoutAccountStatus struct {
+	HasAccount bool
+	Enabled    bool
+}
+
+// AccountStatus returns the host's payout-onboarding state from local data
+// (no provider call).
+func (s *Service) AccountStatus(ctx context.Context, hostID uuid.UUID) (PayoutAccountStatus, error) {
+	u, err := s.users.FindByID(ctx, hostID)
+	if err != nil {
+		return PayoutAccountStatus{}, err
+	}
+	return PayoutAccountStatus{HasAccount: u.PayoutAccountID != "", Enabled: u.PayoutsEnabled}, nil
+}
+
+// StartOnboarding ensures the host has a connected account (creating one on
+// first call) and returns a hosted onboarding link for them to complete. The
+// refresh/return URLs are where the provider sends the host back to.
+func (s *Service) StartOnboarding(ctx context.Context, hostID uuid.UUID, refreshURL, returnURL string) (string, error) {
+	u, err := s.users.FindByID(ctx, hostID)
+	if err != nil {
+		return "", err
+	}
+	if u.PayoutAccountID == "" {
+		acct, err := s.connect.CreateAccount(ctx, u.Email)
+		if err != nil {
+			return "", err
+		}
+		u.LinkPayoutAccount(acct.ID)
+		u.SetPayoutsEnabled(acct.PayoutsEnabled)
+		if err := s.users.Update(ctx, u); err != nil {
+			return "", err
+		}
+	}
+	return s.connect.CreateOnboardingLink(ctx, u.PayoutAccountID, refreshURL, returnURL)
+}
+
+// RefreshAccountStatus re-reads the connected account from the provider and
+// persists its current payout capability — called when the host returns from
+// onboarding. With no account it is a no-op read.
+func (s *Service) RefreshAccountStatus(ctx context.Context, hostID uuid.UUID) (PayoutAccountStatus, error) {
+	u, err := s.users.FindByID(ctx, hostID)
+	if err != nil {
+		return PayoutAccountStatus{}, err
+	}
+	if u.PayoutAccountID == "" {
+		return PayoutAccountStatus{}, nil
+	}
+	acct, err := s.connect.GetAccount(ctx, u.PayoutAccountID)
+	if err != nil {
+		return PayoutAccountStatus{}, err
+	}
+	if u.SetPayoutsEnabled(acct.PayoutsEnabled) {
+		if err := s.users.Update(ctx, u); err != nil {
+			return PayoutAccountStatus{}, err
+		}
+	}
+	return PayoutAccountStatus{HasAccount: true, Enabled: u.PayoutsEnabled}, nil
 }
 
 // Summary returns the host's balance per currency.
@@ -87,6 +161,15 @@ func (s *Service) RequestDisbursement(ctx context.Context, hostID uuid.UUID, cur
 	if currency == "" {
 		return nil, shared.NewValidationError("a currency is required")
 	}
+
+	host, err := s.users.FindByID(ctx, hostID)
+	if err != nil {
+		return nil, err
+	}
+	if !host.CanReceivePayouts() {
+		return nil, shared.NewValidationError("complete payout onboarding before requesting a payout")
+	}
+
 	avail, err := s.AvailableBalances(ctx, hostID)
 	if err != nil {
 		return nil, err
@@ -115,8 +198,8 @@ func (s *Service) RequestDisbursement(ctx context.Context, hostID uuid.UUID, cur
 	}
 
 	// The disbursement id is the idempotency key, so a retried rail call for the
-	// same payout never transfers twice.
-	ref, err := s.disburser.Disburse(ctx, hostID, amount, d.ID.String())
+	// same payout never transfers twice. Funds go to the host's connected account.
+	ref, err := s.disburser.Disburse(ctx, hostID, host.PayoutAccountID, amount, d.ID.String())
 	if err != nil {
 		d.MarkFailed(err.Error())
 		if uerr := s.payouts.UpdateDisbursement(ctx, d); uerr != nil {

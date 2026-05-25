@@ -11,11 +11,13 @@ export default function HostEarnings() {
   const { isHost } = useAuth();
   const [balances, setBalances] = useState([]);
   const [available, setAvailable] = useState([]);
+  const [account, setAccount] = useState({ hasAccount: false, enabled: false });
   const [disbursements, setDisbursements] = useState([]);
   const [entries, setEntries] = useState([]);
   const [titles, setTitles] = useState({});
   const [loading, setLoading] = useState(true);
   const [payingOut, setPayingOut] = useState(null); // currency in flight
+  const [onboarding, setOnboarding] = useState(false);
   const [error, setError] = useState(null);
 
   async function refresh() {
@@ -28,6 +30,7 @@ export default function HostEarnings() {
     ]);
     setBalances(summary.balances || []);
     setAvailable(avail.available || []);
+    setAccount(avail.account || { hasAccount: false, enabled: false });
     setDisbursements(payouts.items || []);
     setEntries(ledger.items || []);
     const byId = {};
@@ -40,10 +43,32 @@ export default function HostEarnings() {
       setLoading(false);
       return;
     }
-    refresh()
+    // Returning from the provider's onboarding flow: re-check the account state
+    // with the gateway, then drop the marker from the URL.
+    const returning = new URLSearchParams(window.location.search).get('payout') === 'return';
+    const init = returning
+      ? api.refreshPayoutAccount().catch(() => {}).then(refresh)
+      : refresh();
+    init
       .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        if (returning) window.history.replaceState({}, '', '/host/earnings');
+      });
   }, [isHost]);
+
+  async function startOnboarding() {
+    setError(null);
+    setOnboarding(true);
+    try {
+      const returnUrl = `${window.location.origin}/host/earnings?payout=return`;
+      const { url } = await api.onboardPayouts({ returnUrl, refreshUrl: returnUrl });
+      window.location.href = url;
+    } catch (e) {
+      setError(e.message);
+      setOnboarding(false);
+    }
+  }
 
   async function requestPayout(currency) {
     setError(null);
@@ -103,7 +128,14 @@ export default function HostEarnings() {
           )}
 
           <h2>{t('earnings.payoutsTitle')}</h2>
-          {available.length === 0 ? (
+          {!account.enabled ? (
+            <div className="payout-onboard">
+              <p className="muted">{t('earnings.onboardHint')}</p>
+              <button className="btn btn-primary" disabled={onboarding} onClick={startOnboarding}>
+                {onboarding ? t('earnings.onboardingBusy') : t('earnings.onboardCta')}
+              </button>
+            </div>
+          ) : available.length === 0 ? (
             <p className="muted">{t('earnings.noAvailable')}</p>
           ) : (
             <div className="balance-grid">
