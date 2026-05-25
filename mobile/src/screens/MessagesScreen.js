@@ -1,18 +1,20 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
+import { useRealtime } from '../api/RealtimeContext';
 
 export default function MessagesScreen({ navigation }) {
   const api = useApi();
   const { authenticated, login } = useAuth();
+  const { subscribe } = useRealtime();
   const [items, setItems] = useState([]);
   const [titles, setTitles] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.listConversations();
       const convos = res.items || [];
@@ -43,6 +45,17 @@ export default function MessagesScreen({ navigation }) {
     });
     return unsub;
   }, [navigation, authenticated]);
+
+  // Refresh the conversation list in the background when a message arrives.
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  useEffect(
+    () =>
+      subscribe((update) => {
+        if (update.type === 'message') loadRef.current(true);
+      }),
+    [subscribe],
+  );
 
   if (!authenticated) {
     return (

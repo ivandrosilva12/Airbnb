@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
@@ -26,6 +26,20 @@ export function AuthProvider({ children }) {
     discovery,
   );
 
+  // A second request carrying kc_action=CONFIGURE_TOTP triggers Keycloak's
+  // application-initiated action to enrol two-factor (TOTP). It returns a code
+  // exactly like a normal login, which we exchange to refresh the session.
+  const [actionRequest, actionResponse, promptActionAsync] = AuthSession.useAuthRequest(
+    {
+      clientId: KEYCLOAK_CLIENT_ID,
+      redirectUri,
+      scopes: ['openid', 'profile', 'email'],
+      usePKCE: true,
+      extraParams: { kc_action: 'CONFIGURE_TOTP' },
+    },
+    discovery,
+  );
+
   // Restore persisted tokens on startup.
   useEffect(() => {
     SecureStore.getItemAsync(TOKEN_KEY)
@@ -33,16 +47,17 @@ export function AuthProvider({ children }) {
       .finally(() => setReady(true));
   }, []);
 
-  // Exchange the auth code for tokens once the browser flow completes.
-  useEffect(() => {
-    async function exchange() {
-      if (response?.type !== 'success' || !discovery || !request) return;
+  // exchange swaps an authorization code (+ its PKCE verifier) for tokens and
+  // persists them. Shared by the login flow and the 2FA-enrolment flow.
+  const exchange = useCallback(
+    async (code, codeVerifier) => {
+      if (!discovery) return;
       const result = await AuthSession.exchangeCodeAsync(
         {
           clientId: KEYCLOAK_CLIENT_ID,
-          code: response.params.code,
+          code,
           redirectUri,
-          extraParams: { code_verifier: request.codeVerifier },
+          extraParams: { code_verifier: codeVerifier },
         },
         discovery,
       );
@@ -53,9 +68,23 @@ export function AuthProvider({ children }) {
       };
       setTokens(stored);
       await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(stored));
+    },
+    [discovery],
+  );
+
+  // Exchange the auth code once the login browser flow completes.
+  useEffect(() => {
+    if (response?.type === 'success' && discovery && request) {
+      exchange(response.params.code, request.codeVerifier);
     }
-    exchange();
-  }, [response, discovery, request]);
+  }, [response, discovery, request, exchange]);
+
+  // Same for the 2FA-enrolment flow.
+  useEffect(() => {
+    if (actionResponse?.type === 'success' && discovery && actionRequest) {
+      exchange(actionResponse.params.code, actionRequest.codeVerifier);
+    }
+  }, [actionResponse, discovery, actionRequest, exchange]);
 
   // clearSession drops the stored tokens so the app falls back to the sign-in
   // screen instead of retrying with credentials that will keep returning 401.
@@ -106,8 +135,10 @@ export function AuthProvider({ children }) {
       logout,
       getAccessToken,
       canLogin: !!request,
+      setupTwoFactor: () => promptActionAsync(),
+      canSetupTwoFactor: !!actionRequest,
     }),
-    [ready, tokens, request, discovery],
+    [ready, tokens, request, actionRequest, discovery],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

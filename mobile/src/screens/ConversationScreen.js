@@ -1,16 +1,22 @@
-import { useEffect, useState, useCallback, useLayoutEffect } from 'react';
+import { useEffect, useRef, useState, useCallback, useLayoutEffect } from 'react';
 import { View, Text, FlatList, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useApi } from '../api/useApi';
+import { useRealtime } from '../api/RealtimeContext';
 
 export default function ConversationScreen({ route, navigation }) {
   const { id, title } = route.params;
   const api = useApi();
+  const { subscribe } = useRealtime();
   const [messages, setMessages] = useState([]);
   const [myId, setMyId] = useState(null);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
+  // Keep the latest api in a ref so the realtime subscription (registered once)
+  // always uses a live token without re-subscribing on every render.
+  const apiRef = useRef(api);
+  apiRef.current = api;
 
   useLayoutEffect(() => {
     if (title) navigation.setOptions({ title });
@@ -32,6 +38,21 @@ export default function ConversationScreen({ route, navigation }) {
   useEffect(() => {
     load();
   }, [id]);
+
+  // Live updates: append inbound messages the moment the server pushes a
+  // "message" event for this conversation (no polling).
+  useEffect(
+    () =>
+      subscribe((update) => {
+        if (update.type !== 'message' || update.conversationId !== id) return;
+        apiRef.current
+          .listMessages(id)
+          .then((res) => setMessages(res.items || []))
+          .catch(() => {});
+        apiRef.current.markConversationRead(id).catch(() => {});
+      }),
+    [subscribe, id],
+  );
 
   async function send() {
     const body = draft.trim();

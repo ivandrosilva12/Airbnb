@@ -12,7 +12,7 @@ const LINKS = [
 ];
 
 export default function AccountScreen({ navigation }) {
-  const { authenticated, login, logout } = useAuth();
+  const { authenticated, login, logout, setupTwoFactor, canSetupTwoFactor } = useAuth();
   const api = useApi();
   const [isHost, setIsHost] = useState(false);
 
@@ -46,6 +46,15 @@ export default function AccountScreen({ navigation }) {
           <Text style={styles.chevron}>›</Text>
         </Pressable>
       )}
+      <Pressable
+        style={styles.row}
+        onPress={() => setupTwoFactor()}
+        disabled={!canSetupTwoFactor}
+      >
+        <Text style={styles.icon}>🔐</Text>
+        <Text style={styles.label}>Two-factor authentication</Text>
+        <Text style={styles.chevron}>›</Text>
+      </Pressable>
       <Pressable style={styles.signOut} onPress={logout}>
         <Text style={styles.signOutText}>Sign out</Text>
       </Pressable>

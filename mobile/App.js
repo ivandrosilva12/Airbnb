@@ -2,6 +2,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from './src/auth/AuthContext';
+import { RealtimeProvider } from './src/api/RealtimeContext';
 import ExploreScreen from './src/screens/ExploreScreen';
 import PropertyScreen from './src/screens/PropertyScreen';
 import TripsScreen from './src/screens/TripsScreen';
@@ -20,6 +21,7 @@ const Stack = createNativeStackNavigator();
 export default function App() {
   return (
     <AuthProvider>
+      <RealtimeProvider>
       <StatusBar style="dark" />
       <NavigationContainer>
         <Stack.Navigator
@@ -42,6 +44,7 @@ export default function App() {
           <Stack.Screen name="HostPropertyBookings" component={HostPropertyBookingsScreen} options={{ title: 'Bookings' }} />
         </Stack.Navigator>
       </NavigationContainer>
+      </RealtimeProvider>
     </AuthProvider>
   );
 }
