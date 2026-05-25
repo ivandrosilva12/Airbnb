@@ -2,6 +2,7 @@ package payoutapp_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -328,6 +329,57 @@ func TestRequestDisbursement_ConcurrentRequestsPayOnce(t *testing.T) {
 	}
 	if paidCount != 1 || paid != 33000 {
 		t.Fatalf("paid disbursements = %d totalling %d, want 1 totalling 33000", paidCount, paid)
+	}
+}
+
+// failingDisburser always rejects, to exercise the failed-payout path.
+type failingDisburser struct{}
+
+func (failingDisburser) Disburse(_ context.Context, _ uuid.UUID, _ string, _ shared.Money, _ string) (string, error) {
+	return "", errStub
+}
+
+var errStub = fmt.Errorf("rail rejected the transfer")
+
+func TestRequestDisbursement_FailureRecordsAndReleasesFunds(t *testing.T) {
+	ctx := context.Background()
+	props := memory.NewPropertyRepository()
+	bookings := memory.NewBookingRepository()
+	payouts := memory.NewPayoutRepository()
+	users := memory.NewUserRepository()
+	hostID := uuid.New()
+	b := seed(t, props, bookings, hostID)
+	host := &user.User{
+		ID: hostID, KeycloakSub: "sub-" + hostID.String(), Email: "h@ex.dev", FullName: "H",
+		Role: user.RoleHost, IsActive: true, PayoutAccountID: "acct_test", PayoutsEnabled: true,
+	}
+	if err := users.Create(ctx, host); err != nil {
+		t.Fatalf("seed host: %v", err)
+	}
+	svc := payoutapp.NewService(payouts, bookings, props, users, failingDisburser{}, infrapayment.NewFakeConnectGateway())
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+	dispatcher.Publish(ctx, event.BookingConfirmed{BookingID: b.ID, PropertyID: b.PropertyID, GuestID: b.GuestID})
+
+	// The rail rejects: the request errors, but the failure is recorded...
+	if _, err := svc.RequestDisbursement(ctx, hostID, "EUR"); err == nil {
+		t.Fatal("expected the failing rail to surface an error")
+	}
+	page, err := svc.ListDisbursements(ctx, hostID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Status != payout.DisbursementFailed || page.Items[0].Failure == "" {
+		t.Fatalf("disbursement = %+v, want one failed with a reason", page.Items)
+	}
+	// ...and the funds are released (failed payouts are not committed), so the
+	// host still sees the balance as available to retry.
+	avail, err := svc.AvailableBalances(ctx, hostID)
+	if err != nil {
+		t.Fatalf("available: %v", err)
+	}
+	if len(avail) != 1 || avail[0].AvailableCents != 33000 {
+		t.Fatalf("available after failed payout = %+v, want 33000 released", avail)
 	}
 }
 

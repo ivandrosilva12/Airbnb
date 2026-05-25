@@ -474,6 +474,18 @@ func (r *ReviewRepository) SummaryForGuest(_ context.Context, guestID uuid.UUID)
 	}), nil
 }
 
+func (r *ReviewRepository) AnonymizeByAuthor(_ context.Context, authorID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, rv := range r.m {
+		if rv.AuthorID == authorID {
+			rv.Comment = ""
+			r.m[id] = rv
+		}
+	}
+	return nil
+}
+
 func (r *ReviewRepository) summary(subjectID uuid.UUID, pred func(review.Review) bool) review.Summary {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -740,6 +752,17 @@ func (r *NotificationRepository) MarkAllRead(_ context.Context, userID uuid.UUID
 		if n.UserID == userID && n.ReadAt == nil {
 			n.MarkRead()
 			r.m[id] = n
+		}
+	}
+	return nil
+}
+
+func (r *NotificationRepository) DeleteByUser(_ context.Context, userID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, n := range r.m {
+		if n.UserID == userID {
+			delete(r.m, id)
 		}
 	}
 	return nil

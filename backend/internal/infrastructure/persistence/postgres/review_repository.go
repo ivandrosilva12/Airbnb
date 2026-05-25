@@ -79,6 +79,11 @@ func (r *ReviewRepository) SummaryForGuest(ctx context.Context, guestID uuid.UUI
 	return r.summary(ctx, `guest_id=$1 AND kind='host_to_guest'`, guestID)
 }
 
+func (r *ReviewRepository) AnonymizeByAuthor(ctx context.Context, authorID uuid.UUID) error {
+	_, err := r.pool.Exec(ctx, `UPDATE reviews SET comment='' WHERE author_id=$1`, authorID)
+	return mapError(err)
+}
+
 func (r *ReviewRepository) summary(ctx context.Context, where string, subjectID uuid.UUID) (review.Summary, error) {
 	var (
 		avg   *float64

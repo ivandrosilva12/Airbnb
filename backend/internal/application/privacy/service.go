@@ -102,20 +102,47 @@ func (s *Service) Export(ctx context.Context, userID uuid.UUID) (*Export, error)
 	return exp, nil
 }
 
-// Erase fulfils a right-to-erasure request: it anonymises the profile,
-// deactivates the account and deletes personal preference data (the wishlist).
-// Retained records (bookings, payments, payouts) keep referencing the now
-// de-identified account to honour legal/accounting obligations.
+// Erase fulfils a right-to-erasure request. The profile is anonymised FIRST so
+// the operation is idempotent on retry and the account is immediately
+// de-identified; then personal data with no retention basis is removed or
+// scrubbed: the wishlist and notifications are deleted, and the free-text of any
+// reviews the user authored is blanked (the rating and the review's existence
+// are kept so listing/guest aggregates stay intact).
+//
+// Bookings, payments and payouts are retained (now referencing the de-identified
+// account) to honour legal/accounting obligations. Message bodies are likewise
+// retained: the other participant has a legitimate interest in the conversation,
+// and the sender is already de-identified.
 func (s *Service) Erase(ctx context.Context, userID uuid.UUID) error {
 	u, err := s.users.FindByID(ctx, userID)
 	if err != nil {
 		return err
 	}
+
+	// Anonymise + deactivate first; a retry after a later failure is harmless.
+	u.Anonymize()
+	if err := s.users.Update(ctx, u); err != nil {
+		return err
+	}
+
+	// Best-effort removal of the remaining personal data; failures here must not
+	// leave the account un-anonymised (it already is), so they are logged-and-skipped
+	// by returning the first error only after attempting all.
+	var firstErr error
 	if favs, err := s.favorites.ListPropertyIDs(ctx, userID, exportPage); err == nil {
 		for _, pid := range favs.Items {
-			_ = s.favorites.Remove(ctx, userID, pid)
+			if e := s.favorites.Remove(ctx, userID, pid); e != nil && firstErr == nil {
+				firstErr = e
+			}
 		}
+	} else if firstErr == nil {
+		firstErr = err
 	}
-	u.Anonymize()
-	return s.users.Update(ctx, u)
+	if err := s.notifications.DeleteByUser(ctx, userID); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	if err := s.reviews.AnonymizeByAuthor(ctx, userID); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	return firstErr
 }

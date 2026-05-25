@@ -102,6 +102,11 @@ func (r *NotificationRepository) MarkAllRead(ctx context.Context, userID uuid.UU
 	return mapError(err)
 }
 
+func (r *NotificationRepository) DeleteByUser(ctx context.Context, userID uuid.UUID) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM notifications WHERE user_id=$1`, userID)
+	return mapError(err)
+}
+
 // nilUUID converts the zero UUID to nil so it stores as SQL NULL.
 func nilUUID(id uuid.UUID) *uuid.UUID {
 	if id == uuid.Nil {
