@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { useT } from './i18n/I18nContext';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import PropertyDetail from './pages/PropertyDetail';
@@ -28,10 +29,12 @@ function Protected({ children }) {
 
 export default function App() {
   const { ready } = useAuth();
+  const { t } = useT();
   return (
     <>
+      <a href="#main" className="skip-link">{t('a11y.skip')}</a>
       <Navbar />
-      <main>
+      <main id="main" tabIndex={-1}>
         {!ready ? (
           <div className="container">Loading…</div>
         ) : (

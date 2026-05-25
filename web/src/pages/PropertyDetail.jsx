@@ -153,8 +153,8 @@ export default function PropertyDetail() {
 
       <div className="gallery">
         {property.photos.length === 0 && <div className="card-photo-placeholder">{t('common.noPhoto')}</div>}
-        {property.photos.map((ph) => (
-          <img key={ph.id} src={ph.url} alt="" />
+        {property.photos.map((ph, i) => (
+          <img key={ph.id} src={ph.url} alt={t('a11y.photoOf', { title: property.title, n: i + 1 })} />
         ))}
       </div>
 

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { translations } from './translations';
 
 const I18nContext = createContext(null);
@@ -17,6 +17,12 @@ export function I18nProvider({ children }) {
     localStorage.setItem(STORAGE_KEY, l);
     setLangState(l);
   }, []);
+
+  // Keep the document language in sync so assistive tech announces content in
+  // the right language and the browser applies correct hyphenation/quotes.
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   // t looks up a key for the current language, falling back to English then the
   // key itself, and interpolates {placeholders} from vars.

@@ -26,9 +26,10 @@ export default function PropertyCard({ property }) {
             type="button"
             className={`heart${saved ? ' heart-on' : ''}`}
             onClick={onHeart}
-            aria-label={saved ? 'Remove from saved' : 'Save'}
+            aria-pressed={saved}
+            aria-label={saved ? t('a11y.unsave') : t('a11y.save')}
           >
-            {saved ? '♥' : '♡'}
+            <span aria-hidden="true">{saved ? '♥' : '♡'}</span>
           </button>
         )}
       </div>
@@ -36,7 +37,9 @@ export default function PropertyCard({ property }) {
         <div className="card-title-row">
           <span className="card-title">{property.title}</span>
           {property.reviewCount > 0 && (
-            <span className="card-rating">★ {property.averageRating.toFixed(1)}</span>
+            <span className="card-rating" aria-label={t('a11y.rating', { rating: property.averageRating.toFixed(1) })}>
+              <span aria-hidden="true">★ {property.averageRating.toFixed(1)}</span>
+            </span>
           )}
         </div>
         <div className="card-meta">

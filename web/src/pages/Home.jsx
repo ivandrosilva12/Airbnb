@@ -101,15 +101,17 @@ export default function Home() {
         <form className="search-bar" onSubmit={onSearch}>
           <input
             placeholder={t('home.keyword')}
+            aria-label={t('home.keyword')}
             value={filters.q}
             onChange={(e) => setFilters({ ...filters, q: e.target.value })}
           />
           <input
             placeholder={t('home.city')}
+            aria-label={t('home.city')}
             value={filters.city}
             onChange={(e) => setFilters({ ...filters, city: e.target.value })}
           />
-          <select value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}>
+          <select value={filters.type} aria-label={t('home.type')} onChange={(e) => setFilters({ ...filters, type: e.target.value })}>
             <option value="">{t('type.any')}</option>
             <option value="apartment">{t('type.apartment')}</option>
             <option value="house">{t('type.house')}</option>
@@ -121,22 +123,25 @@ export default function Home() {
             type="number"
             min="1"
             placeholder={t('common.guests')}
+            aria-label={t('common.guests')}
             value={filters.minGuests}
             onChange={(e) => setFilters({ ...filters, minGuests: e.target.value })}
           />
           <input
             type="date"
             title={t('common.checkIn')}
+            aria-label={t('common.checkIn')}
             value={filters.checkIn}
             onChange={(e) => setFilters({ ...filters, checkIn: e.target.value })}
           />
           <input
             type="date"
             title={t('common.checkOut')}
+            aria-label={t('common.checkOut')}
             value={filters.checkOut}
             onChange={(e) => setFilters({ ...filters, checkOut: e.target.value })}
           />
-          <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })} title="Sort">
+          <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })} aria-label={t('home.sortLabel')}>
             <option value="">{t('home.sort.newest')}</option>
             <option value="price_asc">{t('home.sort.priceAsc')}</option>
             <option value="price_desc">{t('home.sort.priceDesc')}</option>
@@ -148,7 +153,7 @@ export default function Home() {
           {geo ? (
             <span className="geo-chip">
               {t('home.nearYou', { km: geo.radiusKm })}
-              <button type="button" onClick={clearGeo} aria-label="Clear location filter">✕</button>
+              <button type="button" onClick={clearGeo} aria-label={t('a11y.clearLocation')}><span aria-hidden="true">✕</span></button>
             </span>
           ) : (
             <button type="button" className="btn btn-ghost" onClick={nearMe}>{t('home.nearMe')}</button>
