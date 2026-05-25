@@ -129,7 +129,7 @@ func run() error {
 	propertySvc := propertyapp.NewService(propertyRepo, objectStore)
 	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, cfg.Pricing.ServiceFeeRate, uow)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
-	messageSvc := messageapp.NewService(messageRepo, propertyRepo, uow)
+	messageSvc := messageapp.NewService(messageRepo, propertyRepo, objectStore, uow)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)

@@ -258,6 +258,7 @@ export const translations = {
     'msg.yourEnquiry': 'Your enquiry',
     'msg.write': 'Write a message…',
     'msg.send': 'Send',
+    'msg.attach': 'Attach a file',
 
     'notif.title': 'Notifications',
     'notif.markAll': 'Mark all read',
@@ -631,6 +632,7 @@ export const translations = {
     'msg.yourEnquiry': 'O seu contacto',
     'msg.write': 'Escreva uma mensagem…',
     'msg.send': 'Enviar',
+    'msg.attach': 'Anexar ficheiro',
 
     'notif.title': 'Notificações',
     'notif.markAll': 'Marcar todas como lidas',

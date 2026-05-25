@@ -148,6 +148,7 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.GET("/conversations/unread-count", h.Message.UnreadCount)
 		auth.GET("/conversations/:id/messages", h.Message.ListMessages)
 		auth.POST("/conversations/:id/messages", h.Message.Send)
+		auth.POST("/conversations/:id/attachments", h.Message.SendAttachment)
 		auth.POST("/conversations/:id/read", h.Message.MarkRead)
 
 		// Favorites (wishlist).

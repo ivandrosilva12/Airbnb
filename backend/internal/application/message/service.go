@@ -6,6 +6,9 @@ package messageapp
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"path"
 
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/application/port"
@@ -19,13 +22,15 @@ import (
 type Service struct {
 	messages   message.Repository
 	properties property.Repository
+	storage    port.Storage
 	uow        port.UnitOfWork
 }
 
 // NewService wires the messaging application service. The UnitOfWork makes the
-// message write and its MessageSent event commit atomically.
-func NewService(messages message.Repository, properties property.Repository, uow port.UnitOfWork) *Service {
-	return &Service{messages: messages, properties: properties, uow: uow}
+// message write and its MessageSent event commit atomically; storage backs
+// message attachments.
+func NewService(messages message.Repository, properties property.Repository, storage port.Storage, uow port.UnitOfWork) *Service {
+	return &Service{messages: messages, properties: properties, storage: storage, uow: uow}
 }
 
 // StartConversation returns the thread between the guest and the property's
@@ -58,7 +63,7 @@ func (s *Service) StartConversation(ctx context.Context, guestID, propertyID uui
 	return conv, nil
 }
 
-// SendMessage posts a message to a conversation; only participants may post.
+// SendMessage posts a text message to a conversation; only participants may post.
 func (s *Service) SendMessage(ctx context.Context, actorID, conversationID uuid.UUID, body string) (*message.Message, error) {
 	conv, err := s.messages.FindConversationByID(ctx, conversationID)
 	if err != nil {
@@ -68,11 +73,61 @@ func (s *Service) SendMessage(ctx context.Context, actorID, conversationID uuid.
 	if err != nil {
 		return nil, err
 	}
+	if err := s.persist(ctx, conv, msg, actorID); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+// AttachmentInput carries an uploaded file (and optional caption) to attach to a
+// conversation.
+type AttachmentInput struct {
+	Body        string
+	Reader      io.Reader
+	Size        int64
+	ContentType string
+	Filename    string
+}
+
+// SendAttachment uploads a file to object storage and posts it as a message to
+// the conversation; only participants may post. The participant check runs
+// before the upload so a forbidden actor never leaves an orphaned object.
+func (s *Service) SendAttachment(ctx context.Context, actorID, conversationID uuid.UUID, in AttachmentInput) (*message.Message, error) {
+	conv, err := s.messages.FindConversationByID(ctx, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if !conv.HasParticipant(actorID) {
+		return nil, shared.ErrForbidden
+	}
+	objectKey := fmt.Sprintf("attachments/%s/%s%s", conversationID, uuid.NewString(), path.Ext(in.Filename))
+	url, err := s.storage.Upload(ctx, objectKey, in.Reader, in.Size, in.ContentType)
+	if err != nil {
+		return nil, err
+	}
+	msg, err := conv.PostAttachment(actorID, in.Body, message.Attachment{
+		URL:         url,
+		ContentType: in.ContentType,
+		Filename:    in.Filename,
+		Size:        in.Size,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.persist(ctx, conv, msg, actorID); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+// persist atomically writes a new message, bumps the conversation, and enqueues
+// the MessageSent event so live updates and notifications fan out.
+func (s *Service) persist(ctx context.Context, conv *message.Conversation, msg *message.Message, actorID uuid.UUID) error {
 	recipient := conv.GuestID
 	if actorID == conv.GuestID {
 		recipient = conv.HostID
 	}
-	if err := s.uow.Run(ctx, func(tx port.Tx) error {
+	return s.uow.Run(ctx, func(tx port.Tx) error {
 		if err := tx.Messages.AddMessage(ctx, msg); err != nil {
 			return err
 		}
@@ -88,10 +143,7 @@ func (s *Service) SendMessage(ctx context.Context, actorID, conversationID uuid.
 			return err
 		}
 		return tx.Outbox.Append(ctx, rec)
-	}); err != nil {
-		return nil, err
-	}
-	return msg, nil
+	})
 }
 
 // ListConversations returns the conversations the actor participates in.

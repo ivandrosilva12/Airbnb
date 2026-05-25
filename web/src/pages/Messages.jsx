@@ -6,6 +6,30 @@ import { useMessages } from '../context/MessagesContext';
 import { useRealtime } from '../context/RealtimeContext';
 import { useT } from '../i18n/I18nContext';
 
+// MessageBubble renders a chat message: its text, and an attachment when present
+// (an inline image preview, or a download link for other file types like PDFs).
+function MessageBubble({ message: m, mine }) {
+  const att = m.attachment;
+  const isImage = att && att.contentType?.startsWith('image/');
+  return (
+    <div className={`bubble ${mine ? 'mine' : 'theirs'}`}>
+      {m.body && <span>{m.body}</span>}
+      {att && (
+        isImage ? (
+          <a href={att.url} target="_blank" rel="noreferrer" className="bubble-image">
+            <img src={att.url} alt={att.filename || ''} />
+          </a>
+        ) : (
+          <a href={att.url} target="_blank" rel="noreferrer" className="bubble-file">
+            📎 {att.filename || att.url}
+          </a>
+        )
+      )}
+      <small>{new Date(m.createdAt).toLocaleTimeString()}</small>
+    </div>
+  );
+}
+
 export default function Messages() {
   const { profile } = useAuth();
   const { markRead } = useMessages();
@@ -16,8 +40,10 @@ export default function Messages() {
   const [activeId, setActiveId] = useState(searchParams.get('conversation'));
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
   const endRef = useRef(null);
+  const fileRef = useRef(null);
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
 
@@ -99,6 +125,23 @@ export default function Messages() {
     }
   }
 
+  async function attach(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!file || !activeId) return;
+    setError(null);
+    setUploading(true);
+    try {
+      await api.sendAttachment(activeId, file, draft.trim());
+      setDraft('');
+      loadMessages(activeId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
     <div className="container">
       <h1>{t('msg.title')}</h1>
@@ -129,14 +172,28 @@ export default function Messages() {
           <div className="thread">
             <div className="thread-messages">
               {messages.map((m) => (
-                <div key={m.id} className={`bubble ${m.senderId === profile?.id ? 'mine' : 'theirs'}`}>
-                  {m.body}
-                  <small>{new Date(m.createdAt).toLocaleTimeString()}</small>
-                </div>
+                <MessageBubble key={m.id} message={m} mine={m.senderId === profile?.id} />
               ))}
               <div ref={endRef} />
             </div>
             <form className="thread-composer" onSubmit={send}>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                style={{ display: 'none' }}
+                onChange={attach}
+              />
+              <button
+                className="btn btn-ghost"
+                type="button"
+                title={t('msg.attach')}
+                aria-label={t('msg.attach')}
+                disabled={uploading}
+                onClick={() => fileRef.current?.click()}
+              >
+                {uploading ? '…' : '📎'}
+              </button>
               <input
                 placeholder={t('msg.write')}
                 value={draft}

@@ -1,11 +1,27 @@
 package handler
 
 import (
+	"errors"
+	"io"
+	"net/http"
+
 	messageapp "github.com/airhost/backend/internal/application/message"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
 	"github.com/gin-gonic/gin"
 )
+
+const maxAttachmentBytes = 10 << 20 // 10 MiB
+
+// allowedAttachmentContentTypes are the file types a chat attachment may have:
+// the same images permitted for listing photos, plus PDF documents.
+var allowedAttachmentContentTypes = map[string]bool{
+	"image/jpeg":      true,
+	"image/png":       true,
+	"image/webp":      true,
+	"image/gif":       true,
+	"application/pdf": true,
+}
 
 // MessageHandler exposes host↔guest messaging endpoints.
 type MessageHandler struct {
@@ -136,6 +152,69 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		return
 	}
 	m, err := h.svc.SendMessage(c.Request.Context(), actorID, id, req.Body)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.Created(c, dto.FromMessage(m))
+}
+
+// SendAttachment posts a file (image or PDF) — with an optional caption — to a
+// conversation. The file rides in a multipart "file" field; the caption, if
+// any, in a "body" field.
+func (h *MessageHandler) SendAttachment(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	// Cap the request body so an oversized upload is rejected while parsing.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAttachmentBytes+1<<10)
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			response.FailMessage(c, http.StatusRequestEntityTooLarge, "attachment exceeds the 10 MiB limit")
+			return
+		}
+		response.FailMessage(c, http.StatusBadRequest, "attachment file is required")
+		return
+	}
+	if fileHeader.Size > maxAttachmentBytes {
+		response.FailMessage(c, http.StatusRequestEntityTooLarge, "attachment exceeds the 10 MiB limit")
+		return
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		response.FailMessage(c, http.StatusBadRequest, "could not read uploaded file")
+		return
+	}
+	defer file.Close()
+
+	// Detect the content type from the leading bytes rather than trusting the
+	// client header, then rewind so the whole file is stored.
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(file, head)
+	contentType := http.DetectContentType(head[:n])
+	if !allowedAttachmentContentTypes[contentType] {
+		response.FailMessage(c, http.StatusUnsupportedMediaType, "only JPEG, PNG, WebP, GIF or PDF files are allowed")
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		response.FailMessage(c, http.StatusBadRequest, "could not read uploaded file")
+		return
+	}
+
+	m, err := h.svc.SendAttachment(c.Request.Context(), actorID, id, messageapp.AttachmentInput{
+		Body:        c.PostForm("body"),
+		Reader:      file,
+		Size:        fileHeader.Size,
+		ContentType: contentType,
+		Filename:    fileHeader.Filename,
+	})
 	if err != nil {
 		response.Fail(c, err)
 		return

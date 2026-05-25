@@ -100,7 +100,7 @@ func newHarness(t *testing.T) *harness {
 	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{})
 	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, 0.10, uow) // 10% service fee
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
-	messageSvc := messageapp.NewService(messageRepo, propertyRepo, uow)
+	messageSvc := messageapp.NewService(messageRepo, propertyRepo, fakeStorage{}, uow)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)

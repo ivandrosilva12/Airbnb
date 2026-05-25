@@ -81,10 +81,18 @@ func (r *MessageRepository) ListConversationsForUser(ctx context.Context, userID
 }
 
 func (r *MessageRepository) AddMessage(ctx context.Context, m *message.Message) error {
+	var url, ctype, name *string
+	var size *int64
+	if m.Attachment != nil {
+		url = &m.Attachment.URL
+		ctype = &m.Attachment.ContentType
+		name = &m.Attachment.Filename
+		size = &m.Attachment.Size
+	}
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO messages (id, conversation_id, sender_id, body, created_at)
-		VALUES ($1,$2,$3,$4,$5)`,
-		m.ID, m.ConversationID, m.SenderID, m.Body, m.CreatedAt,
+		INSERT INTO messages (id, conversation_id, sender_id, body, created_at, attachment_url, attachment_type, attachment_name, attachment_size)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		m.ID, m.ConversationID, m.SenderID, m.Body, m.CreatedAt, url, ctype, name, size,
 	)
 	return mapError(err)
 }
@@ -97,7 +105,7 @@ func (r *MessageRepository) ListMessages(ctx context.Context, conversationID uui
 		return shared.PageResult[*message.Message]{}, mapError(err)
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, conversation_id, sender_id, body, created_at
+		SELECT id, conversation_id, sender_id, body, created_at, attachment_url, attachment_type, attachment_name, attachment_size
 		FROM messages WHERE conversation_id=$1
 		ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
 		conversationID, page.Limit, page.Offset,
@@ -109,13 +117,37 @@ func (r *MessageRepository) ListMessages(ctx context.Context, conversationID uui
 
 	var items []*message.Message
 	for rows.Next() {
-		var m message.Message
-		if err := rows.Scan(&m.ID, &m.ConversationID, &m.SenderID, &m.Body, &m.CreatedAt); err != nil {
+		m, err := scanMessage(rows)
+		if err != nil {
 			return shared.PageResult[*message.Message]{}, mapError(err)
 		}
-		items = append(items, &m)
+		items = append(items, m)
 	}
 	return shared.PageResult[*message.Message]{Items: items, Total: total}, mapError(rows.Err())
+}
+
+func scanMessage(row rowScanner) (*message.Message, error) {
+	var (
+		m                message.Message
+		url, ctype, name *string
+		size             *int64
+	)
+	if err := row.Scan(&m.ID, &m.ConversationID, &m.SenderID, &m.Body, &m.CreatedAt, &url, &ctype, &name, &size); err != nil {
+		return nil, err
+	}
+	if url != nil {
+		m.Attachment = &message.Attachment{URL: *url}
+		if ctype != nil {
+			m.Attachment.ContentType = *ctype
+		}
+		if name != nil {
+			m.Attachment.Filename = *name
+		}
+		if size != nil {
+			m.Attachment.Size = *size
+		}
+	}
+	return &m, nil
 }
 
 func scanConversation(row rowScanner) (*message.Conversation, error) {

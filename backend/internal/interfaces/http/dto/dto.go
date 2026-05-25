@@ -355,24 +355,42 @@ func FromConversation(c *message.Conversation, unread int64) ConversationView {
 	}
 }
 
+// AttachmentView renders a message's optional file attachment.
+type AttachmentView struct {
+	URL         string `json:"url"`
+	ContentType string `json:"contentType"`
+	Filename    string `json:"filename"`
+	Size        int64  `json:"size"`
+}
+
 // MessageView is the public representation of a message.
 type MessageView struct {
-	ID             uuid.UUID `json:"id"`
-	ConversationID uuid.UUID `json:"conversationId"`
-	SenderID       uuid.UUID `json:"senderId"`
-	Body           string    `json:"body"`
-	CreatedAt      time.Time `json:"createdAt"`
+	ID             uuid.UUID       `json:"id"`
+	ConversationID uuid.UUID       `json:"conversationId"`
+	SenderID       uuid.UUID       `json:"senderId"`
+	Body           string          `json:"body"`
+	Attachment     *AttachmentView `json:"attachment,omitempty"`
+	CreatedAt      time.Time       `json:"createdAt"`
 }
 
 // FromMessage maps a message entity to its view.
 func FromMessage(m *message.Message) MessageView {
-	return MessageView{
+	v := MessageView{
 		ID:             m.ID,
 		ConversationID: m.ConversationID,
 		SenderID:       m.SenderID,
 		Body:           m.Body,
 		CreatedAt:      m.CreatedAt,
 	}
+	if m.Attachment != nil {
+		v.Attachment = &AttachmentView{
+			URL:         m.Attachment.URL,
+			ContentType: m.Attachment.ContentType,
+			Filename:    m.Attachment.Filename,
+			Size:        m.Attachment.Size,
+		}
+	}
+	return v
 }
 
 // NotificationView is the public representation of a notification.

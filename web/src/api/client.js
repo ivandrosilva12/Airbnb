@@ -175,6 +175,12 @@ export const api = {
   listConversations: () => request('GET', '/conversations', { auth: true }),
   listMessages: (id) => request('GET', `/conversations/${id}/messages`, { auth: true }),
   sendMessage: (id, body) => request('POST', `/conversations/${id}/messages`, { body: { body }, auth: true }),
+  sendAttachment: (id, file, body = '') => {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (body) fd.append('body', body);
+    return request('POST', `/conversations/${id}/attachments`, { formData: fd, auth: true });
+  },
   markConversationRead: (id) => request('POST', `/conversations/${id}/read`, { auth: true }),
   messagesUnreadCount: () => request('GET', '/conversations/unread-count', { auth: true }),
 

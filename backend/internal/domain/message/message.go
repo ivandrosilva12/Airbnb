@@ -72,12 +72,23 @@ func (c *Conversation) LastReadFor(userID uuid.UUID) *time.Time {
 	return nil
 }
 
-// Message is an entity belonging to a Conversation.
+// Attachment is an optional file (image or document) carried by a message. The
+// bytes live in object storage; the message only holds its metadata and URL.
+type Attachment struct {
+	URL         string
+	ContentType string
+	Filename    string
+	Size        int64
+}
+
+// Message is an entity belonging to a Conversation. It carries text, an
+// attachment, or both — at least one is always present.
 type Message struct {
 	ID             uuid.UUID
 	ConversationID uuid.UUID
 	SenderID       uuid.UUID
 	Body           string
+	Attachment     *Attachment
 	CreatedAt      time.Time
 }
 
@@ -101,6 +112,32 @@ func (c *Conversation) PostMessage(senderID uuid.UUID, body string) (*Message, e
 		ConversationID: c.ID,
 		SenderID:       senderID,
 		Body:           body,
+		CreatedAt:      now,
+	}, nil
+}
+
+// PostAttachment appends a message carrying an attachment (with an optional
+// caption) authored by sender. The body may be empty since the attachment is
+// the content, but the attachment itself must be present.
+func (c *Conversation) PostAttachment(senderID uuid.UUID, body string, att Attachment) (*Message, error) {
+	if !c.HasParticipant(senderID) {
+		return nil, shared.ErrForbidden
+	}
+	if att.URL == "" {
+		return nil, shared.NewValidationError("attachment is required")
+	}
+	body = strings.TrimSpace(body)
+	if len(body) > 4000 {
+		return nil, shared.NewValidationError("message is too long")
+	}
+	now := time.Now().UTC()
+	c.LastMessageAt = now
+	return &Message{
+		ID:             uuid.New(),
+		ConversationID: c.ID,
+		SenderID:       senderID,
+		Body:           body,
+		Attachment:     &att,
 		CreatedAt:      now,
 	}, nil
 }

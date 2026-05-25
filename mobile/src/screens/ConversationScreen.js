@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useLayoutEffect } from 'react';
-import { View, Text, FlatList, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, FlatList, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Image, Linking } from 'react-native';
 import { useApi } from '../api/useApi';
 import { useRealtime } from '../api/RealtimeContext';
 
@@ -83,9 +83,23 @@ export default function ConversationScreen({ route, navigation }) {
         ListEmptyComponent={<Text style={styles.empty}>No messages yet. Say hello!</Text>}
         renderItem={({ item }) => {
           const mine = myId && item.senderId === myId;
+          const att = item.attachment;
+          const isImage = att && att.contentType && att.contentType.startsWith('image/');
           return (
             <View style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
-              <Text style={mine ? styles.mineText : styles.theirsText}>{item.body}</Text>
+              {!!item.body && <Text style={mine ? styles.mineText : styles.theirsText}>{item.body}</Text>}
+              {att && isImage && (
+                <Pressable onPress={() => Linking.openURL(att.url)}>
+                  <Image source={{ uri: att.url }} style={styles.attachImage} resizeMode="cover" />
+                </Pressable>
+              )}
+              {att && !isImage && (
+                <Pressable onPress={() => Linking.openURL(att.url)}>
+                  <Text style={[mine ? styles.mineText : styles.theirsText, styles.attachLink]}>
+                    📎 {att.filename || 'Attachment'}
+                  </Text>
+                </Pressable>
+              )}
             </View>
           );
         }}
@@ -114,6 +128,8 @@ const styles = StyleSheet.create({
   theirs: { alignSelf: 'flex-start', backgroundColor: '#f0f0f0' },
   mineText: { color: '#fff' },
   theirsText: { color: '#222' },
+  attachImage: { width: 200, height: 200, borderRadius: 8, marginTop: 6 },
+  attachLink: { marginTop: 6, textDecorationLine: 'underline' },
   empty: { textAlign: 'center', color: '#717171', marginTop: 24 },
   error: { color: '#c0392b', paddingHorizontal: 12 },
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, padding: 10, borderTopWidth: 1, borderColor: '#eee' },
