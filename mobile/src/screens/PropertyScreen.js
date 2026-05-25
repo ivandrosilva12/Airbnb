@@ -8,9 +8,13 @@ export default function PropertyScreen({ route, navigation }) {
   const api = useApi();
   const { authenticated, login } = useAuth();
   const [property, setProperty] = useState(null);
+  const [reviews, setReviews] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [guests, setGuests] = useState('1');
+  const [coupon, setCoupon] = useState('');
+  const [couponInfo, setCouponInfo] = useState(null);
   const [message, setMessage] = useState(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
@@ -21,7 +25,34 @@ export default function PropertyScreen({ route, navigation }) {
 
   useEffect(() => {
     api.getProperty(id).then(setProperty).catch((e) => setError(e.message));
+    api.getReviews(id).then((r) => setReviews(r.items || [])).catch(() => {});
+    api.getReviewSummary(id).then(setSummary).catch(() => {});
   }, [id]);
+
+  const REVIEW_CATS = ['cleanliness', 'accuracy', 'communication', 'location', 'checkIn', 'value'];
+  const CAT_LABELS = {
+    cleanliness: 'Cleanliness', accuracy: 'Accuracy', communication: 'Communication',
+    location: 'Location', checkIn: 'Check-in', value: 'Value',
+  };
+
+  async function applyCoupon() {
+    setError(null);
+    setCouponInfo(null);
+    if (!authenticated) {
+      login();
+      return;
+    }
+    if (!checkIn || !checkOut) {
+      setError('Choose your dates first.');
+      return;
+    }
+    try {
+      const res = await api.previewCoupon({ propertyId: id, checkIn, checkOut, code: coupon.trim() });
+      setCouponInfo(res);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   // Reflect whether this listing is already in the wishlist so the heart is
   // correct on revisit (rather than always starting empty).
@@ -87,7 +118,10 @@ export default function PropertyScreen({ route, navigation }) {
       return;
     }
     try {
-      const b = await api.createBooking({ propertyId: id, checkIn, checkOut, guests: Number(guests) });
+      const b = await api.createBooking({
+        propertyId: id, checkIn, checkOut, guests: Number(guests),
+        couponCode: coupon.trim() || undefined,
+      });
       setMessage(`Booked ${b.nights} night(s) for ${b.totalPrice.display}. Status: ${b.status}.`);
     } catch (e) {
       setError(e.message);
@@ -104,6 +138,9 @@ export default function PropertyScreen({ route, navigation }) {
       <View style={styles.body}>
         <Text style={styles.title}>{property.title}</Text>
         <Text style={styles.meta}>{property.address.city}, {property.address.country} · up to {property.maxGuests} guests</Text>
+        {summary && summary.count > 0 && (
+          <Text style={styles.rating}>★ {summary.averageRating.toFixed(1)} · {summary.count} review(s)</Text>
+        )}
         {property.hostIsSuperhost && <Text style={styles.superhost}>★ Superhost</Text>}
         <Text style={styles.price}>{property.pricePerNight.display} / night</Text>
         {property.instantBook && <Text style={styles.instant}>⚡ Instant Book — confirmed instantly</Text>}
@@ -114,6 +151,19 @@ export default function PropertyScreen({ route, navigation }) {
           <TextInput style={styles.input} placeholder="Check in (YYYY-MM-DD)" value={checkIn} onChangeText={setCheckIn} />
           <TextInput style={styles.input} placeholder="Check out (YYYY-MM-DD)" value={checkOut} onChangeText={setCheckOut} />
           <TextInput style={styles.input} placeholder="Guests" keyboardType="number-pad" value={guests} onChangeText={setGuests} />
+          <View style={styles.couponRow}>
+            <TextInput
+              style={[styles.input, { flex: 1, marginBottom: 0 }]}
+              placeholder="Promo code"
+              autoCapitalize="characters"
+              value={coupon}
+              onChangeText={(v) => { setCoupon(v); setCouponInfo(null); }}
+            />
+            <Pressable style={styles.couponBtn} onPress={applyCoupon} disabled={!coupon.trim()}>
+              <Text style={styles.secondaryText}>Apply</Text>
+            </Pressable>
+          </View>
+          {couponInfo && <Text style={styles.success}>Coupon applied — you save {couponInfo.discount.display}.</Text>}
           <Pressable style={styles.btn} onPress={book}>
             <Text style={styles.btnText}>{!authenticated ? 'Sign in to reserve' : property.instantBook ? '⚡ Book instantly' : 'Reserve'}</Text>
           </Pressable>
@@ -128,6 +178,41 @@ export default function PropertyScreen({ route, navigation }) {
           <Pressable style={styles.secondaryBtn} onPress={contactHost}>
             <Text style={styles.secondaryText}>Contact host</Text>
           </Pressable>
+        </View>
+
+        <View style={styles.reviewsSection}>
+          <Text style={styles.sectionTitle}>Reviews</Text>
+          {summary?.categories && (
+            <View style={styles.catBreakdown}>
+              {REVIEW_CATS.filter((k) => summary.categories[k] > 0).map((k) => (
+                <View key={k} style={styles.catRow}>
+                  <Text style={styles.catLabel}>{CAT_LABELS[k]}</Text>
+                  <Text style={styles.catVal}>{summary.categories[k].toFixed(1)}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          {reviews.length === 0 ? (
+            <Text style={styles.meta}>No reviews yet.</Text>
+          ) : (
+            reviews.map((r) => (
+              <View key={r.id} style={styles.reviewItem}>
+                <Text style={styles.reviewStars}>★ {r.rating}</Text>
+                {!!r.comment && <Text style={styles.reviewComment}>{r.comment}</Text>}
+                {r.categories && (
+                  <Text style={styles.reviewCats}>
+                    {REVIEW_CATS.filter((k) => r.categories[k] > 0).map((k) => `${CAT_LABELS[k]} ${r.categories[k]}`).join(' · ')}
+                  </Text>
+                )}
+                {!!r.response && (
+                  <View style={styles.reviewResponse}>
+                    <Text style={styles.reviewResponseLabel}>Host response</Text>
+                    <Text style={styles.reviewComment}>{r.response}</Text>
+                  </View>
+                )}
+              </View>
+            ))
+          )}
         </View>
 
         {reported ? (
@@ -186,6 +271,7 @@ const styles = StyleSheet.create({
   body: { padding: 16 },
   title: { fontSize: 22, fontWeight: '800' },
   meta: { color: '#717171', marginVertical: 4 },
+  rating: { fontWeight: '700', color: '#222', marginVertical: 2 },
   price: { fontSize: 16, fontWeight: '600', marginVertical: 4 },
   instant: { color: '#ff385c', fontWeight: '700', marginTop: 2 },
   superhost: { color: '#222', fontWeight: '700', marginVertical: 2 },
@@ -200,6 +286,20 @@ const styles = StyleSheet.create({
   secondaryActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   secondaryBtn: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
   secondaryText: { fontWeight: '600', color: '#222' },
+  couponRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  couponBtn: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' },
+  reviewsSection: { marginTop: 20 },
+  sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 8 },
+  catBreakdown: { backgroundColor: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 12 },
+  catRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
+  catLabel: { color: '#717171' },
+  catVal: { color: '#222', fontWeight: '600' },
+  reviewItem: { borderTopWidth: 1, borderColor: '#eee', paddingVertical: 10 },
+  reviewStars: { fontWeight: '700', color: '#222' },
+  reviewComment: { color: '#222', marginTop: 2, lineHeight: 19 },
+  reviewCats: { color: '#717171', fontSize: 12, marginTop: 4 },
+  reviewResponse: { marginTop: 8, marginLeft: 12, paddingLeft: 10, borderLeftWidth: 3, borderColor: '#eee' },
+  reviewResponseLabel: { fontSize: 12, color: '#717171', fontWeight: '700' },
   reportLink: { color: '#c0392b', textDecorationLine: 'underline', marginTop: 16 },
   reportDone: { color: '#1a7f47', marginTop: 16 },
   reportBox: { borderWidth: 1, borderColor: '#eee', borderRadius: 12, padding: 16, marginTop: 16 },

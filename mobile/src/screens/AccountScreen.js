@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Alert } from 'react-native';
 import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
 
@@ -15,11 +15,47 @@ export default function AccountScreen({ navigation }) {
   const { authenticated, login, logout, setupTwoFactor, canSetupTwoFactor } = useAuth();
   const api = useApi();
   const [isHost, setIsHost] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!authenticated) return;
     api.me().then((u) => setIsHost(u.role === 'host' || u.role === 'admin')).catch(() => {});
   }, [authenticated]);
+
+  async function becomeHost() {
+    setBusy(true);
+    try {
+      await api.becomeHost();
+      setIsHost(true);
+      navigation.navigate('HostListings');
+    } catch (e) {
+      Alert.alert('Could not become a host', e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function confirmDelete() {
+    Alert.alert(
+      'Delete account',
+      'This permanently anonymises your account and signs you out. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteAccount();
+              await logout();
+            } catch (e) {
+              Alert.alert('Could not delete account', e.message);
+            }
+          },
+        },
+      ],
+    );
+  }
 
   if (!authenticated) {
     return (
@@ -39,7 +75,7 @@ export default function AccountScreen({ navigation }) {
           <Text style={styles.chevron}>›</Text>
         </Pressable>
       ))}
-      {isHost && (
+      {isHost ? (
         <>
           <Pressable style={styles.row} onPress={() => navigation.navigate('HostListings')}>
             <Text style={styles.icon}>🏠</Text>
@@ -52,6 +88,12 @@ export default function AccountScreen({ navigation }) {
             <Text style={styles.chevron}>›</Text>
           </Pressable>
         </>
+      ) : (
+        <Pressable style={styles.row} onPress={becomeHost} disabled={busy}>
+          <Text style={styles.icon}>🏠</Text>
+          <Text style={styles.label}>Become a host</Text>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
       )}
       <Pressable
         style={styles.row}
@@ -60,6 +102,11 @@ export default function AccountScreen({ navigation }) {
       >
         <Text style={styles.icon}>🔐</Text>
         <Text style={styles.label}>Two-factor authentication</Text>
+        <Text style={styles.chevron}>›</Text>
+      </Pressable>
+      <Pressable style={styles.row} onPress={confirmDelete}>
+        <Text style={styles.icon}>🗑️</Text>
+        <Text style={[styles.label, { color: '#c0392b' }]}>Delete account</Text>
         <Text style={styles.chevron}>›</Text>
       </Pressable>
       <Pressable style={styles.signOut} onPress={logout}>

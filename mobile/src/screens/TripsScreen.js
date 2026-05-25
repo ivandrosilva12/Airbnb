@@ -3,6 +3,12 @@ import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator } from '
 import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
 
+const REVIEW_CATEGORIES = ['cleanliness', 'accuracy', 'communication', 'location', 'checkIn', 'value'];
+const CATEGORY_LABELS = {
+  cleanliness: 'Cleanliness', accuracy: 'Accuracy', communication: 'Communication',
+  location: 'Location', checkIn: 'Check-in', value: 'Value',
+};
+
 export default function TripsScreen() {
   const api = useApi();
   const { authenticated, login } = useAuth();
@@ -12,6 +18,7 @@ export default function TripsScreen() {
   const [pending, setPending] = useState({});
   const [reviewed, setReviewed] = useState({});
   const [reviewing, setReviewing] = useState(null);
+  const [draft, setDraft] = useState({ rating: 5, cats: {} });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -37,9 +44,22 @@ export default function TripsScreen() {
     }
   }, [api]);
 
-  async function submitReview(bookingId, rating) {
+  function openReview(bookingId) {
+    setError(null);
+    setDraft({ rating: 5, cats: {} });
+    setReviewing(bookingId);
+  }
+
+  async function submitReview(bookingId) {
     try {
-      await api.createReview({ bookingId, rating, comment: '' });
+      const categories = {};
+      let any = false;
+      for (const k of REVIEW_CATEGORIES) {
+        const v = Number(draft.cats[k] || 0);
+        categories[k] = v;
+        if (v > 0) any = true;
+      }
+      await api.createReview({ bookingId, rating: draft.rating, comment: '', categories: any ? categories : undefined });
       setReviewed((r) => ({ ...r, [bookingId]: true }));
       setReviewing(null);
     } catch (e) {
@@ -122,16 +142,38 @@ export default function TripsScreen() {
                 <Text style={styles.reviewedText}>Reviewed ✓</Text>
               ) : item.status === 'completed' && pending[item.id] ? (
                 reviewing === item.id ? (
-                  <View style={styles.starRow}>
-                    <Text style={styles.meta}>Rate your stay:</Text>
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <Pressable key={n} onPress={() => submitReview(item.id, n)}>
-                        <Text style={styles.star}>★{n}</Text>
-                      </Pressable>
+                  <View style={styles.reviewForm}>
+                    <Text style={styles.reviewFormLabel}>Overall</Text>
+                    <View style={styles.starRow}>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <Pressable key={n} onPress={() => setDraft((d) => ({ ...d, rating: n }))}>
+                          <Text style={n <= draft.rating ? styles.starOn : styles.starOff}>★</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    {REVIEW_CATEGORIES.map((k) => (
+                      <View key={k} style={styles.catPickRow}>
+                        <Text style={styles.catPickLabel}>{CATEGORY_LABELS[k]}</Text>
+                        <View style={styles.starRow}>
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <Pressable key={n} onPress={() => setDraft((d) => ({ ...d, cats: { ...d.cats, [k]: n } }))}>
+                              <Text style={n <= (draft.cats[k] || 0) ? styles.starOnSm : styles.starOffSm}>★</Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </View>
                     ))}
+                    <View style={styles.reviewFormActions}>
+                      <Pressable style={styles.btnSm} onPress={() => submitReview(item.id)}>
+                        <Text style={styles.btnText}>Submit review</Text>
+                      </Pressable>
+                      <Pressable onPress={() => setReviewing(null)}>
+                        <Text style={styles.cancel}>Cancel</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 ) : (
-                  <Pressable onPress={() => { setError(null); setReviewing(item.id); }}>
+                  <Pressable onPress={() => openReview(item.id)}>
                     <Text style={styles.reviewCta}>Leave a review</Text>
                   </Pressable>
                 )
@@ -165,8 +207,18 @@ const styles = StyleSheet.create({
   receiptToggle: { color: '#ff385c', fontWeight: '600', marginTop: 8 },
   reviewCta: { color: '#ff385c', fontWeight: '700', marginTop: 8 },
   reviewedText: { color: '#1e7e44', fontWeight: '700', marginTop: 8 },
-  starRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 8 },
+  starRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   star: { color: '#ff385c', fontWeight: '700', fontSize: 15 },
+  reviewForm: { marginTop: 10, backgroundColor: '#fafafa', borderRadius: 8, padding: 12 },
+  reviewFormLabel: { fontWeight: '700', color: '#222', marginBottom: 4 },
+  starOn: { color: '#ff385c', fontSize: 26 },
+  starOff: { color: '#ddd', fontSize: 26 },
+  starOnSm: { color: '#ff385c', fontSize: 18 },
+  starOffSm: { color: '#ddd', fontSize: 18 },
+  catPickRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+  catPickLabel: { color: '#717171' },
+  reviewFormActions: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 12 },
+  btnSm: { backgroundColor: '#ff385c', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10 },
   receipt: { marginTop: 8, backgroundColor: '#fafafa', borderRadius: 8, padding: 12 },
   receiptLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
   receiptLabel: { color: '#717171' },
