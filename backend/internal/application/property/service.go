@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"time"
 
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/property"
@@ -220,19 +219,6 @@ func (s *Service) ReorderPhotos(ctx context.Context, actorID, propertyID uuid.UU
 		return nil, err
 	}
 	return p, nil
-}
-
-// PresignPhotoUpload returns a direct-upload URL for client-side uploads.
-func (s *Service) PresignPhotoUpload(ctx context.Context, actorID, propertyID uuid.UUID, ext string) (string, string, error) {
-	if _, err := s.ownedProperty(ctx, actorID, propertyID); err != nil {
-		return "", "", err
-	}
-	objectKey := fmt.Sprintf("properties/%s/%s%s", propertyID, uuid.NewString(), ext)
-	url, err := s.storage.PresignedPutURL(ctx, objectKey, 15*time.Minute)
-	if err != nil {
-		return "", "", err
-	}
-	return url, objectKey, nil
 }
 
 // Delete removes a listing after verifying ownership.

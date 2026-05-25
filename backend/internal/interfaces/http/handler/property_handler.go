@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -418,28 +417,3 @@ func (h *PropertyHandler) ReorderPhotos(c *gin.Context) {
 	response.OK(c, dto.FromProperty(p))
 }
 
-type presignRequest struct {
-	Filename string `json:"filename" binding:"required"`
-}
-
-// PresignPhotoUpload returns a direct-upload URL for the listing.
-func (h *PropertyHandler) PresignPhotoUpload(c *gin.Context) {
-	actorID, ok := requireUser(c)
-	if !ok {
-		return
-	}
-	id, ok := pathUUID(c, "id")
-	if !ok {
-		return
-	}
-	var req presignRequest
-	if !bindJSON(c, &req) {
-		return
-	}
-	url, key, err := h.svc.PresignPhotoUpload(c.Request.Context(), actorID, id, path.Ext(req.Filename))
-	if err != nil {
-		response.Fail(c, err)
-		return
-	}
-	response.OK(c, gin.H{"uploadUrl": url, "objectKey": key})
-}
