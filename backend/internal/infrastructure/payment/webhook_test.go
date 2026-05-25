@@ -109,13 +109,24 @@ func TestStripeConnectWebhookVerifier_AccountUpdated(t *testing.T) {
 	}
 }
 
-func TestNewConnectWebhookVerifiers_OnlyWithSecret(t *testing.T) {
+func TestNewConnectWebhookVerifiers_SecretSelection(t *testing.T) {
+	// No secret at all → disabled.
 	if vs := NewConnectWebhookVerifiers(config.PaymentConfig{}); len(vs) != 0 {
 		t.Fatalf("expected no verifiers without a secret, got %d", len(vs))
 	}
-	vs := NewConnectWebhookVerifiers(config.PaymentConfig{Stripe: config.StripeConfig{WebhookSecret: "whsec"}})
-	if _, ok := vs[nameStripe]; !ok {
-		t.Fatal("expected a stripe connect verifier")
+	// Dedicated Connect secret enables it.
+	if vs := NewConnectWebhookVerifiers(config.PaymentConfig{Stripe: config.StripeConfig{ConnectWebhookSecret: "whsec_connect"}}); vs[nameStripe] == nil {
+		t.Fatal("expected a stripe connect verifier from the dedicated secret")
+	}
+	// Falls back to the payment webhook secret when no dedicated one is set.
+	if vs := NewConnectWebhookVerifiers(config.PaymentConfig{Stripe: config.StripeConfig{WebhookSecret: "whsec"}}); vs[nameStripe] == nil {
+		t.Fatal("expected a stripe connect verifier falling back to the payment secret")
+	}
+	// The dedicated secret takes precedence and is the one used to verify.
+	vs := NewConnectWebhookVerifiers(config.PaymentConfig{Stripe: config.StripeConfig{WebhookSecret: "whsec_pay", ConnectWebhookSecret: "whsec_connect"}})
+	v, ok := vs[nameStripe].(*stripeConnectWebhookVerifier)
+	if !ok || v.secret != "whsec_connect" {
+		t.Fatalf("expected the dedicated connect secret to be used, got %+v", vs[nameStripe])
 	}
 }
 

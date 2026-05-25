@@ -135,6 +135,10 @@ services:
       # Webhook signing secrets. A provider's webhook route is only enabled when
       # its secret is set (POST /api/v1/webhooks/payments/<provider>).
       STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
+      # Signing secret for the Stripe Connect webhook endpoint
+      # (POST /api/v1/webhooks/connect/stripe, account.updated). Falls back to
+      # STRIPE_WEBHOOK_SECRET when unset (single-endpoint setups).
+      STRIPE_CONNECT_WEBHOOK_SECRET: "${STRIPE_CONNECT_WEBHOOK_SECRET:-}"
       APPYPAY_WEBHOOK_SECRET: "${APPYPAY_WEBHOOK_SECRET:-}"
       GPAYANGOLA_WEBHOOK_SECRET: "${GPAYANGOLA_WEBHOOK_SECRET:-}"
       # Per-IP token bucket guarding the webhook route.

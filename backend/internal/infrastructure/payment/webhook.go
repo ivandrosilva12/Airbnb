@@ -160,13 +160,18 @@ func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.Ga
 // --- Stripe Connect (account.updated) ----------------------------------------
 
 // NewConnectWebhookVerifiers builds the Connect webhook verifiers keyed by
-// provider. Only Stripe is supported, enabled when a webhook secret is set
-// (reusing STRIPE_WEBHOOK_SECRET; a production Connect endpoint may use its own
-// signing secret). Without a secret the Connect webhook route returns 404.
+// provider. Only Stripe is supported. Stripe delivers Connect events to a
+// separate endpoint with its own signing secret (STRIPE_CONNECT_WEBHOOK_SECRET);
+// when that is unset the payment webhook secret is reused for single-endpoint
+// setups. Without either secret the Connect webhook route returns 404.
 func NewConnectWebhookVerifiers(cfg config.PaymentConfig) map[string]port.ConnectWebhookVerifier {
 	out := map[string]port.ConnectWebhookVerifier{}
-	if cfg.Stripe.WebhookSecret != "" {
-		out[nameStripe] = &stripeConnectWebhookVerifier{secret: cfg.Stripe.WebhookSecret, tolerance: stripeReplayTolerance}
+	secret := cfg.Stripe.ConnectWebhookSecret
+	if secret == "" {
+		secret = cfg.Stripe.WebhookSecret
+	}
+	if secret != "" {
+		out[nameStripe] = &stripeConnectWebhookVerifier{secret: secret, tolerance: stripeReplayTolerance}
 	}
 	if len(out) == 0 {
 		slog.Info("payout: no Connect webhook secret configured; Connect webhook endpoint disabled")

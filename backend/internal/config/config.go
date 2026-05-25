@@ -79,7 +79,12 @@ type PaymentConfig struct {
 type StripeConfig struct {
 	SecretKey     string // sk_test_… / sk_live_…
 	BaseURL       string // override for tests; defaults to https://api.stripe.com
-	WebhookSecret string // whsec_…; verifies inbound webhook signatures
+	WebhookSecret string // whsec_…; verifies inbound payment webhook signatures
+	// ConnectWebhookSecret verifies inbound Connect (account.updated) webhooks.
+	// Stripe delivers Connect events to a separate endpoint with its own signing
+	// secret; when empty the payment WebhookSecret is reused (single-endpoint
+	// setups).
+	ConnectWebhookSecret string
 	// ConnectCountry is the country code used when creating hosts' Stripe Connect
 	// Express accounts (must be a Connect-supported country); defaults to US.
 	ConnectCountry string
@@ -221,10 +226,11 @@ func Load() (*Config, error) {
 			Provider:         getEnv("PAYMENT_PROVIDER", "fake"),
 			DomesticCurrency: getEnv("PAYMENT_DOMESTIC_CURRENCY", "AOA"),
 			Stripe: StripeConfig{
-				SecretKey:      getEnv("STRIPE_SECRET_KEY", ""),
-				BaseURL:        getEnv("STRIPE_BASE_URL", "https://api.stripe.com"),
-				WebhookSecret:  getEnv("STRIPE_WEBHOOK_SECRET", ""),
-				ConnectCountry: getEnv("STRIPE_CONNECT_COUNTRY", "US"),
+				SecretKey:            getEnv("STRIPE_SECRET_KEY", ""),
+				BaseURL:              getEnv("STRIPE_BASE_URL", "https://api.stripe.com"),
+				WebhookSecret:        getEnv("STRIPE_WEBHOOK_SECRET", ""),
+				ConnectWebhookSecret: getEnv("STRIPE_CONNECT_WEBHOOK_SECRET", ""),
+				ConnectCountry:       getEnv("STRIPE_CONNECT_COUNTRY", "US"),
 			},
 			AppyPay: AppyPayConfig{
 				Token:         getEnv("APPYPAY_TOKEN", ""),
