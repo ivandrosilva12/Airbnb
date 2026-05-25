@@ -20,6 +20,7 @@ export default function PropertyCard({ property }) {
     <Link to={`/properties/${property.id}`} className="card">
       <div className="card-photo">
         {photo ? <img src={photo} alt={property.title} /> : <div className="card-photo-placeholder">{t('common.noPhoto')}</div>}
+        {property.hostIsSuperhost && <span className="superhost-badge">★ {t('detail.superhost')}</span>}
         {authenticated && (
           <button
             type="button"

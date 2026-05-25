@@ -85,6 +85,7 @@ export default function ExploreScreen({ navigation }) {
                 </View>
               )}
               <View style={styles.cardBody}>
+                {item.hostIsSuperhost && <Text style={styles.superhost}>★ Superhost</Text>}
                 <Text style={styles.title}>{item.title}</Text>
                 <Text style={styles.meta}>{item.address.city}, {item.address.country}</Text>
                 <Text style={styles.price}>{item.pricePerNight.display} / night</Text>
@@ -104,6 +105,7 @@ const styles = StyleSheet.create({
   photo: { width: '100%', height: 180 },
   placeholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0f0f0' },
   cardBody: { padding: 12 },
+  superhost: { fontWeight: '700', fontSize: 12, color: '#222', marginBottom: 2 },
   title: { fontWeight: '700', fontSize: 16 },
   meta: { color: '#717171', marginVertical: 2 },
   price: { fontWeight: '600' },

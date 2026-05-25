@@ -117,6 +117,9 @@ export default function PropertyDetail() {
         {property.address.city}, {property.address.country} · {t(`type.${property.type}`)} · {t('detail.upToGuests', { n: property.maxGuests })}
         {summary && summary.count > 0 && ` · ★ ${summary.averageRating.toFixed(1)} (${summary.count})`}
       </p>
+      {property.hostIsSuperhost && (
+        <p className="superhost-line" title={t('detail.superhostHint')}>★ {t('detail.superhost')}</p>
+      )}
 
       <div className="gallery">
         {property.photos.length === 0 && <div className="card-photo-placeholder">{t('common.noPhoto')}</div>}

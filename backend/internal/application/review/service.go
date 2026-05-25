@@ -87,14 +87,31 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*review.Review, e
 	return r, nil
 }
 
-// refreshPropertyRating recomputes and persists the listing's cached rating.
-// Best-effort: a failure here must not fail the review that was just created.
+// refreshPropertyRating recomputes and persists the listing's cached rating,
+// then re-evaluates the owning host's Superhost status. Best-effort: a failure
+// here must not fail the review that was just created.
 func (s *Service) refreshPropertyRating(ctx context.Context, propertyID uuid.UUID) {
 	summary, err := s.reviews.SummaryForProperty(ctx, propertyID)
 	if err != nil {
 		return
 	}
 	_ = s.properties.UpdateRating(ctx, propertyID, summary.AverageRating, int(summary.Count))
+	s.refreshHostSuperhost(ctx, propertyID)
+}
+
+// refreshHostSuperhost recomputes whether the listing's host qualifies for the
+// Superhost badge (from their review-weighted rating across all listings) and
+// fans the result out across the host's listings. Best-effort.
+func (s *Service) refreshHostSuperhost(ctx context.Context, propertyID uuid.UUID) {
+	prop, err := s.properties.FindByID(ctx, propertyID)
+	if err != nil {
+		return
+	}
+	avg, count, err := s.properties.HostRatingAggregate(ctx, prop.HostID)
+	if err != nil {
+		return
+	}
+	_ = s.properties.SetHostSuperhost(ctx, prop.HostID, property.QualifiesAsSuperhost(avg, count))
 }
 
 // GuestReviewInput carries data for a host's review of the guest.

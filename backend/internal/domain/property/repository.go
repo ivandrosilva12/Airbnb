@@ -59,6 +59,13 @@ type Repository interface {
 	Search(ctx context.Context, criteria SearchCriteria) (shared.PageResult[*Property], error)
 	// UpdateRating persists the denormalised review aggregates for a listing.
 	UpdateRating(ctx context.Context, id uuid.UUID, average float64, count int) error
+	// HostRatingAggregate returns the host's review-weighted average rating and
+	// total review count across all their listings, used to recompute Superhost
+	// status. avg is 0 when the host has no reviews yet.
+	HostRatingAggregate(ctx context.Context, hostID uuid.UUID) (avg float64, count int, err error)
+	// SetHostSuperhost fans the host's Superhost flag out across all their
+	// listings (the denormalised PropertyView.HostIsSuperhost read-model).
+	SetHostSuperhost(ctx context.Context, hostID uuid.UUID, superhost bool) error
 }
 
 // AvailabilitySearcher is an optional Repository capability: it runs a search

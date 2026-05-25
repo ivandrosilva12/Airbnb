@@ -27,12 +27,12 @@ const propertyColumns = `id, host_id, title, description, type, status,
 	address_line1, city, country, postal_code, latitude, longitude,
 	price_cents, currency, cleaning_fee_cents, max_guests, bedrooms, beds, bathrooms, amenities,
 	cancellation_policy, average_rating, review_count,
-	weekly_discount_pct, monthly_discount_pct, tax_rate_pct, instant_book, created_at, updated_at`
+	weekly_discount_pct, monthly_discount_pct, tax_rate_pct, instant_book, host_is_superhost, created_at, updated_at`
 
 func (r *PropertyRepository) Create(ctx context.Context, p *property.Property) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO properties (`+propertyColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)`,
 		p.ID, p.HostID, p.Title, p.Description, string(p.Type), string(p.Status),
 		p.Address.Line1, p.Address.City, p.Address.Country, p.Address.PostalCode,
 		p.Address.Latitude, p.Address.Longitude,
@@ -40,7 +40,7 @@ func (r *PropertyRepository) Create(ctx context.Context, p *property.Property) e
 		p.MaxGuests, p.Bedrooms, p.Beds, p.Bathrooms, p.Amenities,
 		string(p.CancellationPolicy), p.AverageRating, p.ReviewCount,
 		p.PricingPolicy.WeeklyDiscountPct, p.PricingPolicy.MonthlyDiscountPct, p.PricingPolicy.TaxRatePct,
-		p.InstantBook, p.CreatedAt, p.UpdatedAt,
+		p.InstantBook, p.HostIsSuperhost, p.CreatedAt, p.UpdatedAt,
 	)
 	return mapError(err)
 }
@@ -62,6 +62,33 @@ func orderBy(s property.Sort) string {
 func (r *PropertyRepository) UpdateRating(ctx context.Context, id uuid.UUID, average float64, count int) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE properties SET average_rating=$2, review_count=$3 WHERE id=$1`, id, average, count)
+	return mapError(err)
+}
+
+// HostRatingAggregate returns the review-weighted average rating and total
+// review count across all of the host's listings (using the denormalised
+// per-listing rating columns), used to recompute Superhost status.
+func (r *PropertyRepository) HostRatingAggregate(ctx context.Context, hostID uuid.UUID) (float64, int, error) {
+	var (
+		weighted float64
+		count    int64
+	)
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(average_rating * review_count), 0), COALESCE(SUM(review_count), 0)
+		FROM properties WHERE host_id=$1`, hostID).Scan(&weighted, &count)
+	if err != nil {
+		return 0, 0, mapError(err)
+	}
+	if count == 0 {
+		return 0, 0, nil
+	}
+	return weighted / float64(count), int(count), nil
+}
+
+// SetHostSuperhost fans the host's Superhost flag out across all their listings.
+func (r *PropertyRepository) SetHostSuperhost(ctx context.Context, hostID uuid.UUID, superhost bool) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE properties SET host_is_superhost=$2 WHERE host_id=$1 AND host_is_superhost <> $2`, hostID, superhost)
 	return mapError(err)
 }
 
@@ -335,7 +362,7 @@ func scanProperty(row rowScanner) (*property.Property, error) {
 		&priceCents, &currency, &cleaningCents, &p.MaxGuests, &p.Bedrooms, &p.Beds, &p.Bathrooms, &p.Amenities,
 		&policy, &p.AverageRating, &p.ReviewCount,
 		&p.PricingPolicy.WeeklyDiscountPct, &p.PricingPolicy.MonthlyDiscountPct, &p.PricingPolicy.TaxRatePct,
-		&p.InstantBook, &p.CreatedAt, &p.UpdatedAt,
+		&p.InstantBook, &p.HostIsSuperhost, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err

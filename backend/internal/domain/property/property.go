@@ -171,8 +171,26 @@ type Property struct {
 	// property's guest reviews, refreshed when a review is published.
 	AverageRating float64
 	ReviewCount   int
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// HostIsSuperhost is a denormalised copy of the owning host's Superhost
+	// status, fanned out across the host's listings when their aggregate rating
+	// crosses the threshold (see QualifiesAsSuperhost). It lets search and listing
+	// reads surface the badge without an extra per-host lookup.
+	HostIsSuperhost bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// Superhost qualification thresholds: a host earns the badge with a strong
+// aggregate guest rating across enough reviews on their listings.
+const (
+	SuperhostMinRating  = 4.8
+	SuperhostMinReviews = 10
+)
+
+// QualifiesAsSuperhost reports whether a host's aggregate guest rating (averaged
+// across all their listings) and review volume earn the Superhost badge.
+func QualifiesAsSuperhost(avgRating float64, reviewCount int) bool {
+	return reviewCount >= SuperhostMinReviews && avgRating >= SuperhostMinRating
 }
 
 // SetRating updates the cached review aggregates for the listing.

@@ -113,6 +113,7 @@ type PropertyView struct {
 	InstantBook        bool        `json:"instantBook"`
 	AverageRating      float64     `json:"averageRating"`
 	ReviewCount        int         `json:"reviewCount"`
+	HostIsSuperhost    bool        `json:"hostIsSuperhost"`
 	CreatedAt          time.Time   `json:"createdAt"`
 }
 
@@ -152,6 +153,7 @@ func FromProperty(p *property.Property) PropertyView {
 		InstantBook:        p.InstantBook,
 		AverageRating:      p.AverageRating,
 		ReviewCount:        p.ReviewCount,
+		HostIsSuperhost:    p.HostIsSuperhost,
 		CreatedAt:          p.CreatedAt,
 	}
 }

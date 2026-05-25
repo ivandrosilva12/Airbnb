@@ -104,6 +104,7 @@ export default function PropertyScreen({ route, navigation }) {
       <View style={styles.body}>
         <Text style={styles.title}>{property.title}</Text>
         <Text style={styles.meta}>{property.address.city}, {property.address.country} · up to {property.maxGuests} guests</Text>
+        {property.hostIsSuperhost && <Text style={styles.superhost}>★ Superhost</Text>}
         <Text style={styles.price}>{property.pricePerNight.display} / night</Text>
         {property.instantBook && <Text style={styles.instant}>⚡ Instant Book — confirmed instantly</Text>}
         <Text style={styles.desc}>{property.description || 'No description provided.'}</Text>
@@ -187,6 +188,7 @@ const styles = StyleSheet.create({
   meta: { color: '#717171', marginVertical: 4 },
   price: { fontSize: 16, fontWeight: '600', marginVertical: 4 },
   instant: { color: '#ff385c', fontWeight: '700', marginTop: 2 },
+  superhost: { color: '#222', fontWeight: '700', marginVertical: 2 },
   desc: { marginVertical: 12, lineHeight: 20 },
   bookBox: { borderWidth: 1, borderColor: '#ddd', borderRadius: 12, padding: 16, marginTop: 8 },
   bookTitle: { fontWeight: '700', fontSize: 16, marginBottom: 10 },

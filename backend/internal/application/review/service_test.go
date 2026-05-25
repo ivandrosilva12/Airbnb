@@ -8,6 +8,7 @@ import (
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/property"
+	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 	"github.com/google/uuid"
@@ -17,6 +18,7 @@ type reviewFixture struct {
 	svc        *reviewapp.Service
 	bookings   *memory.BookingRepository
 	properties *memory.PropertyRepository
+	reviews    *memory.ReviewRepository
 }
 
 func setup(t *testing.T) reviewFixture {
@@ -28,6 +30,7 @@ func setup(t *testing.T) reviewFixture {
 		svc:        reviewapp.NewService(reviews, bookings, properties),
 		bookings:   bookings,
 		properties: properties,
+		reviews:    reviews,
 	}
 }
 
@@ -142,6 +145,51 @@ func TestReview_RefreshesPropertyRating(t *testing.T) {
 	}
 	if updated.ReviewCount != 1 || updated.AverageRating != 4 {
 		t.Errorf("property rating = %v (%d reviews), want 4.0 (1)", updated.AverageRating, updated.ReviewCount)
+	}
+}
+
+func TestReview_RecomputesHostSuperhost(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	hostID := uuid.New()
+	propA := makeProperty(t, f.properties, hostID)
+	propB := makeProperty(t, f.properties, hostID) // a second listing of the same host
+
+	// Seed 9 prior 5-star property reviews on propA. They are reflected in propA's
+	// cached aggregate only once a refresh runs (i.e. when the 10th is published).
+	for i := 0; i < 9; i++ {
+		rv, err := review.NewPropertyReview(uuid.New(), propA.ID, uuid.New(), 5, "")
+		if err != nil {
+			t.Fatalf("seed review: %v", err)
+		}
+		if err := f.reviews.Create(ctx, rv); err != nil {
+			t.Fatalf("store seed review: %v", err)
+		}
+	}
+
+	// Below the threshold there is no badge yet.
+	if before, _ := f.properties.FindByID(ctx, propB.ID); before.HostIsSuperhost {
+		t.Fatal("host should not be a superhost before crossing the threshold")
+	}
+
+	// Publishing the 10th 5-star review (avg 5.0, count 10) crosses the threshold.
+	guestID := uuid.New()
+	b := makeBooking(t, guestID, propA.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, b)
+	if _, err := f.svc.Create(ctx, reviewapp.CreateInput{GuestID: guestID, BookingID: b.ID, Rating: 5}); err != nil {
+		t.Fatalf("create 10th review: %v", err)
+	}
+
+	// The flag is fanned out across every listing of the host, including propB
+	// which itself has no reviews.
+	for _, id := range []uuid.UUID{propA.ID, propB.ID} {
+		p, err := f.properties.FindByID(ctx, id)
+		if err != nil {
+			t.Fatalf("find property: %v", err)
+		}
+		if !p.HostIsSuperhost {
+			t.Errorf("property %v should reflect host superhost status", id)
+		}
 	}
 }
 

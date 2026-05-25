@@ -251,6 +251,37 @@ func (r *PropertyRepository) UpdateRating(_ context.Context, id uuid.UUID, avera
 	return nil
 }
 
+func (r *PropertyRepository) HostRatingAggregate(_ context.Context, hostID uuid.UUID) (float64, int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var (
+		weighted float64
+		count    int
+	)
+	for _, p := range r.m {
+		if p.HostID == hostID && p.ReviewCount > 0 {
+			weighted += p.AverageRating * float64(p.ReviewCount)
+			count += p.ReviewCount
+		}
+	}
+	if count == 0 {
+		return 0, 0, nil
+	}
+	return weighted / float64(count), count, nil
+}
+
+func (r *PropertyRepository) SetHostSuperhost(_ context.Context, hostID uuid.UUID, superhost bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, p := range r.m {
+		if p.HostID == hostID && p.HostIsSuperhost != superhost {
+			p.HostIsSuperhost = superhost
+			r.m[id] = p
+		}
+	}
+	return nil
+}
+
 func sortProperties(items []*property.Property, sort property.Sort) {
 	switch sort {
 	case property.SortPriceAsc:
