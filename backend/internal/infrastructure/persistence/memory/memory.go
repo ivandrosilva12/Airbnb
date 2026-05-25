@@ -541,16 +541,19 @@ func (r *ReviewRepository) summary(subjectID uuid.UUID, pred func(review.Review)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var sum, count int64
+	var cats []review.CategoryRatings
 	for _, rv := range r.m {
 		if pred(rv) {
 			sum += int64(rv.Rating)
 			count++
+			cats = append(cats, rv.Categories)
 		}
 	}
 	s := review.Summary{SubjectID: subjectID, Count: count}
 	if count > 0 {
 		s.AverageRating = float64(sum) / float64(count)
 	}
+	s.Categories = review.AverageCategories(cats)
 	return s
 }
 

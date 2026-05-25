@@ -52,10 +52,11 @@ func (s *Service) RespondToReview(ctx context.Context, hostID, reviewID uuid.UUI
 
 // CreateInput carries data to publish a property review (guest -> property).
 type CreateInput struct {
-	GuestID   uuid.UUID
-	BookingID uuid.UUID
-	Rating    int
-	Comment   string
+	GuestID    uuid.UUID
+	BookingID  uuid.UUID
+	Rating     int
+	Comment    string
+	Categories review.CategoryRatings
 }
 
 // Create publishes a guest's review of the property for a completed booking
@@ -78,6 +79,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*review.Review, e
 
 	r, err := review.NewPropertyReview(b.ID, b.PropertyID, in.GuestID, in.Rating, in.Comment)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.SetCategories(in.Categories); err != nil {
 		return nil, err
 	}
 	if err := s.reviews.Create(ctx, r); err != nil {

@@ -193,6 +193,66 @@ func TestReview_RecomputesHostSuperhost(t *testing.T) {
 	}
 }
 
+func TestReview_CategoryAveragesIgnoreUnrated(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	prop := makeProperty(t, f.properties, uuid.New())
+
+	// First guest rates every aspect.
+	g1 := uuid.New()
+	b1 := makeBooking(t, g1, prop.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, b1)
+	if _, err := f.svc.Create(ctx, reviewapp.CreateInput{
+		GuestID: g1, BookingID: b1.ID, Rating: 5,
+		Categories: review.CategoryRatings{Cleanliness: 5, Accuracy: 4, Communication: 5, Location: 3, CheckIn: 4, Value: 5},
+	}); err != nil {
+		t.Fatalf("create review 1: %v", err)
+	}
+
+	// Second guest rates only cleanliness; the other aspects stay unrated (0) and
+	// must not drag the averages down.
+	g2 := uuid.New()
+	b2 := makeBooking(t, g2, prop.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, b2)
+	if _, err := f.svc.Create(ctx, reviewapp.CreateInput{
+		GuestID: g2, BookingID: b2.ID, Rating: 3,
+		Categories: review.CategoryRatings{Cleanliness: 3},
+	}); err != nil {
+		t.Fatalf("create review 2: %v", err)
+	}
+
+	summary, err := f.svc.Summary(ctx, prop.ID)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if !summary.Categories.Any() {
+		t.Fatal("summary should carry category averages")
+	}
+	// Cleanliness: (5+3)/2 = 4.0; Location: only the first review rated it -> 3.0.
+	if summary.Categories.Cleanliness != 4 {
+		t.Errorf("cleanliness avg = %v, want 4", summary.Categories.Cleanliness)
+	}
+	if summary.Categories.Location != 3 {
+		t.Errorf("location avg = %v, want 3 (second guest left it unrated)", summary.Categories.Location)
+	}
+}
+
+func TestReview_RejectsOutOfRangeCategory(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	guestID := uuid.New()
+	b := makeBooking(t, guestID, uuid.New(), booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, b)
+
+	_, err := f.svc.Create(ctx, reviewapp.CreateInput{
+		GuestID: guestID, BookingID: b.ID, Rating: 5,
+		Categories: review.CategoryRatings{Cleanliness: 6},
+	})
+	if err == nil {
+		t.Fatal("expected an out-of-range category rating to be rejected")
+	}
+}
+
 func TestPendingForGuest(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()

@@ -19,14 +19,17 @@ func NewReviewRepository(pool *pgxpool.Pool) *ReviewRepository {
 	return &ReviewRepository{pool: pool}
 }
 
-const reviewColumns = `id, booking_id, property_id, author_id, guest_id, kind, rating, comment, response, responded_at, created_at`
+const reviewColumns = `id, booking_id, property_id, author_id, guest_id, kind, rating, comment, response, responded_at, created_at, ` +
+	`rating_cleanliness, rating_accuracy, rating_communication, rating_location, rating_checkin, rating_value`
 
 func (r *ReviewRepository) Create(ctx context.Context, rv *review.Review) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO reviews (`+reviewColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		rv.ID, rv.BookingID, rv.PropertyID, rv.AuthorID, rv.GuestID, string(rv.Kind), rv.Rating, rv.Comment,
 		rv.Response, rv.RespondedAt, rv.CreatedAt,
+		rv.Categories.Cleanliness, rv.Categories.Accuracy, rv.Categories.Communication,
+		rv.Categories.Location, rv.Categories.CheckIn, rv.Categories.Value,
 	)
 	return mapError(err)
 }
@@ -109,18 +112,40 @@ func (r *ReviewRepository) AnonymizeByAuthor(ctx context.Context, authorID uuid.
 
 func (r *ReviewRepository) summary(ctx context.Context, where string, subjectID uuid.UUID) (review.Summary, error) {
 	var (
-		avg   *float64
-		count int64
+		avg                    *float64
+		count                  int64
+		cl, ac, co, lo, ci, va *float64
 	)
 	err := r.pool.QueryRow(ctx,
-		`SELECT AVG(rating), COUNT(*) FROM reviews WHERE `+where, subjectID,
-	).Scan(&avg, &count)
+		`SELECT AVG(rating), COUNT(*),
+		        AVG(NULLIF(rating_cleanliness,0)),
+		        AVG(NULLIF(rating_accuracy,0)),
+		        AVG(NULLIF(rating_communication,0)),
+		        AVG(NULLIF(rating_location,0)),
+		        AVG(NULLIF(rating_checkin,0)),
+		        AVG(NULLIF(rating_value,0))
+		   FROM reviews WHERE `+where, subjectID,
+	).Scan(&avg, &count, &cl, &ac, &co, &lo, &ci, &va)
 	if err != nil {
 		return review.Summary{}, mapError(err)
 	}
 	s := review.Summary{SubjectID: subjectID, Count: count}
 	if avg != nil {
 		s.AverageRating = *avg
+	}
+	deref := func(p *float64) float64 {
+		if p != nil {
+			return *p
+		}
+		return 0
+	}
+	s.Categories = review.CategoryAverages{
+		Cleanliness:   deref(cl),
+		Accuracy:      deref(ac),
+		Communication: deref(co),
+		Location:      deref(lo),
+		CheckIn:       deref(ci),
+		Value:         deref(va),
 	}
 	return s, nil
 }
@@ -130,7 +155,8 @@ func scanReview(row rowScanner) (*review.Review, error) {
 		rv   review.Review
 		kind string
 	)
-	err := row.Scan(&rv.ID, &rv.BookingID, &rv.PropertyID, &rv.AuthorID, &rv.GuestID, &kind, &rv.Rating, &rv.Comment, &rv.Response, &rv.RespondedAt, &rv.CreatedAt)
+	err := row.Scan(&rv.ID, &rv.BookingID, &rv.PropertyID, &rv.AuthorID, &rv.GuestID, &kind, &rv.Rating, &rv.Comment, &rv.Response, &rv.RespondedAt, &rv.CreatedAt,
+		&rv.Categories.Cleanliness, &rv.Categories.Accuracy, &rv.Categories.Communication, &rv.Categories.Location, &rv.Categories.CheckIn, &rv.Categories.Value)
 	if err != nil {
 		return nil, err
 	}

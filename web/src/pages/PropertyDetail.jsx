@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { useT } from '../i18n/I18nContext';
 import AvailabilityCalendar from '../components/AvailabilityCalendar';
+import { REVIEW_CATEGORIES } from './MyTrips';
 
 function bookedDaySet(booked) {
   const set = new Set();
@@ -147,6 +148,18 @@ export default function PropertyDetail() {
           </ul>
 
           <h3>{t('detail.reviews')}</h3>
+          {summary?.categories && (
+            <div className="cat-breakdown">
+              <strong>{t('detail.categoryRatings')}</strong>
+              {REVIEW_CATEGORIES.filter((k) => summary.categories[k] > 0).map((k) => (
+                <div key={k} className="cat-row">
+                  <span className="cat-label">{t(`review.cat.${k}`)}</span>
+                  <span className="cat-bar"><span className="cat-fill" style={{ width: `${(summary.categories[k] / 5) * 100}%` }} /></span>
+                  <span className="cat-num">{summary.categories[k].toFixed(1)}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {reviews.length === 0 && <p>{t('detail.noReviews')}</p>}
           {reviews.map((r) => (
             <ReviewItem
@@ -242,6 +255,13 @@ function ReviewItem({ review: r, canRespond, onResponded }) {
     <div className="review">
       <strong>★ {r.rating}</strong>
       <p>{r.comment}</p>
+      {r.categories && (
+        <ul className="review-cat-chips">
+          {REVIEW_CATEGORIES.filter((k) => r.categories[k] > 0).map((k) => (
+            <li key={k}>{t(`review.cat.${k}`)} <strong>{r.categories[k]}</strong></li>
+          ))}
+        </ul>
+      )}
       {r.response ? (
         <div className="review-response">
           <strong>{t('detail.hostResponse')}</strong>

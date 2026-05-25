@@ -220,23 +220,44 @@ func FromBookedRanges(ranges []bookingapp.BookedRange) []BookedRangeView {
 	return out
 }
 
+// CategoryRatingsView renders a guest's per-aspect sub-ratings (1..5 each).
+type CategoryRatingsView struct {
+	Cleanliness   int `json:"cleanliness"`
+	Accuracy      int `json:"accuracy"`
+	Communication int `json:"communication"`
+	Location      int `json:"location"`
+	CheckIn       int `json:"checkIn"`
+	Value         int `json:"value"`
+}
+
+// CategoryAveragesView renders mean per-aspect ratings across a property's reviews.
+type CategoryAveragesView struct {
+	Cleanliness   float64 `json:"cleanliness"`
+	Accuracy      float64 `json:"accuracy"`
+	Communication float64 `json:"communication"`
+	Location      float64 `json:"location"`
+	CheckIn       float64 `json:"checkIn"`
+	Value         float64 `json:"value"`
+}
+
 // ReviewView is the public representation of a review.
 type ReviewView struct {
-	ID         uuid.UUID `json:"id"`
-	Kind       string    `json:"kind"`
-	PropertyID uuid.UUID `json:"propertyId"`
-	AuthorID   uuid.UUID `json:"authorId"`
-	GuestID    uuid.UUID `json:"guestId"`
-	Rating      int        `json:"rating"`
-	Comment     string     `json:"comment"`
-	Response    string     `json:"response,omitempty"`
-	RespondedAt *time.Time `json:"respondedAt,omitempty"`
-	CreatedAt   time.Time  `json:"createdAt"`
+	ID          uuid.UUID            `json:"id"`
+	Kind        string               `json:"kind"`
+	PropertyID  uuid.UUID            `json:"propertyId"`
+	AuthorID    uuid.UUID            `json:"authorId"`
+	GuestID     uuid.UUID            `json:"guestId"`
+	Rating      int                  `json:"rating"`
+	Comment     string               `json:"comment"`
+	Categories  *CategoryRatingsView `json:"categories,omitempty"`
+	Response    string               `json:"response,omitempty"`
+	RespondedAt *time.Time           `json:"respondedAt,omitempty"`
+	CreatedAt   time.Time            `json:"createdAt"`
 }
 
 // FromReview maps a review aggregate to its view.
 func FromReview(r *review.Review) ReviewView {
-	return ReviewView{
+	v := ReviewView{
 		ID:          r.ID,
 		Kind:        string(r.Kind),
 		PropertyID:  r.PropertyID,
@@ -248,18 +269,41 @@ func FromReview(r *review.Review) ReviewView {
 		RespondedAt: r.RespondedAt,
 		CreatedAt:   r.CreatedAt,
 	}
+	if r.Categories.Any() {
+		v.Categories = &CategoryRatingsView{
+			Cleanliness:   r.Categories.Cleanliness,
+			Accuracy:      r.Categories.Accuracy,
+			Communication: r.Categories.Communication,
+			Location:      r.Categories.Location,
+			CheckIn:       r.Categories.CheckIn,
+			Value:         r.Categories.Value,
+		}
+	}
+	return v
 }
 
 // ReviewSummaryView renders aggregate rating stats about a subject.
 type ReviewSummaryView struct {
-	SubjectID     uuid.UUID `json:"subjectId"`
-	AverageRating float64   `json:"averageRating"`
-	Count         int64     `json:"count"`
+	SubjectID     uuid.UUID             `json:"subjectId"`
+	AverageRating float64               `json:"averageRating"`
+	Count         int64                 `json:"count"`
+	Categories    *CategoryAveragesView `json:"categories,omitempty"`
 }
 
 // FromReviewSummary maps a review summary to its view.
 func FromReviewSummary(s review.Summary) ReviewSummaryView {
-	return ReviewSummaryView{SubjectID: s.SubjectID, AverageRating: s.AverageRating, Count: s.Count}
+	v := ReviewSummaryView{SubjectID: s.SubjectID, AverageRating: s.AverageRating, Count: s.Count}
+	if s.Categories.Any() {
+		v.Categories = &CategoryAveragesView{
+			Cleanliness:   s.Categories.Cleanliness,
+			Accuracy:      s.Categories.Accuracy,
+			Communication: s.Categories.Communication,
+			Location:      s.Categories.Location,
+			CheckIn:       s.Categories.CheckIn,
+			Value:         s.Categories.Value,
+		}
+	}
+	return v
 }
 
 // CollectionView is the public representation of a wishlist collection, with the

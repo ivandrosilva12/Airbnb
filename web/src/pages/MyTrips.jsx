@@ -2,17 +2,28 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useT } from '../i18n/I18nContext';
 
+// The optional per-aspect sub-ratings a guest can give a property, in display order.
+export const REVIEW_CATEGORIES = ['cleanliness', 'accuracy', 'communication', 'location', 'checkIn', 'value'];
+
 function ReviewForm({ bookingId, onDone, onError }) {
   const { t } = useT();
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
+  const [cats, setCats] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.createReview({ bookingId, rating: Number(rating), comment });
+      const categories = {};
+      let any = false;
+      for (const k of REVIEW_CATEGORIES) {
+        const v = Number(cats[k] || 0);
+        categories[k] = v;
+        if (v > 0) any = true;
+      }
+      await api.createReview({ bookingId, rating: Number(rating), comment, categories: any ? categories : undefined });
       onDone();
     } catch (err) {
       onError(err.message);
@@ -23,12 +34,25 @@ function ReviewForm({ bookingId, onDone, onError }) {
 
   return (
     <form className="inline-review" onSubmit={submit}>
-      <select value={rating} onChange={(e) => setRating(e.target.value)}>
+      <select value={rating} aria-label={t('review.overall')} onChange={(e) => setRating(e.target.value)}>
         {[5, 4, 3, 2, 1].map((n) => (
           <option key={n} value={n}>{'★'.repeat(n)}</option>
         ))}
       </select>
       <input placeholder={t('trips.shareExperience')} value={comment} onChange={(e) => setComment(e.target.value)} />
+      <div className="review-cats">
+        {REVIEW_CATEGORIES.map((k) => (
+          <label key={k} className="review-cat">
+            <span>{t(`review.cat.${k}`)}</span>
+            <select value={cats[k] || 0} onChange={(e) => setCats((c) => ({ ...c, [k]: Number(e.target.value) }))}>
+              <option value={0}>—</option>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
       <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? '…' : t('common.submit')}</button>
     </form>
   );

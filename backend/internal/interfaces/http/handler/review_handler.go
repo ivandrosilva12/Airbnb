@@ -2,6 +2,7 @@ package handler
 
 import (
 	reviewapp "github.com/airhost/backend/internal/application/review"
+	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
 	"github.com/gin-gonic/gin"
@@ -15,10 +16,34 @@ type ReviewHandler struct {
 // NewReviewHandler builds a ReviewHandler.
 func NewReviewHandler(svc *reviewapp.Service) *ReviewHandler { return &ReviewHandler{svc: svc} }
 
+type categoryRatingsRequest struct {
+	Cleanliness   int `json:"cleanliness"`
+	Accuracy      int `json:"accuracy"`
+	Communication int `json:"communication"`
+	Location      int `json:"location"`
+	CheckIn       int `json:"checkIn"`
+	Value         int `json:"value"`
+}
+
+func (c *categoryRatingsRequest) toDomain() review.CategoryRatings {
+	if c == nil {
+		return review.CategoryRatings{}
+	}
+	return review.CategoryRatings{
+		Cleanliness:   c.Cleanliness,
+		Accuracy:      c.Accuracy,
+		Communication: c.Communication,
+		Location:      c.Location,
+		CheckIn:       c.CheckIn,
+		Value:         c.Value,
+	}
+}
+
 type createReviewRequest struct {
-	BookingID string `json:"bookingId" binding:"required"`
-	Rating    int    `json:"rating" binding:"required"`
-	Comment   string `json:"comment"`
+	BookingID  string                  `json:"bookingId" binding:"required"`
+	Rating     int                     `json:"rating" binding:"required"`
+	Comment    string                  `json:"comment"`
+	Categories *categoryRatingsRequest `json:"categories"`
 }
 
 // Create publishes a review for a completed stay.
@@ -36,10 +61,11 @@ func (h *ReviewHandler) Create(c *gin.Context) {
 		return
 	}
 	r, err := h.svc.Create(c.Request.Context(), reviewapp.CreateInput{
-		GuestID:   guestID,
-		BookingID: bookingID,
-		Rating:    req.Rating,
-		Comment:   req.Comment,
+		GuestID:    guestID,
+		BookingID:  bookingID,
+		Rating:     req.Rating,
+		Comment:    req.Comment,
+		Categories: req.Categories.toDomain(),
 	})
 	if err != nil {
 		response.Fail(c, err)
