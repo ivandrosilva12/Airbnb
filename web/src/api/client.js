@@ -89,6 +89,7 @@ export const api = {
 
   // Profile
   me: () => request('GET', '/me', { auth: true }),
+  updateProfile: (body) => request('PATCH', '/me', { body, auth: true }),
   updatePreferences: (prefs) => request('PATCH', '/me/preferences', { body: prefs, auth: true }),
   becomeHost: () => request('POST', '/me/become-host', { auth: true }),
 

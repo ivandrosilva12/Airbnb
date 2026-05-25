@@ -17,13 +17,17 @@ import HostEarnings from './pages/HostEarnings';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
 
-function Protected({ children }) {
-  const { ready, authenticated, login } = useAuth();
+function Protected({ children, requireHost, requireAdmin }) {
+  const { ready, authenticated, isHost, isAdmin, login } = useAuth();
   if (!ready) return <div className="container">Loading…</div>;
   if (!authenticated) {
     login();
     return <div className="container">Redirecting to sign in…</div>;
   }
+  // Role-gated areas: a signed-in user without the role is bounced home rather
+  // than shown a page whose every API call would 403.
+  if (requireAdmin && !isAdmin) return <Navigate to="/" replace />;
+  if (requireHost && !isHost) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -46,13 +50,13 @@ export default function App() {
             <Route path="/messages" element={<Protected><Messages /></Protected>} />
             <Route path="/notifications" element={<Protected><Notifications /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
-            <Route path="/admin" element={<Protected><Admin /></Protected>} />
-            <Route path="/host" element={<Protected><HostDashboard /></Protected>} />
-            <Route path="/host/new" element={<Protected><CreateListing /></Protected>} />
-            <Route path="/host/properties/:id/edit" element={<Protected><EditListing /></Protected>} />
-            <Route path="/host/earnings" element={<Protected><HostEarnings /></Protected>} />
-            <Route path="/host/properties/:id/bookings" element={<Protected><HostBookings /></Protected>} />
-            <Route path="/host/properties/:id/photos" element={<Protected><HostPhotos /></Protected>} />
+            <Route path="/admin" element={<Protected requireAdmin><Admin /></Protected>} />
+            <Route path="/host" element={<Protected requireHost><HostDashboard /></Protected>} />
+            <Route path="/host/new" element={<Protected requireHost><CreateListing /></Protected>} />
+            <Route path="/host/properties/:id/edit" element={<Protected requireHost><EditListing /></Protected>} />
+            <Route path="/host/earnings" element={<Protected requireHost><HostEarnings /></Protected>} />
+            <Route path="/host/properties/:id/bookings" element={<Protected requireHost><HostBookings /></Protected>} />
+            <Route path="/host/properties/:id/photos" element={<Protected requireHost><HostPhotos /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}

@@ -212,6 +212,11 @@ main:focus { outline: none; }
 .muted-text { color: var(--muted); }
 .muted { color: var(--muted); font-size: .9rem; }
 .price-breakdown .bd-discount { color: #1a7f47; }
+.profile-panel { margin: 8px 0 24px; }
+.profile-form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
+.profile-form label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
+.profile-form input { padding: 9px; border: 1px solid var(--border); border-radius: 8px; font-size: .95rem; }
+.profile-form input:disabled { background: #f5f5f5; color: var(--muted); }
 .coupon-row { display: flex; gap: 8px; margin: 8px 0; }
 .coupon-row input { flex: 1; min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 8px; font-size: .9rem; text-transform: uppercase; }
 .coupon-msg { font-size: .82rem; margin: 4px 0; }

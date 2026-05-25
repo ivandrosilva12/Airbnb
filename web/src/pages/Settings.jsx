@@ -37,6 +37,7 @@ export default function Settings() {
   return (
     <div className="container">
       <h1>{t('settings.title')}</h1>
+      <ProfilePanel />
       <h2>{t('settings.emailTitle')}</h2>
       <p className="muted">{t('settings.emailHint')}</p>
       {error && <p className="error">{error}</p>}
@@ -60,6 +61,78 @@ export default function Settings() {
       <SecurityPanel />
       <PrivacyPanel />
     </div>
+  );
+}
+
+// ProfilePanel lets the user edit their display name and avatar URL (PATCH /me).
+// Email comes from the identity provider and is shown read-only.
+function ProfilePanel() {
+  const { t } = useT();
+  const [form, setForm] = useState(null);
+  const [email, setEmail] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api
+      .me()
+      .then((u) => {
+        setForm({ fullName: u.fullName || '', avatarUrl: u.avatarUrl || '' });
+        setEmail(u.email || '');
+      })
+      .catch((e) => setError(e.message));
+  }, []);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!form.fullName.trim()) {
+      setError(t('settings.nameRequired'));
+      return;
+    }
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      const u = await api.updateProfile({ fullName: form.fullName.trim(), avatarUrl: form.avatarUrl.trim() });
+      setForm({ fullName: u.fullName || '', avatarUrl: u.avatarUrl || '' });
+      setSaved(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="profile-panel">
+      <h2>{t('settings.profileTitle')}</h2>
+      {error && <p className="error">{error}</p>}
+      {!form ? (
+        <p>{t('common.loading')}</p>
+      ) : (
+        <form className="profile-form" onSubmit={submit}>
+          <label>
+            {t('settings.email')}
+            <input value={email} disabled />
+          </label>
+          <label>
+            {t('settings.fullName')}
+            <input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
+          </label>
+          <label>
+            {t('settings.avatarUrl')}
+            <input value={form.avatarUrl} placeholder="https://…" onChange={(e) => setForm({ ...form, avatarUrl: e.target.value })} />
+          </label>
+          <div className="row-between">
+            <button className="btn btn-primary" type="submit" disabled={saving}>
+              {saving ? t('common.loading') : t('settings.saveProfile')}
+            </button>
+            {saved && <span className="muted">{t('settings.saved')}</span>}
+          </div>
+        </form>
+      )}
+    </section>
   );
 }
 
