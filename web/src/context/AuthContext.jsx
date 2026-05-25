@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import keycloak from '../keycloak';
+import keycloak, { initKeycloak } from '../keycloak';
 import { api } from '../api/client';
 
 const AuthContext = createContext(null);
@@ -11,8 +11,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false;
-    keycloak
-      .init({ onLoad: 'check-sso', pkceMethod: 'S256' })
+    initKeycloak()
       .then(async (auth) => {
         if (cancelled) return;
         setAuthenticated(auth);
