@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/airhost/backend/internal/application/port"
@@ -19,6 +20,29 @@ import (
 	"github.com/google/uuid"
 )
 
+// keyedMutex serialises critical sections per string key (here, per host) within
+// this process. A multi-instance deployment would replace it with a database
+// advisory lock (pg_advisory_xact_lock); for a single instance it is exact.
+type keyedMutex struct {
+	mu sync.Mutex
+	m  map[string]*sync.Mutex
+}
+
+func (k *keyedMutex) lock(key string) func() {
+	k.mu.Lock()
+	if k.m == nil {
+		k.m = make(map[string]*sync.Mutex)
+	}
+	m, ok := k.m[key]
+	if !ok {
+		m = &sync.Mutex{}
+		k.m[key] = m
+	}
+	k.mu.Unlock()
+	m.Lock()
+	return m.Unlock
+}
+
 // Service orchestrates host-earnings use cases.
 type Service struct {
 	payouts    payout.Repository
@@ -27,6 +51,10 @@ type Service struct {
 	users      user.Repository
 	disburser  port.Disburser
 	connect    port.ConnectGateway
+	// reserveLocks serialises the available-balance check and pending-disbursement
+	// insert per host, so two concurrent payout requests cannot reserve the same
+	// funds twice.
+	reserveLocks keyedMutex
 }
 
 // NewService wires the payout application service. The booking and property
@@ -172,14 +200,10 @@ func (s *Service) ListDisbursements(ctx context.Context, hostID uuid.UUID, page 
 }
 
 // RequestDisbursement pays out the host's entire available balance in the given
-// currency. It records a pending payout, calls the rail, then marks the payout
-// paid (persisting the rail's reference) or failed. Funds in flight are excluded
-// from the available balance, so a repeat request cannot pay out twice.
-//
-// Note: the available check and the pending insert are not one atomic step, so
-// two truly-concurrent requests for the same host+currency could both pass. A
-// production deployment would serialise per host (advisory lock / SELECT … FOR
-// UPDATE); for this system the window is small and the ledger stays auditable.
+// currency. It reserves the funds (recording a pending payout under a per-host
+// lock), calls the rail, then marks the payout paid (persisting the rail's
+// reference) or failed. Funds in flight are excluded from the available balance,
+// so a repeat — or a concurrent — request cannot pay out the same money twice.
 func (s *Service) RequestDisbursement(ctx context.Context, hostID uuid.UUID, currency string) (*payout.Disbursement, error) {
 	currency = strings.ToUpper(strings.TrimSpace(currency))
 	if currency == "" {
@@ -194,30 +218,8 @@ func (s *Service) RequestDisbursement(ctx context.Context, hostID uuid.UUID, cur
 		return nil, shared.NewValidationError("complete payout onboarding before requesting a payout")
 	}
 
-	avail, err := s.AvailableBalances(ctx, hostID)
+	d, amount, err := s.reserveDisbursement(ctx, hostID, currency)
 	if err != nil {
-		return nil, err
-	}
-	var cents int64 = -1
-	for _, a := range avail {
-		if a.Currency == currency {
-			cents = a.AvailableCents
-			break
-		}
-	}
-	if cents <= 0 {
-		return nil, shared.NewValidationError("no funds available to pay out in " + currency)
-	}
-	amount, err := shared.NewMoney(cents, currency)
-	if err != nil {
-		return nil, err
-	}
-
-	d, err := payout.NewDisbursement(hostID, currency, cents)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.payouts.CreateDisbursement(ctx, d); err != nil {
 		return nil, err
 	}
 
@@ -236,6 +238,43 @@ func (s *Service) RequestDisbursement(ctx context.Context, hostID uuid.UUID, cur
 		return nil, err
 	}
 	return d, nil
+}
+
+// reserveDisbursement, holding a per-host lock, recomputes the available balance
+// and persists a pending disbursement for the whole amount. Serialising this
+// check-and-insert is what stops two concurrent requests from each reserving the
+// same funds: once the pending row exists it counts as committed, shrinking the
+// availability the next caller sees.
+func (s *Service) reserveDisbursement(ctx context.Context, hostID uuid.UUID, currency string) (*payout.Disbursement, shared.Money, error) {
+	unlock := s.reserveLocks.lock(hostID.String())
+	defer unlock()
+
+	avail, err := s.AvailableBalances(ctx, hostID)
+	if err != nil {
+		return nil, shared.Money{}, err
+	}
+	var cents int64 = -1
+	for _, a := range avail {
+		if a.Currency == currency {
+			cents = a.AvailableCents
+			break
+		}
+	}
+	if cents <= 0 {
+		return nil, shared.Money{}, shared.NewValidationError("no funds available to pay out in " + currency)
+	}
+	amount, err := shared.NewMoney(cents, currency)
+	if err != nil {
+		return nil, shared.Money{}, err
+	}
+	d, err := payout.NewDisbursement(hostID, currency, cents)
+	if err != nil {
+		return nil, shared.Money{}, err
+	}
+	if err := s.payouts.CreateDisbursement(ctx, d); err != nil {
+		return nil, shared.Money{}, err
+	}
+	return d, amount, nil
 }
 
 // ExportRow is a flattened ledger line for a CSV/statement export, enriched with

@@ -2,6 +2,7 @@ package payoutapp_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -267,6 +268,66 @@ func TestStartOnboarding_EnablesPayoutsViaFakeRail(t *testing.T) {
 	}
 	if !st.HasAccount || !st.Enabled {
 		t.Fatalf("status = %+v, want onboarded + enabled (fake rail)", st)
+	}
+}
+
+func TestRequestDisbursement_ConcurrentRequestsPayOnce(t *testing.T) {
+	ctx := context.Background()
+	props := memory.NewPropertyRepository()
+	bookings := memory.NewBookingRepository()
+	payouts := memory.NewPayoutRepository()
+	users := memory.NewUserRepository()
+	hostID := uuid.New()
+	b := seed(t, props, bookings, hostID) // net 330.00 EUR earning on confirm
+
+	host := &user.User{
+		ID: hostID, KeycloakSub: "sub-" + hostID.String(), Email: "h@ex.dev", FullName: "H",
+		Role: user.RoleHost, IsActive: true, PayoutAccountID: "acct_test", PayoutsEnabled: true,
+	}
+	if err := users.Create(ctx, host); err != nil {
+		t.Fatalf("seed host: %v", err)
+	}
+	svc := payoutapp.NewService(payouts, bookings, props, users, infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway())
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+	dispatcher.Publish(ctx, event.BookingConfirmed{BookingID: b.ID, PropertyID: b.PropertyID, GuestID: b.GuestID})
+
+	// Fire many concurrent payout requests for the same host; the per-host lock
+	// must let exactly one reserve the (single) available balance.
+	const n = 8
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var ok int
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			if _, err := svc.RequestDisbursement(ctx, hostID, "EUR"); err == nil {
+				mu.Lock()
+				ok++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	if ok != 1 {
+		t.Fatalf("successful payouts = %d, want exactly 1 (no double-pay)", ok)
+	}
+	page, err := svc.ListDisbursements(ctx, hostID, shared.NewPage(50, 0))
+	if err != nil {
+		t.Fatalf("list disbursements: %v", err)
+	}
+	var paid int64
+	var paidCount int
+	for _, d := range page.Items {
+		if d.Status == payout.DisbursementPaid {
+			paid += d.AmountCents
+			paidCount++
+		}
+	}
+	if paidCount != 1 || paid != 33000 {
+		t.Fatalf("paid disbursements = %d totalling %d, want 1 totalling 33000", paidCount, paid)
 	}
 }
 
