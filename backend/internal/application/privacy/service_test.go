@@ -43,7 +43,7 @@ func TestExport_IncludesProfileAndFavorites(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	prop := uuid.New()
-	if err := favorites.Add(ctx, favorite.New(u.ID, prop)); err != nil {
+	if err := favorites.Add(ctx, favorite.New(u.ID, prop, nil)); err != nil {
 		t.Fatalf("add favorite: %v", err)
 	}
 
@@ -70,7 +70,7 @@ func TestErase_AnonymisesAndDropsFavorites(t *testing.T) {
 	if err := users.Create(ctx, u); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	if err := favorites.Add(ctx, favorite.New(u.ID, uuid.New())); err != nil {
+	if err := favorites.Add(ctx, favorite.New(u.ID, uuid.New(), nil)); err != nil {
 		t.Fatalf("add favorite: %v", err)
 	}
 

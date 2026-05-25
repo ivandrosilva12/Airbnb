@@ -680,24 +680,30 @@ func (r *MessageRepository) TotalUnread(ctx context.Context, userID uuid.UUID) (
 
 // FavoriteRepository is an in-memory favorite.Repository.
 type FavoriteRepository struct {
-	mu sync.RWMutex
-	m  map[uuid.UUID][]favorite.Favorite // keyed by user id, newest last
+	mu          sync.RWMutex
+	m           map[uuid.UUID][]favorite.Favorite   // keyed by user id, newest last
+	collections map[uuid.UUID][]favorite.Collection // keyed by user id, newest last
 }
 
 // NewFavoriteRepository builds an empty in-memory favorite repository.
 func NewFavoriteRepository() *FavoriteRepository {
-	return &FavoriteRepository{m: map[uuid.UUID][]favorite.Favorite{}}
+	return &FavoriteRepository{
+		m:           map[uuid.UUID][]favorite.Favorite{},
+		collections: map[uuid.UUID][]favorite.Collection{},
+	}
 }
 
 func (r *FavoriteRepository) Add(_ context.Context, f *favorite.Favorite) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, existing := range r.m[f.UserID] {
+	list := r.m[f.UserID]
+	for i, existing := range list {
 		if existing.PropertyID == f.PropertyID {
-			return nil // idempotent
+			list[i].CollectionID = f.CollectionID // re-add updates the collection
+			return nil
 		}
 	}
-	r.m[f.UserID] = append(r.m[f.UserID], *f)
+	r.m[f.UserID] = append(list, *f)
 	return nil
 }
 
@@ -726,6 +732,19 @@ func (r *FavoriteRepository) Exists(_ context.Context, userID, propertyID uuid.U
 	return false, nil
 }
 
+func (r *FavoriteRepository) SetCollection(_ context.Context, userID, propertyID uuid.UUID, collectionID *uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	list := r.m[userID]
+	for i := range list {
+		if list[i].PropertyID == propertyID {
+			list[i].CollectionID = collectionID
+			return nil
+		}
+	}
+	return shared.ErrNotFound
+}
+
 func (r *FavoriteRepository) ListPropertyIDs(_ context.Context, userID uuid.UUID, page shared.Page) (shared.PageResult[uuid.UUID], error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -736,6 +755,99 @@ func (r *FavoriteRepository) ListPropertyIDs(_ context.Context, userID uuid.UUID
 		ids = append(ids, list[i].PropertyID)
 	}
 	return paginate(ids, page), nil
+}
+
+func (r *FavoriteRepository) ListPropertyIDsInCollection(_ context.Context, userID uuid.UUID, collectionID *uuid.UUID, page shared.Page) (shared.PageResult[uuid.UUID], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	list := r.m[userID]
+	ids := make([]uuid.UUID, 0, len(list))
+	for i := len(list) - 1; i >= 0; i-- {
+		if sameCollection(list[i].CollectionID, collectionID) {
+			ids = append(ids, list[i].PropertyID)
+		}
+	}
+	return paginate(ids, page), nil
+}
+
+// sameCollection reports whether two optional collection ids refer to the same
+// bucket (both nil = the default bucket).
+func sameCollection(a, b *uuid.UUID) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+func (r *FavoriteRepository) CreateCollection(_ context.Context, c *favorite.Collection) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, existing := range r.collections[c.UserID] {
+		if strings.EqualFold(existing.Name, c.Name) {
+			return shared.ErrConflict
+		}
+	}
+	r.collections[c.UserID] = append(r.collections[c.UserID], *c)
+	return nil
+}
+
+func (r *FavoriteRepository) DeleteCollection(_ context.Context, userID, collectionID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	list := r.collections[userID]
+	out := list[:0]
+	found := false
+	for _, c := range list {
+		if c.ID == collectionID {
+			found = true
+			continue
+		}
+		out = append(out, c)
+	}
+	if !found {
+		return shared.ErrNotFound
+	}
+	r.collections[userID] = out
+	// Drop the collection's listings back to the default bucket (FK SET NULL).
+	favs := r.m[userID]
+	for i := range favs {
+		if favs[i].CollectionID != nil && *favs[i].CollectionID == collectionID {
+			favs[i].CollectionID = nil
+		}
+	}
+	return nil
+}
+
+func (r *FavoriteRepository) ListCollections(_ context.Context, userID uuid.UUID) ([]favorite.CollectionWithCount, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	list := r.collections[userID]
+	out := make([]favorite.CollectionWithCount, 0, len(list))
+	// Newest first.
+	for i := len(list) - 1; i >= 0; i-- {
+		c := list[i]
+		count := 0
+		for _, f := range r.m[userID] {
+			if f.CollectionID != nil && *f.CollectionID == c.ID {
+				count++
+			}
+		}
+		cc := c
+		out = append(out, favorite.CollectionWithCount{Collection: &cc, Count: count})
+	}
+	return out, nil
+}
+
+func (r *FavoriteRepository) FindCollection(_ context.Context, userID, collectionID uuid.UUID) (*favorite.Collection, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, c := range r.collections[userID] {
+		if c.ID == collectionID {
+			cc := c
+			return &cc, nil
+		}
+	}
+	return nil, shared.ErrNotFound
 }
 
 // --- Notifications -----------------------------------------------------------

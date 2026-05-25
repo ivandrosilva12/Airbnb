@@ -153,7 +153,14 @@ func NewRouter(d Deps) *gin.Engine {
 		// Favorites (wishlist).
 		auth.GET("/favorites", h.Favorite.List)
 		auth.POST("/favorites", h.Favorite.Add)
+		auth.PATCH("/favorites/:propertyId", h.Favorite.Move)
 		auth.DELETE("/favorites/:propertyId", h.Favorite.Remove)
+		// Named wishlist collections. Kept under their own path (not
+		// /favorites/...) so the static segment does not collide with the
+		// /favorites/:propertyId param route in Gin's radix tree.
+		auth.GET("/wishlist/collections", h.Favorite.ListCollections)
+		auth.POST("/wishlist/collections", h.Favorite.CreateCollection)
+		auth.DELETE("/wishlist/collections/:id", h.Favorite.DeleteCollection)
 
 		// Report a listing for moderation (any authenticated user).
 		auth.POST("/properties/:id/reports", h.Report.Create)

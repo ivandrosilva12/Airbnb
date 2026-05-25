@@ -15,6 +15,7 @@ import (
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/notification"
@@ -259,6 +260,30 @@ type ReviewSummaryView struct {
 // FromReviewSummary maps a review summary to its view.
 func FromReviewSummary(s review.Summary) ReviewSummaryView {
 	return ReviewSummaryView{SubjectID: s.SubjectID, AverageRating: s.AverageRating, Count: s.Count}
+}
+
+// CollectionView is the public representation of a wishlist collection, with the
+// number of listings saved in it.
+type CollectionView struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Count     int       `json:"count"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// FromCollection maps a collection (with its count) to its view.
+func FromCollection(c favorite.CollectionWithCount) CollectionView {
+	return CollectionView{
+		ID:        c.Collection.ID,
+		Name:      c.Collection.Name,
+		Count:     c.Count,
+		CreatedAt: c.Collection.CreatedAt,
+	}
+}
+
+// FromNewCollection maps a freshly created collection (count 0) to its view.
+func FromNewCollection(c *favorite.Collection) CollectionView {
+	return CollectionView{ID: c.ID, Name: c.Name, Count: 0, CreatedAt: c.CreatedAt}
 }
 
 // ConversationView is the public representation of a message thread.

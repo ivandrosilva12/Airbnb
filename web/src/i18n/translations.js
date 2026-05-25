@@ -235,6 +235,14 @@ export const translations = {
 
     'fav.title': 'Saved listings',
     'fav.none': 'No saved listings yet. Tap the heart on any listing to save it.',
+    'fav.all': 'All',
+    'fav.unsorted': 'Unsorted',
+    'fav.newCollection': 'New collection',
+    'fav.collectionName': 'Collection name',
+    'fav.create': 'Create',
+    'fav.moveTo': 'Move to…',
+    'fav.deleteCollection': 'Delete this collection',
+    'fav.deleteConfirm': 'Delete this collection? Saved listings move back to Unsorted.',
 
     'msg.title': 'Messages',
     'msg.none': 'No conversations yet. Start one from a listing’s “Contact host” button.',
@@ -592,6 +600,14 @@ export const translations = {
 
     'fav.title': 'Alojamentos guardados',
     'fav.none': 'Ainda nada guardado. Toque no coração de um alojamento para o guardar.',
+    'fav.all': 'Todos',
+    'fav.unsorted': 'Sem lista',
+    'fav.newCollection': 'Nova coleção',
+    'fav.collectionName': 'Nome da coleção',
+    'fav.create': 'Criar',
+    'fav.moveTo': 'Mover para…',
+    'fav.deleteCollection': 'Apagar esta coleção',
+    'fav.deleteConfirm': 'Apagar esta coleção? Os alojamentos guardados voltam para Sem lista.',
 
     'msg.title': 'Mensagens',
     'msg.none': 'Ainda sem conversas. Inicie uma a partir do botão “Contactar anfitrião” de um alojamento.',

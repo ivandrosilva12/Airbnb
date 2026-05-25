@@ -178,10 +178,15 @@ export const api = {
   markConversationRead: (id) => request('POST', `/conversations/${id}/read`, { auth: true }),
   messagesUnreadCount: () => request('GET', '/conversations/unread-count', { auth: true }),
 
-  // Favorites
-  listFavorites: () => request('GET', '/favorites', { auth: true }),
-  addFavorite: (propertyId) => request('POST', '/favorites', { body: { propertyId }, auth: true }),
+  // Favorites & wishlist collections
+  listFavorites: (collectionId) =>
+    request('GET', `/favorites${collectionId ? `?collectionId=${encodeURIComponent(collectionId)}` : ''}`, { auth: true }),
+  addFavorite: (propertyId, collectionId) => request('POST', '/favorites', { body: { propertyId, collectionId }, auth: true }),
   removeFavorite: (propertyId) => request('DELETE', `/favorites/${propertyId}`, { auth: true }),
+  moveFavorite: (propertyId, collectionId) => request('PATCH', `/favorites/${propertyId}`, { body: { collectionId: collectionId || '' }, auth: true }),
+  listCollections: () => request('GET', '/wishlist/collections', { auth: true }),
+  createCollection: (name) => request('POST', '/wishlist/collections', { body: { name }, auth: true }),
+  deleteCollection: (id) => request('DELETE', `/wishlist/collections/${id}`, { auth: true }),
 
   // Notifications
   listNotifications: () => request('GET', '/notifications', { auth: true }),
