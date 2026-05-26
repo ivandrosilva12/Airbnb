@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
-import * as SecureStore from 'expo-secure-store';
+import * as Storage from './storage';
 import { KEYCLOAK_ISSUER, KEYCLOAK_CLIENT_ID } from '../config';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -42,7 +42,7 @@ export function AuthProvider({ children }) {
 
   // Restore persisted tokens on startup.
   useEffect(() => {
-    SecureStore.getItemAsync(TOKEN_KEY)
+    Storage.getItem(TOKEN_KEY)
       .then((raw) => raw && setTokens(JSON.parse(raw)))
       .finally(() => setReady(true));
   }, []);
@@ -67,7 +67,7 @@ export function AuthProvider({ children }) {
         expiresAt: Date.now() + (result.expiresIn ?? 300) * 1000,
       };
       setTokens(stored);
-      await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(stored));
+      await Storage.setItem(TOKEN_KEY, JSON.stringify(stored));
     },
     [discovery],
   );
@@ -90,7 +90,7 @@ export function AuthProvider({ children }) {
   // screen instead of retrying with credentials that will keep returning 401.
   async function clearSession() {
     setTokens(null);
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await Storage.deleteItem(TOKEN_KEY);
   }
 
   // Returns a valid access token, refreshing if it is close to expiry. When the
@@ -115,7 +115,7 @@ export function AuthProvider({ children }) {
         expiresAt: Date.now() + (refreshed.expiresIn ?? 300) * 1000,
       };
       setTokens(stored);
-      await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(stored));
+      await Storage.setItem(TOKEN_KEY, JSON.stringify(stored));
       return stored.accessToken;
     } catch {
       await clearSession();
