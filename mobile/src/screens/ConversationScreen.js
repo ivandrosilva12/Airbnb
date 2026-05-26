@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useLayoutEffect } from 'react';
 import { View, Text, FlatList, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Image, Linking } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useApi } from '../api/useApi';
 import { useRealtime } from '../api/RealtimeContext';
 
@@ -71,6 +72,32 @@ export default function ConversationScreen({ route, navigation }) {
     }
   }
 
+  async function attach() {
+    setError(null);
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      setError('Photo library permission is required.');
+      return;
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+    if (res.canceled || !res.assets?.length) return;
+    const asset = res.assets[0];
+    setSending(true);
+    try {
+      await api.sendAttachment(id, {
+        uri: asset.uri,
+        name: asset.fileName || 'photo.jpg',
+        type: asset.mimeType || 'image/jpeg',
+      });
+      const list = await api.listMessages(id);
+      setMessages(list.items || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
   if (loading) return <ActivityIndicator style={{ flex: 1 }} color="#ff385c" />;
 
   return (
@@ -106,6 +133,9 @@ export default function ConversationScreen({ route, navigation }) {
       />
       {error && <Text style={styles.error}>{error}</Text>}
       <View style={styles.composer}>
+        <Pressable style={styles.attachBtn} onPress={attach} disabled={sending}>
+          <Text style={styles.attachText}>📎</Text>
+        </Pressable>
         <TextInput
           style={styles.input}
           placeholder="Message…"
@@ -133,6 +163,8 @@ const styles = StyleSheet.create({
   empty: { textAlign: 'center', color: '#717171', marginTop: 24 },
   error: { color: '#c0392b', paddingHorizontal: 12 },
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, padding: 10, borderTopWidth: 1, borderColor: '#eee' },
+  attachBtn: { paddingHorizontal: 8, paddingVertical: 8, justifyContent: 'center' },
+  attachText: { fontSize: 22 },
   input: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, maxHeight: 100 },
   sendBtn: { backgroundColor: '#ff385c', borderRadius: 18, paddingHorizontal: 18, paddingVertical: 10 },
   sendBtnDisabled: { opacity: 0.6 },
