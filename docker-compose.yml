@@ -160,6 +160,15 @@ services:
     ports:
       - "8081:8081"
 
+  web:
+    build:
+      context: ./web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
   prometheus:
     image: prom/prometheus:latest
     depends_on:
