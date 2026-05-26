@@ -31,6 +31,11 @@ export default function EditListing() {
           monthlyDiscount: Math.round((p.monthlyDiscountPct || 0) * 100).toString(),
           taxRate: (Math.round((p.taxRatePct || 0) * 1000) / 10).toString(),
           instantBook: !!p.instantBook,
+          minNights: p.minNights || 1,
+          maxNights: p.maxNights || '',
+          guestsIncluded: p.guestsIncluded || '',
+          extraGuestFee: ((p.extraGuestFee?.amountCents || 0) / 100).toString(),
+          securityDeposit: ((p.securityDeposit?.amountCents || 0) / 100).toString(),
         }),
       )
       .catch((e) => setError(e.message));
@@ -55,6 +60,11 @@ export default function EditListing() {
         monthlyDiscountPct: Number(form.monthlyDiscount || 0) / 100,
         taxRatePct: Number(form.taxRate || 0) / 100,
         instantBook: form.instantBook,
+        minNights: Number(form.minNights) || 1,
+        maxNights: Number(form.maxNights) || 0,
+        guestsIncluded: Number(form.guestsIncluded) || 0,
+        extraGuestFeeCents: Math.round(Number(form.extraGuestFee || 0) * 100),
+        securityDepositCents: Math.round(Number(form.securityDeposit || 0) * 100),
       });
       navigate('/host');
     } catch (err) {
@@ -88,6 +98,11 @@ export default function EditListing() {
         <label>{t('create.fWeeklyDiscount')}<input type="number" min="0" max="100" step="1" value={form.weeklyDiscount} onChange={set('weeklyDiscount')} /></label>
         <label>{t('create.fMonthlyDiscount')}<input type="number" min="0" max="100" step="1" value={form.monthlyDiscount} onChange={set('monthlyDiscount')} /></label>
         <label>{t('create.fTaxRate')}<input type="number" min="0" max="100" step="0.1" value={form.taxRate} onChange={set('taxRate')} /></label>
+        <label>{t('create.fMinNights')}<input type="number" min="1" value={form.minNights} onChange={set('minNights')} /></label>
+        <label>{t('create.fMaxNights')}<input type="number" min="0" value={form.maxNights} onChange={set('maxNights')} /></label>
+        <label>{t('create.fGuestsIncluded')}<input type="number" min="1" value={form.guestsIncluded} onChange={set('guestsIncluded')} /></label>
+        <label>{t('create.fExtraGuestFee')}<input type="number" min="0" step="0.01" value={form.extraGuestFee} onChange={set('extraGuestFee')} /></label>
+        <label>{t('create.fSecurityDeposit')}<input type="number" min="0" step="0.01" value={form.securityDeposit} onChange={set('securityDeposit')} /></label>
         <label className="full instant-book-toggle">
           <input
             type="checkbox"

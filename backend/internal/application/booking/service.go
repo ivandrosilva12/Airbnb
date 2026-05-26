@@ -129,7 +129,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		return nil, shared.NewValidationError(fmt.Sprintf("this listing allows a stay of at most %d nights", prop.MaxNights))
 	}
 	// Per-extra-guest fee, charged per night beyond the included headcount.
-	extraGuests := in.Guests - prop.GuestsIncluded
+	// A listing that never set GuestsIncluded (0) is treated as including its
+	// full capacity, matching what the client shows — so an extra-guest fee is
+	// only charged once a host explicitly sets a smaller included headcount.
+	includedGuests := prop.GuestsIncluded
+	if includedGuests <= 0 {
+		includedGuests = prop.MaxGuests
+	}
+	extraGuests := in.Guests - includedGuests
 	if extraGuests < 0 {
 		extraGuests = 0
 	}

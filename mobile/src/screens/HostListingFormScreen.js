@@ -11,6 +11,7 @@ const emptyForm = {
   postalCode: '', latitude: '', longitude: '', price: '', cleaningFee: '', currency: 'EUR',
   maxGuests: '2', bedrooms: '1', beds: '1', bathrooms: '1', cancellationPolicy: 'moderate',
   instantBook: false,
+  minNights: '1', maxNights: '', guestsIncluded: '', extraGuestFee: '', securityDeposit: '',
 };
 
 // HostListingFormScreen creates a new listing or edits an existing one, then
@@ -44,6 +45,11 @@ export default function HostListingFormScreen({ route, navigation }) {
           cleaningFee: (p.cleaningFee.amountCents / 100).toString(),
           currency: p.pricePerNight.currency, maxGuests: String(p.maxGuests),
           cancellationPolicy: p.cancellationPolicy, instantBook: p.instantBook,
+          minNights: String(p.minNights || 1),
+          maxNights: p.maxNights ? String(p.maxNights) : '',
+          guestsIncluded: p.guestsIncluded ? String(p.guestsIncluded) : '',
+          extraGuestFee: ((p.extraGuestFee?.amountCents || 0) / 100).toString(),
+          securityDeposit: ((p.securityDeposit?.amountCents || 0) / 100).toString(),
         });
         setPhotos(p.photos || []);
         setStatus(p.status);
@@ -67,12 +73,19 @@ export default function HostListingFormScreen({ route, navigation }) {
     try {
       const priceCents = Math.round(Number(form.price) * 100);
       const cleaningFeeCents = Math.round(Number(form.cleaningFee || 0) * 100);
+      const stayRules = {
+        minNights: Number(form.minNights) || 1,
+        maxNights: Number(form.maxNights) || 0,
+        guestsIncluded: Number(form.guestsIncluded) || 0,
+        extraGuestFeeCents: Math.round(Number(form.extraGuestFee || 0) * 100),
+        securityDepositCents: Math.round(Number(form.securityDeposit || 0) * 100),
+      };
       if (propId) {
         const p = await api.updateProperty(propId, {
           title: form.title.trim(), description: form.description, priceCents,
           cleaningFeeCents, currency: form.currency.toUpperCase(), maxGuests: Number(form.maxGuests) || 1,
           cancellationPolicy: form.cancellationPolicy, weeklyDiscountPct: 0, monthlyDiscountPct: 0,
-          taxRatePct: 0, instantBook: form.instantBook,
+          taxRatePct: 0, instantBook: form.instantBook, ...stayRules,
         });
         setStatus(p.status);
         setMessage('Listing updated.');
@@ -85,7 +98,7 @@ export default function HostListingFormScreen({ route, navigation }) {
           maxGuests: Number(form.maxGuests) || 1, bedrooms: Number(form.bedrooms) || 0,
           beds: Number(form.beds) || 0, bathrooms: Number(form.bathrooms) || 0, amenities: [],
           cancellationPolicy: form.cancellationPolicy, weeklyDiscountPct: 0, monthlyDiscountPct: 0,
-          taxRatePct: 0, instantBook: form.instantBook,
+          taxRatePct: 0, instantBook: form.instantBook, ...stayRules,
         });
         setPropId(p.id);
         setStatus(p.status);
@@ -198,6 +211,17 @@ export default function HostListingFormScreen({ route, navigation }) {
 
       <Text style={styles.label}>Cancellation policy</Text>
       <Chips options={POLICIES} value={form.cancellationPolicy} onChange={(v) => set('cancellationPolicy', v)} />
+
+      <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Stay rules & fees</Text>
+      <Row>
+        <Field flex label="Min nights" value={form.minNights} onChangeText={(v) => set('minNights', v)} keyboardType="number-pad" />
+        <Field flex label="Max nights (0 = none)" value={form.maxNights} onChangeText={(v) => set('maxNights', v)} keyboardType="number-pad" />
+      </Row>
+      <Field label="Guests included in price" value={form.guestsIncluded} onChangeText={(v) => set('guestsIncluded', v)} keyboardType="number-pad" />
+      <Row>
+        <Field flex label={`Extra-guest fee/night (${form.currency})`} value={form.extraGuestFee} onChangeText={(v) => set('extraGuestFee', v)} keyboardType="decimal-pad" />
+        <Field flex label={`Security deposit (${form.currency})`} value={form.securityDeposit} onChangeText={(v) => set('securityDeposit', v)} keyboardType="decimal-pad" />
+      </Row>
 
       <Pressable style={styles.toggleRow} onPress={() => set('instantBook', !form.instantBook)}>
         <Text style={styles.toggleBox}>{form.instantBook ? '☑' : '☐'}</Text>

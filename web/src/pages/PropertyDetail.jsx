@@ -139,6 +139,11 @@ export default function PropertyDetail() {
         : 0;
   const discountCents = Math.round(subtotalCents * discountPct);
   const couponCents = couponInfo?.discount?.amountCents || 0;
+  const guestsIncluded = property.guestsIncluded || property.maxGuests;
+  const extraGuests = Math.max(0, Number(form.guests || 1) - guestsIncluded);
+  const extraGuestCents = extraGuests * (property.extraGuestFee?.amountCents || 0) * nights;
+  const depositCents = property.securityDeposit?.amountCents || 0;
+  const belowMinNights = nights > 0 && property.minNights > 1 && nights < property.minNights;
 
   return (
     <div className="container detail">
@@ -226,10 +231,13 @@ export default function PropertyDetail() {
                 {discountCents > 0 && <div className="bd-discount"><span>{t('detail.discount', { pct: Math.round(discountPct * 100) })}</span><span>-{fmt(discountCents)}</span></div>}
                 {couponCents > 0 && <div className="bd-discount"><span>{t('detail.couponDiscount', { code: couponInfo.code })}</span><span>-{fmt(couponCents)}</span></div>}
                 {cleaningCents > 0 && <div><span>{t('detail.cleaningFee')}</span><span>{fmt(cleaningCents)}</span></div>}
+                {extraGuestCents > 0 && <div><span>{t('detail.extraGuestFee', { n: extraGuests })}</span><span>{fmt(extraGuestCents)}</span></div>}
                 <div className="muted">{t('detail.serviceNote')}</div>
-                <div className="bd-total"><span>{t('detail.beforeFees')}</span><span>{fmt(Math.max(0, subtotalCents - discountCents - couponCents) + cleaningCents)}</span></div>
+                <div className="bd-total"><span>{t('detail.beforeFees')}</span><span>{fmt(Math.max(0, subtotalCents - discountCents - couponCents) + cleaningCents + extraGuestCents)}</span></div>
+                {depositCents > 0 && <div className="muted"><span>{t('detail.securityDeposit', { amount: fmt(depositCents) })}</span></div>}
               </div>
             )}
+            {belowMinNights && <p className="error coupon-msg">{t('detail.minNights', { n: property.minNights })}</p>}
             <div className="coupon-row">
               <input
                 placeholder={t('detail.couponPlaceholder')}
