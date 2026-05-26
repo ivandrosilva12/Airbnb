@@ -69,6 +69,12 @@ export function createApi(getAccessToken) {
     refreshPayoutAccount: () => request('POST', '/host/payouts/account/refresh', { auth: true }),
     myProperties: () => request('GET', '/host/properties', { auth: true }),
     propertyBookings: (id) => request('GET', `/properties/${id}/bookings`, { auth: true }),
+
+    // Calendar blocks (host)
+    listBlocks: (propertyId) => request('GET', `/properties/${propertyId}/blocks`, { auth: true }),
+    createBlock: (propertyId, body) => request('POST', `/properties/${propertyId}/blocks`, { body, auth: true }),
+    deleteBlock: (blockId) => request('DELETE', `/blocks/${blockId}`, { auth: true }),
+    importCalendar: (propertyId, ical) => request('POST', `/properties/${propertyId}/calendar/import`, { body: { ical }, auth: true }),
     confirmBooking: (id) => request('POST', `/bookings/${id}/confirm`, { auth: true }),
     completeBooking: (id) => request('POST', `/bookings/${id}/complete`, { auth: true }),
 

@@ -64,6 +64,9 @@ export default function HostPropertyBookingsScreen({ route, navigation }) {
   return (
     <View style={styles.container}>
       {error && <Text style={styles.error}>{error}</Text>}
+      <Pressable style={styles.calendarLink} onPress={() => navigation.navigate('HostCalendar', { id, title })}>
+        <Text style={styles.calendarLinkText}>📅 Manage calendar & blocked dates</Text>
+      </Pressable>
       <FlatList
         data={items}
         keyExtractor={(i) => i.id}
@@ -145,6 +148,8 @@ const styles = StyleSheet.create({
   starOn: { color: '#ff385c', fontSize: 26 },
   starOff: { color: '#ddd', fontSize: 26 },
   input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, marginBottom: 8 },
+  calendarLink: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, alignItems: 'center', marginBottom: 12 },
+  calendarLinkText: { fontWeight: '700', color: '#222' },
   empty: { textAlign: 'center', color: '#717171', marginTop: 24 },
   error: { color: '#c0392b', marginBottom: 8 },
 });
