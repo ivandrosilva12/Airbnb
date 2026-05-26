@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useLayoutEffect } from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useApi } from '../api/useApi';
 
 export default function HostPropertyBookingsScreen({ route, navigation }) {
@@ -8,6 +8,9 @@ export default function HostPropertyBookingsScreen({ route, navigation }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [reviewing, setReviewing] = useState(null);
+  const [draft, setDraft] = useState({ rating: 5, comment: '' });
+  const [reviewed, setReviewed] = useState({});
 
   useLayoutEffect(() => {
     if (title) navigation.setOptions({ title });
@@ -34,6 +37,23 @@ export default function HostPropertyBookingsScreen({ route, navigation }) {
     try {
       await fn(bookingId);
       load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function openReview(bookingId) {
+    setError(null);
+    setDraft({ rating: 5, comment: '' });
+    setReviewing(bookingId);
+  }
+
+  async function submitGuestReview(bookingId) {
+    setError(null);
+    try {
+      await api.createGuestReview({ bookingId, rating: draft.rating, comment: draft.comment.trim() });
+      setReviewed((r) => ({ ...r, [bookingId]: true }));
+      setReviewing(null);
     } catch (e) {
       setError(e.message);
     }
@@ -68,7 +88,39 @@ export default function HostPropertyBookingsScreen({ route, navigation }) {
                   <Text style={styles.btnGhostText}>Cancel</Text>
                 </Pressable>
               )}
+              {item.status === 'completed' && !reviewed[item.id] && reviewing !== item.id && (
+                <Pressable style={styles.btnGhost} onPress={() => openReview(item.id)}>
+                  <Text style={styles.reviewGuest}>Review guest</Text>
+                </Pressable>
+              )}
+              {reviewed[item.id] && <Text style={styles.reviewedText}>Guest reviewed ✓</Text>}
             </View>
+            {reviewing === item.id && (
+              <View style={styles.reviewForm}>
+                <View style={styles.starRow}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Pressable key={n} onPress={() => setDraft((d) => ({ ...d, rating: n }))}>
+                      <Text style={n <= draft.rating ? styles.starOn : styles.starOff}>★</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  style={styles.input}
+                  placeholder="How was your guest? (optional)"
+                  value={draft.comment}
+                  onChangeText={(v) => setDraft((d) => ({ ...d, comment: v }))}
+                  multiline
+                />
+                <View style={styles.actions}>
+                  <Pressable style={styles.btn} onPress={() => submitGuestReview(item.id)}>
+                    <Text style={styles.btnText}>Submit review</Text>
+                  </Pressable>
+                  <Pressable style={styles.btnGhost} onPress={() => setReviewing(null)}>
+                    <Text style={styles.btnGhostText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
           </View>
         )}
       />
@@ -86,6 +138,13 @@ const styles = StyleSheet.create({
   btnText: { color: '#fff', fontWeight: '700' },
   btnGhost: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
   btnGhostText: { color: '#c0392b', fontWeight: '700' },
+  reviewGuest: { color: '#ff385c', fontWeight: '700' },
+  reviewedText: { color: '#1e7e44', fontWeight: '700', alignSelf: 'center' },
+  reviewForm: { marginTop: 10, backgroundColor: '#fafafa', borderRadius: 8, padding: 12 },
+  starRow: { flexDirection: 'row', gap: 4, marginBottom: 8 },
+  starOn: { color: '#ff385c', fontSize: 26 },
+  starOff: { color: '#ddd', fontSize: 26 },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, marginBottom: 8 },
   empty: { textAlign: 'center', color: '#717171', marginTop: 24 },
   error: { color: '#c0392b', marginBottom: 8 },
 });

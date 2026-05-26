@@ -15,6 +15,9 @@ export default function PropertyScreen({ route, navigation }) {
   const [guests, setGuests] = useState('1');
   const [coupon, setCoupon] = useState('');
   const [couponInfo, setCouponInfo] = useState(null);
+  const [myId, setMyId] = useState(null);
+  const [respondingId, setRespondingId] = useState(null);
+  const [respondText, setRespondText] = useState('');
   const [message, setMessage] = useState(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
@@ -62,7 +65,22 @@ export default function PropertyScreen({ route, navigation }) {
       .listFavorites()
       .then((res) => setSaved((res.items || []).some((p) => p.id === id)))
       .catch(() => {});
+    api.me().then((u) => setMyId(u.id)).catch(() => {});
   }, [id, authenticated]);
+
+  const isOwner = !!(property && myId && property.hostId === myId);
+
+  async function submitResponse(reviewId) {
+    setError(null);
+    try {
+      const updated = await api.respondToReview(reviewId, respondText.trim());
+      setReviews((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setRespondingId(null);
+      setRespondText('');
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   async function save() {
     if (!authenticated) {
@@ -210,6 +228,31 @@ export default function PropertyScreen({ route, navigation }) {
                     <Text style={styles.reviewComment}>{r.response}</Text>
                   </View>
                 )}
+                {isOwner && !r.response && (
+                  respondingId === r.id ? (
+                    <View style={styles.respondBox}>
+                      <TextInput
+                        style={[styles.input, { marginBottom: 8 }]}
+                        placeholder="Write a public reply…"
+                        value={respondText}
+                        onChangeText={setRespondText}
+                        multiline
+                      />
+                      <View style={styles.secondaryActions}>
+                        <Pressable style={styles.btn} onPress={() => submitResponse(r.id)}>
+                          <Text style={styles.btnText}>Post response</Text>
+                        </Pressable>
+                        <Pressable style={styles.secondaryBtn} onPress={() => { setRespondingId(null); setRespondText(''); }}>
+                          <Text style={styles.secondaryText}>Cancel</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : (
+                    <Pressable onPress={() => { setRespondingId(r.id); setRespondText(''); }}>
+                      <Text style={styles.respondLink}>Respond</Text>
+                    </Pressable>
+                  )
+                )}
               </View>
             ))
           )}
@@ -300,6 +343,8 @@ const styles = StyleSheet.create({
   reviewCats: { color: '#717171', fontSize: 12, marginTop: 4 },
   reviewResponse: { marginTop: 8, marginLeft: 12, paddingLeft: 10, borderLeftWidth: 3, borderColor: '#eee' },
   reviewResponseLabel: { fontSize: 12, color: '#717171', fontWeight: '700' },
+  respondBox: { marginTop: 8 },
+  respondLink: { color: '#ff385c', fontWeight: '700', marginTop: 6 },
   reportLink: { color: '#c0392b', textDecorationLine: 'underline', marginTop: 16 },
   reportDone: { color: '#1a7f47', marginTop: 16 },
   reportBox: { borderWidth: 1, borderColor: '#eee', borderRadius: 12, padding: 16, marginTop: 16 },
