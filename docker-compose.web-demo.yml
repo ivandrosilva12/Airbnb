@@ -1,0 +1,25 @@
+# Override used only to run the AirHost stack alongside another project that
+# already holds the default host ports (Postgres 5432, Keycloak 8080, MinIO
+# 9000/9001). The API keeps host port 8081 (the only port a browser needs to
+# reach); the dependencies move to free host ports. Internal container-network
+# ports are unchanged, so the API still reaches them by service name.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.web-demo.yml up -d
+services:
+  postgres:
+    ports: !override
+      - "5433:5432"
+  keycloak:
+    ports: !override
+      - "8085:8080"
+  minio:
+    ports: !override
+      - "9100:9000"
+      - "9101:9001"
+  prometheus:
+    ports: !override
+      - "9091:9090"
+  grafana:
+    ports: !override
+      - "3002:3000"
