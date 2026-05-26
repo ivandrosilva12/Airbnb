@@ -167,6 +167,12 @@ type Property struct {
 	// InstantBook, when true, auto-confirms a guest's reservation instead of
 	// holding it for the host's approval.
 	InstantBook bool
+	// Stay rules and per-guest pricing.
+	MinNights       int          // minimum nights per reservation (>= 1)
+	MaxNights       int          // maximum nights (0 = no cap)
+	GuestsIncluded  int          // guests included in the base price; extras are charged
+	ExtraGuestFee   shared.Money // per extra guest, per night
+	SecurityDeposit shared.Money // refundable hold collected with the booking
 	// AverageRating and ReviewCount are a denormalised read-model of the
 	// property's guest reviews, refreshed when a review is published.
 	AverageRating float64
@@ -267,9 +273,48 @@ func NewProperty(
 		Amenities:          NormalizeAmenities(amenities),
 		Photos:             []Photo{},
 		CancellationPolicy: PolicyFlexible,
+		MinNights:          1,
+		MaxNights:          0,
+		GuestsIncluded:     maxGuests,
+		ExtraGuestFee:      zeroMoney(price.Currency()),
+		SecurityDeposit:    zeroMoney(price.Currency()),
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}, nil
+}
+
+func zeroMoney(currency string) shared.Money {
+	m, _ := shared.NewMoney(0, currency)
+	return m
+}
+
+// SetStayRules configures the listing's stay-length limits and per-guest pricing.
+// minNights >= 1; maxNights is 0 (no cap) or >= minNights; guestsIncluded is
+// 1..MaxGuests; the fee/deposit must share the nightly price's currency.
+func (p *Property) SetStayRules(minNights, maxNights, guestsIncluded int, extraGuestFee, securityDeposit shared.Money) error {
+	if minNights < 1 {
+		return shared.NewValidationError("minimum nights must be at least 1")
+	}
+	if maxNights != 0 && maxNights < minNights {
+		return shared.NewValidationError("maximum nights must be 0 or at least the minimum")
+	}
+	if guestsIncluded < 1 || guestsIncluded > p.MaxGuests {
+		return shared.NewValidationError("guests included must be between 1 and the maximum guests")
+	}
+	cur := p.PricePerNight.Currency()
+	if extraGuestFee.Currency() != cur || securityDeposit.Currency() != cur {
+		return shared.NewValidationError("fees must use the same currency as the nightly price")
+	}
+	if extraGuestFee.AmountCents() < 0 || securityDeposit.AmountCents() < 0 {
+		return shared.NewValidationError("fees cannot be negative")
+	}
+	p.MinNights = minNights
+	p.MaxNights = maxNights
+	p.GuestsIncluded = guestsIncluded
+	p.ExtraGuestFee = extraGuestFee
+	p.SecurityDeposit = securityDeposit
+	p.touch()
+	return nil
 }
 
 // Publish moves a listing into the published state so guests can book it.

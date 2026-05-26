@@ -17,23 +17,28 @@ const (
 // service fee, occupancy tax and the resulting total. Computing this in the
 // domain keeps pricing rules in one place and out of the transport/UI layers.
 type Pricing struct {
-	Nights      int
-	Subtotal    shared.Money // pricePerNight * nights (gross, before discount)
-	Discount    shared.Money // total discount: length-of-stay plus any promo code
-	CleaningFee shared.Money
-	ServiceFee  shared.Money // round((subtotal - discount + cleaning) * serviceFeeRate)
-	Tax         shared.Money // round((subtotal - discount + cleaning) * taxRate)
-	Total       shared.Money
+	Nights          int
+	Subtotal        shared.Money // pricePerNight * nights (gross, before discount)
+	Discount        shared.Money // total discount: length-of-stay plus any promo code
+	CleaningFee     shared.Money
+	ExtraGuestFee   shared.Money // per-extra-guest fee for the whole stay
+	ServiceFee      shared.Money // round((subtotal - discount + cleaning + extraGuest) * serviceFeeRate)
+	Tax             shared.Money // round((subtotal - discount + cleaning + extraGuest) * taxRate)
+	SecurityDeposit shared.Money // refundable hold added to the total (no fee/tax)
+	Total           shared.Money
 }
 
-// Discounts carries the length-of-stay discount and tax fractions a listing
-// applies, plus any absolute promo-code discount. The fractions are in [0,1];
-// CouponCents is an absolute amount in the nightly price's currency.
+// Discounts carries the pricing modifiers a listing applies: length-of-stay
+// discount and tax fractions (in [0,1]), an absolute promo-code discount, the
+// per-stay extra-guest fee, and a refundable security deposit — all absolute
+// amounts in the nightly price's currency.
 type Discounts struct {
-	WeeklyPct   float64
-	MonthlyPct  float64
-	TaxPct      float64
-	CouponCents int64
+	WeeklyPct            float64
+	MonthlyPct           float64
+	TaxPct               float64
+	CouponCents          int64
+	ExtraGuestFeeCents   int64
+	SecurityDepositCents int64
 }
 
 // discountPctForNights picks the best qualifying length-of-stay discount.
@@ -77,12 +82,29 @@ func ComputePricing(pricePerNight, cleaningFee shared.Money, nights int, service
 		return Pricing{}, err
 	}
 
-	// Accommodation net of discount, plus the cleaning fee, forms the base on
-	// which the platform fee and tax are charged.
-	baseCents := subtotal.AmountCents() - discountCents + cleaningFee.AmountCents()
 	if cleaningFee.Currency() != currency {
 		return Pricing{}, shared.NewValidationError("cleaning fee must use the same currency as the nightly price")
 	}
+	extraGuestCents := discounts.ExtraGuestFeeCents
+	if extraGuestCents < 0 {
+		extraGuestCents = 0
+	}
+	depositCents := discounts.SecurityDepositCents
+	if depositCents < 0 {
+		depositCents = 0
+	}
+	extraGuestFee, err := shared.NewMoney(extraGuestCents, currency)
+	if err != nil {
+		return Pricing{}, err
+	}
+	deposit, err := shared.NewMoney(depositCents, currency)
+	if err != nil {
+		return Pricing{}, err
+	}
+
+	// Accommodation net of discount, plus the cleaning and extra-guest fees, forms
+	// the base on which the platform fee and tax are charged.
+	baseCents := subtotal.AmountCents() - discountCents + cleaningFee.AmountCents() + extraGuestCents
 
 	serviceCents := int64(math.Round(float64(baseCents) * serviceFeeRate))
 	serviceFee, err := shared.NewMoney(serviceCents, currency)
@@ -96,18 +118,21 @@ func ComputePricing(pricePerNight, cleaningFee shared.Money, nights int, service
 		return Pricing{}, err
 	}
 
-	total, err := shared.NewMoney(baseCents+serviceCents+taxCents, currency)
+	// The refundable deposit is collected on top (no platform fee or tax on it).
+	total, err := shared.NewMoney(baseCents+serviceCents+taxCents+depositCents, currency)
 	if err != nil {
 		return Pricing{}, err
 	}
 
 	return Pricing{
-		Nights:      nights,
-		Subtotal:    subtotal,
-		Discount:    discount,
-		CleaningFee: cleaningFee,
-		ServiceFee:  serviceFee,
-		Tax:         tax,
-		Total:       total,
+		Nights:          nights,
+		Subtotal:        subtotal,
+		Discount:        discount,
+		CleaningFee:     cleaningFee,
+		ExtraGuestFee:   extraGuestFee,
+		ServiceFee:      serviceFee,
+		Tax:             tax,
+		SecurityDeposit: deposit,
+		Total:           total,
 	}, nil
 }

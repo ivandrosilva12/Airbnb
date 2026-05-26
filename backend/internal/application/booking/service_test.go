@@ -104,6 +104,44 @@ func TestCreate_AppliesCouponAndRedeems(t *testing.T) {
 	}
 }
 
+func TestCreate_StayRulesAndExtraGuestFee(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	fee, _ := shared.NewMoney(2000, "EUR")     // 20.00 per extra guest, per night
+	deposit, _ := shared.NewMoney(5000, "EUR") // 50.00 refundable hold
+	if err := f.prop.SetStayRules(3, 0, 1, fee, deposit); err != nil {
+		t.Fatalf("set stay rules: %v", err)
+	}
+	if err := f.properties.Update(ctx, f.prop); err != nil {
+		t.Fatalf("update property: %v", err)
+	}
+
+	// A 2-night stay is below the 3-night minimum.
+	if _, err := f.svc.Create(ctx, bookingapp.CreateInput{
+		GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(3), Guests: 1,
+	}); err == nil {
+		t.Fatal("expected a 2-night stay to be rejected (min 3 nights)")
+	}
+
+	// A 3-night stay with 3 guests: 2 extra guests * 20.00 * 3 nights = 120.00,
+	// plus a 50.00 deposit on top of the 300.00 accommodation.
+	b, err := f.svc.Create(ctx, bookingapp.CreateInput{
+		GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 3,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if b.Pricing.ExtraGuestFee.AmountCents() != 12000 {
+		t.Errorf("extra-guest fee = %d, want 12000", b.Pricing.ExtraGuestFee.AmountCents())
+	}
+	if b.Pricing.SecurityDeposit.AmountCents() != 5000 {
+		t.Errorf("deposit = %d, want 5000", b.Pricing.SecurityDeposit.AmountCents())
+	}
+	if b.TotalPrice().AmountCents() != 47000 { // 30000 + 12000 + 5000
+		t.Errorf("total = %d, want 47000", b.TotalPrice().AmountCents())
+	}
+}
+
 func TestCreate_InvalidCouponFailsBooking(t *testing.T) {
 	f := newFixture(t)
 	_, err := f.svc.Create(context.Background(), bookingapp.CreateInput{

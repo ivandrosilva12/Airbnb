@@ -113,6 +113,11 @@ type PropertyView struct {
 	MonthlyDiscountPct float64     `json:"monthlyDiscountPct"`
 	TaxRatePct         float64     `json:"taxRatePct"`
 	InstantBook        bool        `json:"instantBook"`
+	MinNights          int         `json:"minNights"`
+	MaxNights          int         `json:"maxNights"`
+	GuestsIncluded     int         `json:"guestsIncluded"`
+	ExtraGuestFee      MoneyView   `json:"extraGuestFee"`
+	SecurityDeposit    MoneyView   `json:"securityDeposit"`
 	AverageRating      float64     `json:"averageRating"`
 	ReviewCount        int         `json:"reviewCount"`
 	HostIsSuperhost    bool        `json:"hostIsSuperhost"`
@@ -153,6 +158,11 @@ func FromProperty(p *property.Property) PropertyView {
 		MonthlyDiscountPct: p.PricingPolicy.MonthlyDiscountPct,
 		TaxRatePct:         p.PricingPolicy.TaxRatePct,
 		InstantBook:        p.InstantBook,
+		MinNights:          p.MinNights,
+		MaxNights:          p.MaxNights,
+		GuestsIncluded:     p.GuestsIncluded,
+		ExtraGuestFee:      fromMoney(p.ExtraGuestFee),
+		SecurityDeposit:    fromMoney(p.SecurityDeposit),
 		AverageRating:      p.AverageRating,
 		ReviewCount:        p.ReviewCount,
 		HostIsSuperhost:    p.HostIsSuperhost,
@@ -163,41 +173,45 @@ func FromProperty(p *property.Property) PropertyView {
 // BookingView is the public representation of a reservation, including the
 // full price breakdown.
 type BookingView struct {
-	ID          uuid.UUID `json:"id"`
-	PropertyID  uuid.UUID `json:"propertyId"`
-	GuestID     uuid.UUID `json:"guestId"`
-	CheckIn     string    `json:"checkIn"`
-	CheckOut    string    `json:"checkOut"`
-	Nights      int       `json:"nights"`
-	Guests      int       `json:"guests"`
-	Subtotal    MoneyView `json:"subtotal"`
-	Discount    MoneyView `json:"discount"`
-	CleaningFee MoneyView `json:"cleaningFee"`
-	ServiceFee  MoneyView `json:"serviceFee"`
-	Tax         MoneyView `json:"tax"`
-	TotalPrice  MoneyView `json:"totalPrice"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID              uuid.UUID `json:"id"`
+	PropertyID      uuid.UUID `json:"propertyId"`
+	GuestID         uuid.UUID `json:"guestId"`
+	CheckIn         string    `json:"checkIn"`
+	CheckOut        string    `json:"checkOut"`
+	Nights          int       `json:"nights"`
+	Guests          int       `json:"guests"`
+	Subtotal        MoneyView `json:"subtotal"`
+	Discount        MoneyView `json:"discount"`
+	CleaningFee     MoneyView `json:"cleaningFee"`
+	ExtraGuestFee   MoneyView `json:"extraGuestFee"`
+	ServiceFee      MoneyView `json:"serviceFee"`
+	Tax             MoneyView `json:"tax"`
+	SecurityDeposit MoneyView `json:"securityDeposit"`
+	TotalPrice      MoneyView `json:"totalPrice"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"createdAt"`
 }
 
 // FromBooking maps a booking aggregate to its view.
 func FromBooking(b *booking.Booking) BookingView {
 	return BookingView{
-		ID:          b.ID,
-		PropertyID:  b.PropertyID,
-		GuestID:     b.GuestID,
-		CheckIn:     b.Dates.CheckIn.Format("2006-01-02"),
-		CheckOut:    b.Dates.CheckOut.Format("2006-01-02"),
-		Nights:      b.Dates.Nights(),
-		Guests:      b.Guests,
-		Subtotal:    fromMoney(b.Pricing.Subtotal),
-		Discount:    fromMoney(b.Pricing.Discount),
-		CleaningFee: fromMoney(b.Pricing.CleaningFee),
-		ServiceFee:  fromMoney(b.Pricing.ServiceFee),
-		Tax:         fromMoney(b.Pricing.Tax),
-		TotalPrice:  fromMoney(b.Pricing.Total),
-		Status:      string(b.Status),
-		CreatedAt:   b.CreatedAt,
+		ID:              b.ID,
+		PropertyID:      b.PropertyID,
+		GuestID:         b.GuestID,
+		CheckIn:         b.Dates.CheckIn.Format("2006-01-02"),
+		CheckOut:        b.Dates.CheckOut.Format("2006-01-02"),
+		Nights:          b.Dates.Nights(),
+		Guests:          b.Guests,
+		Subtotal:        fromMoney(b.Pricing.Subtotal),
+		Discount:        fromMoney(b.Pricing.Discount),
+		CleaningFee:     fromMoney(b.Pricing.CleaningFee),
+		ExtraGuestFee:   fromMoney(b.Pricing.ExtraGuestFee),
+		ServiceFee:      fromMoney(b.Pricing.ServiceFee),
+		Tax:             fromMoney(b.Pricing.Tax),
+		SecurityDeposit: fromMoney(b.Pricing.SecurityDeposit),
+		TotalPrice:      fromMoney(b.Pricing.Total),
+		Status:          string(b.Status),
+		CreatedAt:       b.CreatedAt,
 	}
 }
 

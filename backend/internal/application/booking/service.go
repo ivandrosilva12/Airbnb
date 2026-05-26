@@ -6,6 +6,7 @@ package bookingapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/airhost/backend/internal/application/event"
@@ -119,11 +120,28 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		appliedCoupon = cp
 	}
 
+	// Enforce the listing's stay-length rules.
+	nights := dates.Nights()
+	if prop.MinNights > 0 && nights < prop.MinNights {
+		return nil, shared.NewValidationError(fmt.Sprintf("this listing requires a stay of at least %d nights", prop.MinNights))
+	}
+	if prop.MaxNights > 0 && nights > prop.MaxNights {
+		return nil, shared.NewValidationError(fmt.Sprintf("this listing allows a stay of at most %d nights", prop.MaxNights))
+	}
+	// Per-extra-guest fee, charged per night beyond the included headcount.
+	extraGuests := in.Guests - prop.GuestsIncluded
+	if extraGuests < 0 {
+		extraGuests = 0
+	}
+	extraGuestFeeCents := int64(extraGuests) * prop.ExtraGuestFee.AmountCents() * int64(nights)
+
 	b, err := booking.NewBooking(in.PropertyID, in.GuestID, dates, in.Guests, prop.PricePerNight, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
-		WeeklyPct:   prop.PricingPolicy.WeeklyDiscountPct,
-		MonthlyPct:  prop.PricingPolicy.MonthlyDiscountPct,
-		TaxPct:      prop.PricingPolicy.TaxRatePct,
-		CouponCents: couponCents,
+		WeeklyPct:            prop.PricingPolicy.WeeklyDiscountPct,
+		MonthlyPct:           prop.PricingPolicy.MonthlyDiscountPct,
+		TaxPct:               prop.PricingPolicy.TaxRatePct,
+		CouponCents:          couponCents,
+		ExtraGuestFeeCents:   extraGuestFeeCents,
+		SecurityDepositCents: prop.SecurityDeposit.AmountCents(),
 	})
 	if err != nil {
 		return nil, err

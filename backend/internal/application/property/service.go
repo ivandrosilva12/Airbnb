@@ -26,29 +26,54 @@ func NewService(repo property.Repository, storage port.Storage) *Service {
 
 // CreateInput carries the data required to create a listing.
 type CreateInput struct {
-	HostID             uuid.UUID
-	Title              string
-	Description        string
-	Type               string
-	AddressLine1       string
-	City               string
-	Country            string
-	PostalCode         string
-	Latitude           float64
-	Longitude          float64
-	PriceCents         int64
-	CleaningFeeCents   int64
-	Currency           string
-	MaxGuests          int
-	Bedrooms           int
-	Beds               int
-	Bathrooms          int
-	Amenities          []string
-	CancellationPolicy string
-	WeeklyDiscountPct  float64
-	MonthlyDiscountPct float64
-	TaxRatePct         float64
-	InstantBook        bool
+	HostID               uuid.UUID
+	Title                string
+	Description          string
+	Type                 string
+	AddressLine1         string
+	City                 string
+	Country              string
+	PostalCode           string
+	Latitude             float64
+	Longitude            float64
+	PriceCents           int64
+	CleaningFeeCents     int64
+	Currency             string
+	MaxGuests            int
+	Bedrooms             int
+	Beds                 int
+	Bathrooms            int
+	Amenities            []string
+	CancellationPolicy   string
+	WeeklyDiscountPct    float64
+	MonthlyDiscountPct   float64
+	TaxRatePct           float64
+	InstantBook          bool
+	MinNights            int
+	MaxNights            int
+	GuestsIncluded       int
+	ExtraGuestFeeCents   int64
+	SecurityDepositCents int64
+}
+
+// applyStayRules sets the listing's stay-length limits and per-guest pricing,
+// filling sensible defaults (min 1 night, all guests included) when unset.
+func applyStayRules(p *property.Property, currency string, minNights, maxNights, guestsIncluded int, extraGuestFeeCents, securityDepositCents int64) error {
+	if minNights < 1 {
+		minNights = 1
+	}
+	if guestsIncluded < 1 {
+		guestsIncluded = p.MaxGuests
+	}
+	extraGuestFee, err := shared.NewMoney(extraGuestFeeCents, currency)
+	if err != nil {
+		return err
+	}
+	deposit, err := shared.NewMoney(securityDepositCents, currency)
+	if err != nil {
+		return err
+	}
+	return p.SetStayRules(minNights, maxNights, guestsIncluded, extraGuestFee, deposit)
 }
 
 // Create builds and persists a draft listing.
@@ -85,6 +110,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*property.Propert
 		TaxRatePct:         in.TaxRatePct,
 	})
 	p.SetInstantBook(in.InstantBook)
+	if err := applyStayRules(p, in.Currency, in.MinNights, in.MaxNights, in.GuestsIncluded, in.ExtraGuestFeeCents, in.SecurityDepositCents); err != nil {
+		return nil, err
+	}
 	if err := s.repo.Create(ctx, p); err != nil {
 		return nil, err
 	}
@@ -108,17 +136,22 @@ func (s *Service) ListByHost(ctx context.Context, hostID uuid.UUID, page shared.
 
 // UpdateInput carries editable listing fields.
 type UpdateInput struct {
-	Title              string
-	Description        string
-	PriceCents         int64
-	CleaningFeeCents   int64
-	Currency           string
-	MaxGuests          int
-	CancellationPolicy string
-	WeeklyDiscountPct  float64
-	MonthlyDiscountPct float64
-	TaxRatePct         float64
-	InstantBook        bool
+	Title                string
+	Description          string
+	PriceCents           int64
+	CleaningFeeCents     int64
+	Currency             string
+	MaxGuests            int
+	CancellationPolicy   string
+	WeeklyDiscountPct    float64
+	MonthlyDiscountPct   float64
+	TaxRatePct           float64
+	InstantBook          bool
+	MinNights            int
+	MaxNights            int
+	GuestsIncluded       int
+	ExtraGuestFeeCents   int64
+	SecurityDepositCents int64
 }
 
 // Update mutates a listing after verifying ownership.
@@ -147,6 +180,9 @@ func (s *Service) Update(ctx context.Context, actorID, propertyID uuid.UUID, in 
 		TaxRatePct:         in.TaxRatePct,
 	})
 	p.SetInstantBook(in.InstantBook)
+	if err := applyStayRules(p, in.Currency, in.MinNights, in.MaxNights, in.GuestsIncluded, in.ExtraGuestFeeCents, in.SecurityDepositCents); err != nil {
+		return nil, err
+	}
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err
 	}
