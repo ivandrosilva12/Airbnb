@@ -94,6 +94,52 @@ func TestSearch_KeywordQuery(t *testing.T) {
 	}
 }
 
+func TestSearch_PriceRoomsInstantBook(t *testing.T) {
+	ctx := context.Background()
+	props := memory.NewPropertyRepository()
+	svc := searchapp.NewService(props, memory.NewBookingRepository(), memory.NewBlockRepository())
+
+	mk := func(title string, price int64, bedrooms int, instant bool) *property.Property {
+		money, _ := shared.NewMoney(price, "EUR")
+		cleaning, _ := shared.NewMoney(0, "EUR")
+		addr := property.Address{City: title, Country: "PT", Latitude: 38.7, Longitude: -9.1}
+		p, err := property.NewProperty(uuid.New(), title, "", property.TypeApartment, addr, money, cleaning, 4, bedrooms, bedrooms, 1, nil)
+		if err != nil {
+			t.Fatalf("new property: %v", err)
+		}
+		p.AddPhoto("k", "http://x/k.jpg")
+		if instant {
+			p.SetInstantBook(true)
+		}
+		if err := p.Publish(); err != nil {
+			t.Fatalf("publish: %v", err)
+		}
+		if err := props.Create(ctx, p); err != nil {
+			t.Fatalf("store: %v", err)
+		}
+		return p
+	}
+
+	mk("Studio", 5000, 1, false)
+	family := mk("Family", 12000, 3, true)
+	page := shared.NewPage(20, 0)
+
+	pr, _ := svc.Search(ctx, property.SearchCriteria{Page: page, MinPrice: 8000, MaxPrice: 15000}, nil)
+	if pr.Total != 1 || pr.Items[0].ID != family.ID {
+		t.Fatalf("price range 80-150 = %d items, want 1 (Family)", pr.Total)
+	}
+
+	br, _ := svc.Search(ctx, property.SearchCriteria{Page: page, MinBedrooms: 2}, nil)
+	if br.Total != 1 || br.Items[0].ID != family.ID {
+		t.Fatalf("bedrooms>=2 = %d items, want 1 (Family)", br.Total)
+	}
+
+	ib, _ := svc.Search(ctx, property.SearchCriteria{Page: page, InstantBookOnly: true}, nil)
+	if ib.Total != 1 || ib.Items[0].ID != family.ID {
+		t.Fatalf("instant-book only = %d items, want 1 (Family)", ib.Total)
+	}
+}
+
 func TestSearch_GeoRadiusFilters(t *testing.T) {
 	ctx := context.Background()
 	props := memory.NewPropertyRepository()

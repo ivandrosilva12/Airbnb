@@ -223,7 +223,22 @@ func (r *PropertyRepository) Search(_ context.Context, c property.SearchCriteria
 		if c.MinGuests > 0 && p.MaxGuests < c.MinGuests {
 			continue
 		}
+		if c.MinPrice > 0 && p.PricePerNight.AmountCents() < c.MinPrice {
+			continue
+		}
 		if c.MaxPrice > 0 && p.PricePerNight.AmountCents() > c.MaxPrice {
+			continue
+		}
+		if c.MinBedrooms > 0 && p.Bedrooms < c.MinBedrooms {
+			continue
+		}
+		if c.MinBeds > 0 && p.Beds < c.MinBeds {
+			continue
+		}
+		if c.MinBathrooms > 0 && p.Bathrooms < c.MinBathrooms {
+			continue
+		}
+		if c.InstantBookOnly && !p.InstantBook {
 			continue
 		}
 		if len(c.Amenities) > 0 && !containsAll(p.Amenities, c.Amenities) {

@@ -232,8 +232,23 @@ func (r *PropertyRepository) search(ctx context.Context, c property.SearchCriter
 	if c.MinGuests > 0 {
 		add("max_guests >= $%d", c.MinGuests)
 	}
+	if c.MinPrice > 0 {
+		add("price_cents >= $%d", c.MinPrice)
+	}
 	if c.MaxPrice > 0 {
 		add("price_cents <= $%d", c.MaxPrice)
+	}
+	if c.MinBedrooms > 0 {
+		add("bedrooms >= $%d", c.MinBedrooms)
+	}
+	if c.MinBeds > 0 {
+		add("beds >= $%d", c.MinBeds)
+	}
+	if c.MinBathrooms > 0 {
+		add("bathrooms >= $%d", c.MinBathrooms)
+	}
+	if c.InstantBookOnly {
+		add("instant_book = $%d", true)
 	}
 	if len(c.Amenities) > 0 {
 		add("amenities @> $%d", c.Amenities)

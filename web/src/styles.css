@@ -217,6 +217,10 @@ main:focus { outline: none; }
 .profile-form label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
 .profile-form input { padding: 9px; border: 1px solid var(--border); border-radius: 8px; font-size: .95rem; }
 .profile-form input:disabled { background: #f5f5f5; color: var(--muted); }
+.more-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 10px 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.more-filters label { display: flex; flex-direction: column; gap: 4px; font-size: .82rem; color: var(--muted); }
+.more-filters input, .more-filters select { padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+.more-filters-check { flex-direction: row !important; align-items: center; gap: 6px; }
 .coupon-row { display: flex; gap: 8px; margin: 8px 0; }
 .coupon-row input { flex: 1; min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 8px; font-size: .9rem; text-transform: uppercase; }
 .coupon-msg { font-size: .82rem; margin: 4px 0; }

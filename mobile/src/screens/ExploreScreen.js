@@ -7,12 +7,28 @@ const PAGE_SIZE = 12;
 export default function ExploreScreen({ navigation }) {
   const api = useApi();
   const [city, setCity] = useState('');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [bedrooms, setBedrooms] = useState('');
+  const [instantOnly, setInstantOnly] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const paramsRef = useRef({});
+
+  function applyFilters() {
+    const toCents = (v) => (v ? Math.round(Number(v) * 100) : '');
+    load({
+      city,
+      minPrice: toCents(minPrice),
+      maxPrice: toCents(maxPrice),
+      bedrooms: bedrooms || '',
+      ...(instantOnly ? { instantBook: 'true' } : {}),
+    });
+  }
 
   const load = useCallback(
     async (params = {}) => {
@@ -56,14 +72,35 @@ export default function ExploreScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <TextInput
-        style={styles.search}
-        placeholder="Search by city"
-        value={city}
-        onChangeText={setCity}
-        onSubmitEditing={() => load({ city })}
-        returnKeyType="search"
-      />
+      <View style={styles.searchRow}>
+        <TextInput
+          style={[styles.search, { flex: 1, marginBottom: 0 }]}
+          placeholder="Search by city"
+          value={city}
+          onChangeText={setCity}
+          onSubmitEditing={applyFilters}
+          returnKeyType="search"
+        />
+        <Pressable style={styles.filterToggle} onPress={() => setShowFilters((v) => !v)}>
+          <Text style={styles.filterToggleText}>Filters</Text>
+        </Pressable>
+      </View>
+      {showFilters && (
+        <View style={styles.filters}>
+          <View style={styles.filterRow}>
+            <TextInput style={styles.filterInput} placeholder="Min price" keyboardType="number-pad" value={minPrice} onChangeText={setMinPrice} />
+            <TextInput style={styles.filterInput} placeholder="Max price" keyboardType="number-pad" value={maxPrice} onChangeText={setMaxPrice} />
+            <TextInput style={styles.filterInput} placeholder="Bedrooms" keyboardType="number-pad" value={bedrooms} onChangeText={setBedrooms} />
+          </View>
+          <Pressable style={styles.instantToggle} onPress={() => setInstantOnly((v) => !v)}>
+            <Text style={styles.instantBox}>{instantOnly ? '☑' : '☐'}</Text>
+            <Text style={styles.instantLabel}>Instant Book only</Text>
+          </Pressable>
+          <Pressable style={styles.applyBtn} onPress={applyFilters}>
+            <Text style={styles.applyText}>Apply filters</Text>
+          </Pressable>
+        </View>
+      )}
       {error && <Text style={styles.error}>{error}</Text>}
       {loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} color="#ff385c" />
@@ -101,6 +138,17 @@ export default function ExploreScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fafafa', padding: 12 },
   search: { backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 18, paddingVertical: 12, borderWidth: 1, borderColor: '#ddd', marginBottom: 12 },
+  searchRow: { flexDirection: 'row', gap: 8, marginBottom: 12, alignItems: 'center' },
+  filterToggle: { borderWidth: 1, borderColor: '#ddd', borderRadius: 999, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff' },
+  filterToggleText: { fontWeight: '700', color: '#222' },
+  filters: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#eee', padding: 12, marginBottom: 12 },
+  filterRow: { flexDirection: 'row', gap: 8 },
+  filterInput: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 8 },
+  instantToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  instantBox: { fontSize: 18 },
+  instantLabel: { color: '#222' },
+  applyBtn: { backgroundColor: '#ff385c', borderRadius: 8, padding: 12, alignItems: 'center', marginTop: 10 },
+  applyText: { color: '#fff', fontWeight: '700' },
   card: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#eee' },
   photo: { width: '100%', height: 180 },
   placeholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0f0f0' },

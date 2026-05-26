@@ -13,7 +13,8 @@ export default function Home() {
   const navigate = useNavigate();
   const [view, setView] = useState('list');
   const [amenityOptions, setAmenityOptions] = useState(AMENITY_CODES);
-  const [filters, setFilters] = useState({ q: '', city: '', type: '', minGuests: '', checkIn: '', checkOut: '', sort: '', amenities: [] });
+  const [filters, setFilters] = useState({ q: '', city: '', type: '', minGuests: '', minPrice: '', maxPrice: '', bedrooms: '', instantBook: false, checkIn: '', checkOut: '', sort: '', amenities: [] });
+  const [showMore, setShowMore] = useState(false);
   const [geo, setGeo] = useState(null); // { lat, lng, radiusKm } | null
   const [results, setResults] = useState({ items: [], total: 0 });
   const [page, setPage] = useState(0);
@@ -51,9 +52,13 @@ export default function Home() {
   }, []);
 
   function buildParams(f = filters, g = geo) {
-    const { amenities, ...rest } = f;
+    const { amenities, instantBook, minPrice, maxPrice, ...rest } = f;
+    const toCents = (v) => (v === '' || v == null ? '' : Math.round(Number(v) * 100));
     return {
       ...rest,
+      minPrice: toCents(minPrice),
+      maxPrice: toCents(maxPrice),
+      ...(instantBook ? { instantBook: 'true' } : {}),
       ...(amenities.length ? { amenity: amenities } : {}),
       ...(g ? { lat: g.lat, lng: g.lng, radiusKm: g.radiusKm } : {}),
     };
@@ -158,7 +163,34 @@ export default function Home() {
           ) : (
             <button type="button" className="btn btn-ghost" onClick={nearMe}>{t('home.nearMe')}</button>
           )}
+          <button type="button" className="btn btn-ghost" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore}>
+            {t('home.moreFilters')}
+          </button>
         </div>
+        {showMore && (
+          <form className="more-filters" onSubmit={onSearch}>
+            <label>
+              {t('home.minPrice')}
+              <input type="number" min="0" value={filters.minPrice} onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })} />
+            </label>
+            <label>
+              {t('home.maxPrice')}
+              <input type="number" min="0" value={filters.maxPrice} onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })} />
+            </label>
+            <label>
+              {t('home.minBedrooms')}
+              <select value={filters.bedrooms} onChange={(e) => setFilters({ ...filters, bedrooms: e.target.value })}>
+                <option value="">{t('home.any')}</option>
+                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}+</option>)}
+              </select>
+            </label>
+            <label className="more-filters-check">
+              <input type="checkbox" checked={filters.instantBook} onChange={(e) => setFilters({ ...filters, instantBook: e.target.checked })} />
+              <span>{t('detail.instantBook')}</span>
+            </label>
+            <button className="btn btn-primary" type="submit">{t('home.apply')}</button>
+          </form>
+        )}
         <div className="amenity-filter">
           <span className="amenity-filter-label">{t('home.amenities')}:</span>
           {amenityOptions.map((a) => (

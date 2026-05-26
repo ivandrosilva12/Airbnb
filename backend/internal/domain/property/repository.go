@@ -34,8 +34,15 @@ type SearchCriteria struct {
 	Country   string
 	Type      PropertyType
 	MinGuests int
+	MinPrice  int64 // in cents; 0 means no floor
 	MaxPrice  int64 // in cents; 0 means no cap
-	Amenities []string
+	// Minimum room counts; 0 means no constraint.
+	MinBedrooms  int
+	MinBeds      int
+	MinBathrooms int
+	// InstantBookOnly keeps only listings bookable instantly.
+	InstantBookOnly bool
+	Amenities       []string
 	// Geo, when non-nil, keeps only listings within the given radius of a point.
 	Geo *GeoFilter
 	// Sort selects the result ordering (defaults to newest).

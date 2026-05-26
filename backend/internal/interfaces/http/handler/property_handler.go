@@ -114,18 +114,27 @@ func (h *PropertyHandler) Create(c *gin.Context) {
 // params are supplied, listings already booked for that window are excluded;
 // when lat/lng/radiusKm are supplied, results are limited to that radius.
 func (h *PropertyHandler) Search(c *gin.Context) {
+	minPrice, _ := strconv.ParseInt(c.Query("minPrice"), 10, 64)
 	maxPrice, _ := strconv.ParseInt(c.Query("maxPrice"), 10, 64)
 	minGuests, _ := strconv.Atoi(c.Query("minGuests"))
+	minBedrooms, _ := strconv.Atoi(c.Query("bedrooms"))
+	minBeds, _ := strconv.Atoi(c.Query("beds"))
+	minBathrooms, _ := strconv.Atoi(c.Query("bathrooms"))
 	criteria := property.SearchCriteria{
-		Query:     strings.TrimSpace(c.Query("q")),
-		City:      c.Query("city"),
-		Country:   c.Query("country"),
-		Type:      property.PropertyType(c.Query("type")),
-		MinGuests: minGuests,
-		MaxPrice:  maxPrice,
-		Amenities: property.NormalizeAmenities(c.QueryArray("amenity")),
-		Sort:      property.Sort(c.Query("sort")),
-		Page:      pageFromQuery(c),
+		Query:           strings.TrimSpace(c.Query("q")),
+		City:            c.Query("city"),
+		Country:         c.Query("country"),
+		Type:            property.PropertyType(c.Query("type")),
+		MinGuests:       minGuests,
+		MinPrice:        minPrice,
+		MaxPrice:        maxPrice,
+		MinBedrooms:     minBedrooms,
+		MinBeds:         minBeds,
+		MinBathrooms:    minBathrooms,
+		InstantBookOnly: c.Query("instantBook") == "true",
+		Amenities:       property.NormalizeAmenities(c.QueryArray("amenity")),
+		Sort:            property.Sort(c.Query("sort")),
+		Page:            pageFromQuery(c),
 	}
 
 	lat, errLat := strconv.ParseFloat(c.Query("lat"), 64)
@@ -416,4 +425,3 @@ func (h *PropertyHandler) ReorderPhotos(c *gin.Context) {
 	}
 	response.OK(c, dto.FromProperty(p))
 }
-
