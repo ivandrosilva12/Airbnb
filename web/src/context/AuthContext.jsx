@@ -11,6 +11,12 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false;
+    // Don't let a slow/unreachable identity provider hold the whole app on a
+    // loading screen: reveal the (public) UI after a short cap, and let the auth
+    // state fill in whenever init resolves.
+    const revealTimer = setTimeout(() => {
+      if (!cancelled) setReady(true);
+    }, 2500);
     initKeycloak()
       .then(async (auth) => {
         if (cancelled) return;
@@ -22,11 +28,17 @@ export function AuthProvider({ children }) {
             /* profile will be provisioned on first authenticated call */
           }
         }
-        setReady(true);
       })
-      .catch(() => setReady(true));
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) {
+          clearTimeout(revealTimer);
+          setReady(true);
+        }
+      });
     return () => {
       cancelled = true;
+      clearTimeout(revealTimer);
     };
   }, []);
 

@@ -14,7 +14,14 @@ const keycloak = new Keycloak({
 let initPromise = null;
 export function initKeycloak() {
   if (!initPromise) {
-    initPromise = keycloak.init({ onLoad: 'check-sso', pkceMethod: 'S256' });
+    initPromise = keycloak.init({
+      onLoad: 'check-sso',
+      pkceMethod: 'S256',
+      // Skip the periodic login-status iframe (and its third-party-cookie probe),
+      // which adds startup latency and errors when the IdP origin differs from
+      // the app's. Tokens are still refreshed on demand by the API client.
+      checkLoginIframe: false,
+    });
   }
   return initPromise;
 }
