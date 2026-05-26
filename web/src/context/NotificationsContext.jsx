@@ -41,13 +41,19 @@ export function NotificationsProvider({ children }) {
     try { await api.markNotificationRead(id); } catch { refresh(); }
   }, [refresh]);
 
+  const markUnread = useCallback(async (id) => {
+    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: false } : n)));
+    setUnread((u) => u + 1);
+    try { await api.markNotificationUnread(id); } catch { refresh(); }
+  }, [refresh]);
+
   const markAllRead = useCallback(async () => {
     setItems((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnread(0);
     try { await api.markAllNotificationsRead(); } catch { refresh(); }
   }, [refresh]);
 
-  const value = { items, unread, refresh, markRead, markAllRead };
+  const value = { items, unread, refresh, markRead, markUnread, markAllRead };
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
 }
 

@@ -35,6 +35,11 @@ func (s *Service) MarkRead(ctx context.Context, userID, id uuid.UUID) error {
 	return s.repo.MarkRead(ctx, id, userID)
 }
 
+// MarkUnread marks a single notification unread again.
+func (s *Service) MarkUnread(ctx context.Context, userID, id uuid.UUID) error {
+	return s.repo.MarkUnread(ctx, id, userID)
+}
+
 // MarkAllRead marks every notification for the user read.
 func (s *Service) MarkAllRead(ctx context.Context, userID uuid.UUID) error {
 	return s.repo.MarkAllRead(ctx, userID)

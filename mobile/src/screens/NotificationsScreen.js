@@ -39,6 +39,16 @@ export default function NotificationsScreen() {
     }
   }
 
+  async function markUnread(id) {
+    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: false } : n)));
+    setUnread((u) => u + 1);
+    try {
+      await api.markNotificationUnread(id);
+    } catch {
+      load();
+    }
+  }
+
   async function markAll() {
     setItems((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnread(0);
@@ -79,6 +89,9 @@ export default function NotificationsScreen() {
               <Text style={styles.title}>{item.title}</Text>
               <Text style={styles.meta}>{item.body}</Text>
             </View>
+            <Pressable onPress={() => (item.read ? markUnread(item.id) : markRead(item.id))} hitSlop={8}>
+              <Text style={styles.toggle}>{item.read ? 'Mark unread' : 'Mark read'}</Text>
+            </Pressable>
           </Pressable>
         )}
       />
@@ -98,6 +111,7 @@ const styles = StyleSheet.create({
   error: { color: '#c0392b', marginBottom: 8 },
   markAll: { alignSelf: 'flex-end', paddingVertical: 8 },
   markAllText: { color: '#ff385c', fontWeight: '700' },
+  toggle: { color: '#717171', fontSize: 12, textDecorationLine: 'underline' },
   btn: { backgroundColor: '#ff385c', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 12 },
   btnText: { color: '#fff', fontWeight: '700' },
 });

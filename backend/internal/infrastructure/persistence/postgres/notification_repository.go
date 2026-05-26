@@ -96,6 +96,20 @@ func (r *NotificationRepository) MarkRead(ctx context.Context, id, userID uuid.U
 	return nil
 }
 
+func (r *NotificationRepository) MarkUnread(ctx context.Context, id, userID uuid.UUID) error {
+	ct, err := r.pool.Exec(ctx,
+		`UPDATE notifications SET read_at=NULL WHERE id=$1 AND user_id=$2`,
+		id, userID,
+	)
+	if err != nil {
+		return mapError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
 func (r *NotificationRepository) MarkAllRead(ctx context.Context, userID uuid.UUID) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE notifications SET read_at=now() WHERE user_id=$1 AND read_at IS NULL`, userID)

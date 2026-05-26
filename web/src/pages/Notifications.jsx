@@ -12,7 +12,7 @@ const ICONS = {
 };
 
 export default function Notifications() {
-  const { items, unread, refresh, markRead, markAllRead } = useNotifications();
+  const { items, unread, refresh, markRead, markUnread, markAllRead } = useNotifications();
   const { t } = useT();
   const navigate = useNavigate();
 
@@ -48,6 +48,12 @@ export default function Notifications() {
                 <div className="notif-text">{n.body}</div>
                 <div className="notif-time">{n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}</div>
               </div>
+              <button
+                className="notif-toggle"
+                onClick={(e) => { e.stopPropagation(); (n.read ? markUnread : markRead)(n.id); }}
+              >
+                {n.read ? t('notif.markUnread') : t('notif.markRead')}
+              </button>
               {!n.read && <span className="notif-dot" />}
             </li>
           ))}

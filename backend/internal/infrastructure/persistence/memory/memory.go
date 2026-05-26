@@ -939,6 +939,18 @@ func (r *NotificationRepository) MarkRead(_ context.Context, id, userID uuid.UUI
 	return nil
 }
 
+func (r *NotificationRepository) MarkUnread(_ context.Context, id, userID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, ok := r.m[id]
+	if !ok || n.UserID != userID {
+		return shared.ErrNotFound
+	}
+	n.MarkUnread()
+	r.m[id] = n
+	return nil
+}
+
 func (r *NotificationRepository) MarkAllRead(_ context.Context, userID uuid.UUID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

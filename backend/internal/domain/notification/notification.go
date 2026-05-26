@@ -64,5 +64,11 @@ func (n *Notification) MarkRead() {
 	}
 }
 
+// MarkUnread clears the read stamp so the notification resurfaces as unread
+// (idempotent).
+func (n *Notification) MarkUnread() {
+	n.ReadAt = nil
+}
+
 // IsRead reports whether the notification has been read.
 func (n *Notification) IsRead() bool { return n.ReadAt != nil }

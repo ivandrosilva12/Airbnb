@@ -185,6 +185,7 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.GET("/notifications", h.Notification.List)
 		auth.POST("/notifications/read-all", h.Notification.MarkAllRead)
 		auth.POST("/notifications/:id/read", h.Notification.MarkRead)
+		auth.POST("/notifications/:id/unread", h.Notification.MarkUnread)
 
 		// Payments (guest-facing reads).
 		auth.GET("/payments/me", h.Payment.ListMine)

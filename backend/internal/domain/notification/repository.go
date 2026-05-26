@@ -15,6 +15,9 @@ type Repository interface {
 	// MarkRead marks one notification read; it must belong to the user. Returns
 	// ErrNotFound if no matching notification exists.
 	MarkRead(ctx context.Context, id, userID uuid.UUID) error
+	// MarkUnread clears the read stamp on one notification; it must belong to the
+	// user. Returns ErrNotFound if no matching notification exists.
+	MarkUnread(ctx context.Context, id, userID uuid.UUID) error
 	MarkAllRead(ctx context.Context, userID uuid.UUID) error
 	// DeleteByUser removes all of a user's notifications (GDPR erasure).
 	DeleteByUser(ctx context.Context, userID uuid.UUID) error

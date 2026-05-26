@@ -334,6 +334,8 @@ export const translations = {
 
     'notif.title': 'Notifications',
     'notif.markAll': 'Mark all read',
+    'notif.markRead': 'Mark read',
+    'notif.markUnread': 'Mark unread',
     'notif.none': 'No notifications yet.',
 
     'host.becomeTitle': 'Become a host',
@@ -785,6 +787,8 @@ export const translations = {
 
     'notif.title': 'Notificações',
     'notif.markAll': 'Marcar todas como lidas',
+    'notif.markRead': 'Marcar como lida',
+    'notif.markUnread': 'Marcar como não lida',
     'notif.none': 'Ainda sem notificações.',
 
     'host.becomeTitle': 'Tornar-se anfitrião',
