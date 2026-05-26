@@ -752,6 +752,8 @@ func FromVerification(v *identity.Verification) VerificationView {
 // populated for the administrator moderation queue.
 type ReportView struct {
 	ID            uuid.UUID  `json:"id"`
+	TargetType    string     `json:"targetType"`
+	TargetID      uuid.UUID  `json:"targetId"`
 	PropertyID    uuid.UUID  `json:"propertyId"`
 	PropertyTitle string     `json:"propertyTitle,omitempty"`
 	ReporterID    uuid.UUID  `json:"reporterId"`
@@ -767,6 +769,8 @@ type ReportView struct {
 func FromReport(r *report.Report) ReportView {
 	return ReportView{
 		ID:         r.ID,
+		TargetType: string(r.TargetType),
+		TargetID:   r.TargetID,
 		PropertyID: r.PropertyID,
 		ReporterID: r.ReporterID,
 		Reason:     string(r.Reason),

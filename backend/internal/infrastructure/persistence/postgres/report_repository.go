@@ -19,14 +19,14 @@ func NewReportRepository(pool *pgxpool.Pool) *ReportRepository {
 	return &ReportRepository{pool: pool}
 }
 
-const reportColumns = `id, property_id, reporter_id, reason, note, status,
+const reportColumns = `id, target_type, target_id, property_id, reporter_id, reason, note, status,
 	resolution, resolver_id, resolved_at, created_at, updated_at`
 
 func (r *ReportRepository) Create(ctx context.Context, rep *report.Report) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO reports (`+reportColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		rep.ID, rep.PropertyID, rep.ReporterID, string(rep.Reason), rep.Note, string(rep.Status),
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		rep.ID, string(rep.TargetType), rep.TargetID, rep.PropertyID, rep.ReporterID, string(rep.Reason), rep.Note, string(rep.Status),
 		rep.Resolution, nilUUID(rep.ResolverID), rep.ResolvedAt, rep.CreatedAt, rep.UpdatedAt,
 	)
 	return mapError(err)
@@ -81,13 +81,13 @@ func (r *ReportRepository) ListByStatus(ctx context.Context, status report.Statu
 	return shared.PageResult[*report.Report]{Items: items, Total: total}, mapError(rows.Err())
 }
 
-func (r *ReportRepository) HasOpenFromReporter(ctx context.Context, propertyID, reporterID uuid.UUID) (bool, error) {
+func (r *ReportRepository) HasOpenFromReporter(ctx context.Context, targetType report.TargetType, targetID, reporterID uuid.UUID) (bool, error) {
 	var exists bool
 	err := r.pool.QueryRow(ctx, `
 		SELECT EXISTS(
 			SELECT 1 FROM reports
-			WHERE property_id=$1 AND reporter_id=$2 AND status='open'
-		)`, propertyID, reporterID,
+			WHERE target_type=$1 AND target_id=$2 AND reporter_id=$3 AND status='open'
+		)`, string(targetType), targetID, reporterID,
 	).Scan(&exists)
 	return exists, mapError(err)
 }
@@ -95,14 +95,16 @@ func (r *ReportRepository) HasOpenFromReporter(ctx context.Context, propertyID, 
 func scanReport(row rowScanner) (*report.Report, error) {
 	var (
 		rep        report.Report
+		targetType string
 		reason     string
 		status     string
 		resolverID *uuid.UUID
 	)
-	if err := row.Scan(&rep.ID, &rep.PropertyID, &rep.ReporterID, &reason, &rep.Note, &status,
+	if err := row.Scan(&rep.ID, &targetType, &rep.TargetID, &rep.PropertyID, &rep.ReporterID, &reason, &rep.Note, &status,
 		&rep.Resolution, &resolverID, &rep.ResolvedAt, &rep.CreatedAt, &rep.UpdatedAt); err != nil {
 		return nil, mapError(err)
 	}
+	rep.TargetType = report.TargetType(targetType)
 	rep.Reason = report.Reason(reason)
 	rep.Status = report.Status(status)
 	if resolverID != nil {

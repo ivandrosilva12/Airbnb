@@ -582,6 +582,7 @@ function ReportQueue() {
             {items.map((r) => (
               <tr key={r.id}>
                 <td>
+                  {r.targetType === 'review' && <span className="badge">{t('admin.reportTargetReview')}</span>}{' '}
                   <Link to={`/properties/${r.propertyId}`}>{r.propertyTitle || r.propertyId}</Link>
                 </td>
                 <td>{t(`report.reason.${r.reason}`)}</td>

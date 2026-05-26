@@ -9,19 +9,21 @@ import (
 
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/report"
+	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
 )
 
-// Service orchestrates listing-report use cases.
+// Service orchestrates moderation-report use cases (listings and reviews).
 type Service struct {
 	reports    report.Repository
 	properties property.Repository
+	reviews    review.Repository
 }
 
 // NewService wires the report application service.
-func NewService(reports report.Repository, properties property.Repository) *Service {
-	return &Service{reports: reports, properties: properties}
+func NewService(reports report.Repository, properties property.Repository, reviews review.Repository) *Service {
+	return &Service{reports: reports, properties: properties, reviews: reviews}
 }
 
 // EnrichedReport pairs a report with the reported listing's title for display.
@@ -36,7 +38,7 @@ func (s *Service) File(ctx context.Context, reporterID, propertyID uuid.UUID, re
 	if _, err := s.properties.FindByID(ctx, propertyID); err != nil {
 		return nil, err
 	}
-	dup, err := s.reports.HasOpenFromReporter(ctx, propertyID, reporterID)
+	dup, err := s.reports.HasOpenFromReporter(ctx, report.TargetListing, propertyID, reporterID)
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +46,31 @@ func (s *Service) File(ctx context.Context, reporterID, propertyID uuid.UUID, re
 		return nil, shared.NewValidationError("you already have an open report on this listing")
 	}
 	r, err := report.NewReport(propertyID, reporterID, report.Reason(reason), note)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.reports.Create(ctx, r); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// FileReviewReport records a new report against a review. The review's listing
+// is recorded on the report so the moderation queue can show which listing it
+// concerns. A user may not file more than one open report on the same review.
+func (s *Service) FileReviewReport(ctx context.Context, reporterID, reviewID uuid.UUID, reason string, note string) (*report.Report, error) {
+	rv, err := s.reviews.FindByID(ctx, reviewID)
+	if err != nil {
+		return nil, err
+	}
+	dup, err := s.reports.HasOpenFromReporter(ctx, report.TargetReview, reviewID, reporterID)
+	if err != nil {
+		return nil, err
+	}
+	if dup {
+		return nil, shared.NewValidationError("you already have an open report on this review")
+	}
+	r, err := report.NewReviewReport(reviewID, rv.PropertyID, reporterID, report.Reason(reason), note)
 	if err != nil {
 		return nil, err
 	}

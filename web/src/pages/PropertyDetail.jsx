@@ -201,6 +201,8 @@ export default function PropertyDetail() {
               review={r}
               canRespond={isOwnListing}
               currentUserId={profile?.id}
+              authenticated={authenticated}
+              login={login}
               onResponded={(updated) => setReviews((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))}
               onChanged={(updated) => setReviews((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))}
               onDeleted={(deletedId) => setReviews((prev) => prev.filter((x) => x.id !== deletedId))}
@@ -273,7 +275,11 @@ export default function PropertyDetail() {
           {message && <p className="success">{message}</p>}
           {error && <p className="error">{error}</p>}
           {!isOwnListing && (
-            <ReportControl propertyId={property.id} authenticated={authenticated} login={login} />
+            <ReportControl
+              onReport={(reason, note) => api.reportListing(property.id, { reason, note })}
+              authenticated={authenticated}
+              login={login}
+            />
           )}
         </aside>
       </div>
@@ -288,7 +294,7 @@ const REVIEW_EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 // ReviewItem renders a guest review and the host's reply. The owning host can
 // post one public response inline when a review has none yet, and the review's
 // own author can edit or delete it within the edit window.
-function ReviewItem({ review: r, canRespond, currentUserId, onResponded, onChanged, onDeleted }) {
+function ReviewItem({ review: r, canRespond, currentUserId, authenticated, login, onResponded, onChanged, onDeleted }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
@@ -417,13 +423,21 @@ function ReviewItem({ review: r, canRespond, currentUserId, onResponded, onChang
       ) : canRespond ? (
         <button className="btn-link-danger" onClick={() => setOpen(true)}>{t('detail.respond')}</button>
       ) : null}
+      {!isAuthor && (
+        <ReportControl
+          onReport={(reason, note) => api.reportReview(r.id, { reason, note })}
+          authenticated={authenticated}
+          login={login}
+          buttonLabel={t('report.reviewButton')}
+        />
+      )}
     </div>
   );
 }
 
-// ReportControl is a collapsible "report this listing" form shown on the
-// listing detail page for any non-owner.
-function ReportControl({ propertyId, authenticated, login }) {
+// ReportControl is a collapsible report form. onReport(reason, note) performs
+// the actual call, so the same control reports either a listing or a review.
+function ReportControl({ onReport, authenticated, login, buttonLabel }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('inappropriate');
@@ -437,7 +451,7 @@ function ReportControl({ propertyId, authenticated, login }) {
   if (!open) {
     return (
       <button className="btn-link-danger" onClick={() => setOpen(true)}>
-        ⚑ {t('report.button')}
+        ⚑ {buttonLabel || t('report.button')}
       </button>
     );
   }
@@ -451,7 +465,7 @@ function ReportControl({ propertyId, authenticated, login }) {
     setSubmitting(true);
     setError(null);
     try {
-      await api.reportListing(propertyId, { reason, note });
+      await onReport(reason, note);
       setDone(true);
     } catch (err) {
       setError(err.message);

@@ -142,6 +142,7 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.PATCH("/reviews/:id", h.Review.Edit)
 		auth.DELETE("/reviews/:id", h.Review.Delete)
 		auth.POST("/reviews/:id/response", h.Review.Respond)
+		auth.POST("/reviews/:id/reports", h.Report.CreateForReview)
 		auth.POST("/reviews/guest", h.Review.CreateGuest)
 		auth.GET("/me/guest-reviews", h.Review.MyGuestReviews)
 		auth.GET("/me/reviews/pending", h.Review.MyPendingReviews)

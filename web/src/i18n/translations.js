@@ -142,6 +142,8 @@ export const translations = {
     'admin.silenceTargets.allWarnings': 'All warnings',
 
     'report.button': 'Report listing',
+    'report.reviewButton': 'Report review',
+    'admin.reportTargetReview': 'review',
     'report.title': 'Report this listing',
     'report.reason': 'Reason',
     'report.reason.spam': 'Spam',
@@ -582,6 +584,8 @@ export const translations = {
     'admin.silenceTargets.allWarnings': 'Todos os avisos',
 
     'report.button': 'Denunciar anúncio',
+    'report.reviewButton': 'Denunciar avaliação',
+    'admin.reportTargetReview': 'avaliação',
     'report.title': 'Denunciar este anúncio',
     'report.reason': 'Motivo',
     'report.reason.spam': 'Spam',

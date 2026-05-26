@@ -142,6 +142,7 @@ export const api = {
   createGuestReview: (body) => request('POST', '/reviews/guest', { body, auth: true }),
   myGuestReviews: () => request('GET', '/me/guest-reviews', { auth: true }),
   myPendingReviews: () => request('GET', '/me/reviews/pending', { auth: true }),
+  reportReview: (reviewId, body) => request('POST', `/reviews/${reviewId}/reports`, { body, auth: true }),
 
   // Host
   hostMetrics: () => request('GET', '/host/metrics', { auth: true }),

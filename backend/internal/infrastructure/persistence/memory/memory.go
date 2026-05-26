@@ -1400,11 +1400,11 @@ func (r *ReportRepository) ListByStatus(_ context.Context, status report.Status,
 	return paginate(all, page), nil
 }
 
-func (r *ReportRepository) HasOpenFromReporter(_ context.Context, propertyID, reporterID uuid.UUID) (bool, error) {
+func (r *ReportRepository) HasOpenFromReporter(_ context.Context, targetType report.TargetType, targetID, reporterID uuid.UUID) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, rep := range r.m {
-		if rep.PropertyID == propertyID && rep.ReporterID == reporterID && rep.Status == report.StatusOpen {
+		if rep.TargetType == targetType && rep.TargetID == targetID && rep.ReporterID == reporterID && rep.Status == report.StatusOpen {
 			return true, nil
 		}
 	}

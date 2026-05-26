@@ -8,6 +8,7 @@ import (
 	reportapp "github.com/airhost/backend/internal/application/report"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/report"
+	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 	"github.com/google/uuid"
@@ -26,11 +27,68 @@ func storeProperty(t *testing.T, props *memory.PropertyRepository, hostID uuid.U
 	return p
 }
 
+func TestReport_FileReviewReport(t *testing.T) {
+	ctx := context.Background()
+	reports := memory.NewReportRepository()
+	props := memory.NewPropertyRepository()
+	reviews := memory.NewReviewRepository()
+	svc := reportapp.NewService(reports, props, reviews)
+
+	prop := storeProperty(t, props, uuid.New())
+	rv, err := review.NewPropertyReview(uuid.New(), prop.ID, uuid.New(), 5, "Spammy text")
+	if err != nil {
+		t.Fatalf("new review: %v", err)
+	}
+	if err := reviews.Create(ctx, rv); err != nil {
+		t.Fatalf("store review: %v", err)
+	}
+	reporter := uuid.New()
+
+	r, err := svc.FileReviewReport(ctx, reporter, rv.ID, "spam", "fake review")
+	if err != nil {
+		t.Fatalf("file review report: %v", err)
+	}
+	if r.TargetType != report.TargetReview || r.TargetID != rv.ID {
+		t.Fatalf("target = %s/%s, want review/%s", r.TargetType, r.TargetID, rv.ID)
+	}
+	// The reviewed listing is recorded so the queue can show its title.
+	if r.PropertyID != prop.ID {
+		t.Fatalf("propertyID = %s, want %s", r.PropertyID, prop.ID)
+	}
+
+	// A duplicate open report on the same review is rejected.
+	if _, err := svc.FileReviewReport(ctx, reporter, rv.ID, "spam", ""); err == nil {
+		t.Fatal("expected duplicate review report to be rejected")
+	}
+	// Reporting an unknown review fails.
+	if _, err := svc.FileReviewReport(ctx, reporter, uuid.New(), "spam", ""); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for unknown review, got %v", err)
+	}
+
+	// The report appears in the moderation queue enriched with the listing title.
+	open, err := svc.ListOpen(ctx, shared.NewPage(0, 0))
+	if err != nil {
+		t.Fatalf("list open: %v", err)
+	}
+	found := false
+	for _, e := range open.Items {
+		if e.Report.ID == r.ID {
+			found = true
+			if e.PropertyTitle != prop.Title {
+				t.Errorf("title = %q, want %q", e.PropertyTitle, prop.Title)
+			}
+		}
+	}
+	if !found {
+		t.Error("review report not found in the moderation queue")
+	}
+}
+
 func TestReport_FileListResolve(t *testing.T) {
 	ctx := context.Background()
 	reports := memory.NewReportRepository()
 	props := memory.NewPropertyRepository()
-	svc := reportapp.NewService(reports, props)
+	svc := reportapp.NewService(reports, props, memory.NewReviewRepository())
 
 	prop := storeProperty(t, props, uuid.New())
 	reporter := uuid.New()

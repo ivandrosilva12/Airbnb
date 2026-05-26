@@ -24,6 +24,21 @@ const (
 	StatusDismissed Status = "dismissed"
 )
 
+// TargetType is what a report is filed against.
+type TargetType string
+
+const (
+	// TargetListing is a property listing.
+	TargetListing TargetType = "listing"
+	// TargetReview is a posted review.
+	TargetReview TargetType = "review"
+)
+
+// Valid reports whether the target type is one of the known values.
+func (t TargetType) Valid() bool {
+	return t == TargetListing || t == TargetReview
+}
+
 // Reason categorises why a listing was reported.
 type Reason string
 
@@ -45,10 +60,16 @@ func (r Reason) Valid() bool {
 	}
 }
 
-// Report is the aggregate root for a single listing report.
+// Report is the aggregate root for a single moderation report. A report always
+// carries the relevant listing in PropertyID (for a review report this is the
+// listing the review is about), so the moderation queue can show the listing
+// title regardless of target type. TargetType/TargetID identify what was
+// actually reported.
 type Report struct {
 	ID         uuid.UUID
-	PropertyID uuid.UUID
+	TargetType TargetType
+	TargetID   uuid.UUID
+	PropertyID uuid.UUID // the listing involved (the target itself for listing reports)
 	ReporterID uuid.UUID
 	Reason     Reason
 	Note       string
@@ -60,11 +81,31 @@ type Report struct {
 	UpdatedAt  time.Time
 }
 
-// NewReport creates an open report, enforcing invariants.
+// NewReport creates an open report against a property listing.
 func NewReport(propertyID, reporterID uuid.UUID, reason Reason, note string) (*Report, error) {
-	note = strings.TrimSpace(note)
 	if propertyID == uuid.Nil {
 		return nil, shared.NewValidationError("a report requires a listing")
+	}
+	return newReport(TargetListing, propertyID, propertyID, reporterID, reason, note)
+}
+
+// NewReviewReport creates an open report against a review. propertyID is the
+// listing the review belongs to, recorded so moderators see which listing it
+// concerns.
+func NewReviewReport(reviewID, propertyID, reporterID uuid.UUID, reason Reason, note string) (*Report, error) {
+	if reviewID == uuid.Nil {
+		return nil, shared.NewValidationError("a report requires a review")
+	}
+	return newReport(TargetReview, reviewID, propertyID, reporterID, reason, note)
+}
+
+func newReport(targetType TargetType, targetID, propertyID, reporterID uuid.UUID, reason Reason, note string) (*Report, error) {
+	note = strings.TrimSpace(note)
+	if !targetType.Valid() {
+		return nil, shared.NewValidationError("unsupported report target")
+	}
+	if targetID == uuid.Nil {
+		return nil, shared.NewValidationError("a report requires a target")
 	}
 	if reporterID == uuid.Nil {
 		return nil, shared.NewValidationError("a report requires a reporter")
@@ -78,6 +119,8 @@ func NewReport(propertyID, reporterID uuid.UUID, reason Reason, note string) (*R
 	now := time.Now().UTC()
 	return &Report{
 		ID:         uuid.New(),
+		TargetType: targetType,
+		TargetID:   targetID,
 		PropertyID: propertyID,
 		ReporterID: reporterID,
 		Reason:     reason,

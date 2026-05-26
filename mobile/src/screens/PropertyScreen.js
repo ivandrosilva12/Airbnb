@@ -20,6 +20,9 @@ export default function PropertyScreen({ route, navigation }) {
   const [respondText, setRespondText] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState({ rating: 5, comment: '', categories: {} });
+  const [reportingReviewId, setReportingReviewId] = useState(null);
+  const [reviewReportReason, setReviewReportReason] = useState('inappropriate');
+  const [reportedReviews, setReportedReviews] = useState({});
   const [message, setMessage] = useState(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
@@ -112,6 +115,21 @@ export default function PropertyScreen({ route, navigation }) {
     try {
       await api.deleteReview(reviewId);
       setReviews((prev) => prev.filter((r) => r.id !== reviewId));
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function submitReviewReport(reviewId) {
+    if (!authenticated) {
+      login();
+      return;
+    }
+    setError(null);
+    try {
+      await api.reportReview(reviewId, { reason: reviewReportReason, note: '' });
+      setReportedReviews((m) => ({ ...m, [reviewId]: true }));
+      setReportingReviewId(null);
     } catch (e) {
       setError(e.message);
     }
@@ -293,6 +311,37 @@ export default function PropertyScreen({ route, navigation }) {
                       <Text style={styles.reportLink}>Delete</Text>
                     </Pressable>
                   </View>
+                )}
+                {editingId !== r.id && !(myId && r.authorId === myId) && (
+                  reportedReviews[r.id] ? (
+                    <Text style={styles.reportDone}>Thanks — our team will take a look.</Text>
+                  ) : reportingReviewId === r.id ? (
+                    <View style={styles.respondBox}>
+                      <View style={styles.reasonRow}>
+                        {REPORT_REASONS.map((rr) => (
+                          <Pressable
+                            key={rr.value}
+                            style={[styles.reasonChip, reviewReportReason === rr.value && styles.reasonChipActive]}
+                            onPress={() => setReviewReportReason(rr.value)}
+                          >
+                            <Text style={reviewReportReason === rr.value ? styles.reasonChipTextActive : styles.reasonChipText}>{rr.label}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      <View style={styles.secondaryActions}>
+                        <Pressable style={styles.btn} onPress={() => submitReviewReport(r.id)}>
+                          <Text style={styles.btnText}>Submit report</Text>
+                        </Pressable>
+                        <Pressable style={styles.secondaryBtn} onPress={() => setReportingReviewId(null)}>
+                          <Text style={styles.secondaryText}>Cancel</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : (
+                    <Pressable onPress={() => { setReviewReportReason('inappropriate'); setReportingReviewId(r.id); }}>
+                      <Text style={styles.reportLink}>⚑ Report review</Text>
+                    </Pressable>
+                  )
                 )}
                 {!!r.response && (
                   <View style={styles.reviewResponse}>

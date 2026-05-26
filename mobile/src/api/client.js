@@ -73,6 +73,7 @@ export function createApi(getAccessToken) {
     respondToReview: (reviewId, response) => request('POST', `/reviews/${reviewId}/response`, { body: { response }, auth: true }),
     createGuestReview: (body) => request('POST', '/reviews/guest', { body, auth: true }),
     myGuestReviews: () => request('GET', '/me/guest-reviews', { auth: true }),
+    reportReview: (reviewId, body) => request('POST', `/reviews/${reviewId}/reports`, { body, auth: true }),
 
     // Payments (guest-facing reads)
     listPayments: () => request('GET', '/payments/me', { auth: true }),

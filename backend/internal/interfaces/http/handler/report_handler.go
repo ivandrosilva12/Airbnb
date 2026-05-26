@@ -46,6 +46,28 @@ func (h *ReportHandler) Create(c *gin.Context) {
 	response.Created(c, dto.FromReport(r))
 }
 
+// CreateForReview files a report against a review.
+func (h *ReportHandler) CreateForReview(c *gin.Context) {
+	reporterID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	reviewID, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	var req createReportRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	r, err := h.svc.FileReviewReport(c.Request.Context(), reporterID, reviewID, req.Reason, req.Note)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.Created(c, dto.FromReport(r))
+}
+
 // ListOpen returns the administrator moderation queue.
 func (h *ReportHandler) ListOpen(c *gin.Context) {
 	res, err := h.svc.ListOpen(c.Request.Context(), pageFromQuery(c))
