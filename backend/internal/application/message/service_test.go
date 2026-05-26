@@ -36,7 +36,23 @@ func newMessageService(t *testing.T) (*messageapp.Service, *memory.PropertyRepos
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, dispatcher)
 	uow := memory.NewUnitOfWork(bookings, messages, identities, outbox, relay)
-	return messageapp.NewService(messages, properties, fakeStorage{}, uow), properties
+	return messageapp.NewService(messages, properties, memory.NewUserBlockRepository(), fakeStorage{}, uow), properties
+}
+
+// newMessageServiceWithBlocks is like newMessageService but also exposes the
+// user-block repo so tests can place a block and assert messaging is gated.
+func newMessageServiceWithBlocks(t *testing.T) (*messageapp.Service, *memory.PropertyRepository, *memory.UserBlockRepository) {
+	t.Helper()
+	messages := memory.NewMessageRepository()
+	properties := memory.NewPropertyRepository()
+	bookings := memory.NewBookingRepository()
+	identities := memory.NewIdentityRepository()
+	blocks := memory.NewUserBlockRepository()
+	dispatcher := event.NewDispatcher()
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, dispatcher)
+	uow := memory.NewUnitOfWork(bookings, messages, identities, outbox, relay)
+	return messageapp.NewService(messages, properties, blocks, fakeStorage{}, uow), properties, blocks
 }
 
 func seedProperty(t *testing.T, props *memory.PropertyRepository, hostID uuid.UUID) *property.Property {
@@ -113,5 +129,47 @@ func TestSendAttachment_NonParticipantForbidden(t *testing.T) {
 	})
 	if err != shared.ErrForbidden {
 		t.Fatalf("non-participant attachment err = %v, want ErrForbidden", err)
+	}
+}
+
+func TestStartConversation_BlockedIsRefused(t *testing.T) {
+	svc, props, blocks := newMessageServiceWithBlocks(t)
+	ctx := context.Background()
+	hostID := uuid.New()
+	guestID := uuid.New()
+	prop := seedProperty(t, props, hostID)
+
+	// The host blocks the guest; the guest can no longer start a conversation.
+	if err := blocks.Add(ctx, hostID, guestID); err != nil {
+		t.Fatalf("add block: %v", err)
+	}
+	if _, err := svc.StartConversation(ctx, guestID, prop.ID); err == nil {
+		t.Fatal("expected a blocked guest to be refused")
+	}
+}
+
+func TestSendMessage_BlockedIsRefusedBothWays(t *testing.T) {
+	svc, props, blocks := newMessageServiceWithBlocks(t)
+	ctx := context.Background()
+	hostID := uuid.New()
+	guestID := uuid.New()
+	prop := seedProperty(t, props, hostID)
+
+	conv, err := svc.StartConversation(ctx, guestID, prop.ID)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if _, err := svc.SendMessage(ctx, guestID, conv.ID, "hello"); err != nil {
+		t.Fatalf("first message should succeed: %v", err)
+	}
+	// The guest blocks the host; neither party may post afterwards.
+	if err := blocks.Add(ctx, guestID, hostID); err != nil {
+		t.Fatalf("block: %v", err)
+	}
+	if _, err := svc.SendMessage(ctx, hostID, conv.ID, "reply"); err == nil {
+		t.Fatal("expected the blocked host's reply to be refused")
+	}
+	if _, err := svc.SendMessage(ctx, guestID, conv.ID, "again"); err == nil {
+		t.Fatal("expected the blocking guest's message to be refused too")
 	}
 }

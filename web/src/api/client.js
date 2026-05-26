@@ -144,6 +144,11 @@ export const api = {
   myPendingReviews: () => request('GET', '/me/reviews/pending', { auth: true }),
   reportReview: (reviewId, body) => request('POST', `/reviews/${reviewId}/reports`, { body, auth: true }),
 
+  // Blocking users
+  listUserBlocks: () => request('GET', '/me/blocks', { auth: true }),
+  blockUser: (userId) => request('POST', `/users/${userId}/block`, { auth: true }),
+  unblockUser: (userId) => request('DELETE', `/users/${userId}/block`, { auth: true }),
+
   // Host
   hostMetrics: () => request('GET', '/host/metrics', { auth: true }),
   hostEarnings: () => request('GET', '/host/earnings', { auth: true }),

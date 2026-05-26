@@ -327,6 +327,9 @@ export const translations = {
     'msg.qr.checkin': 'Check-in is from 3 PM and check-out by 11 AM.',
     'msg.qr.getBack': 'Let me check and get back to you shortly.',
     'msg.qr.thanks': 'Thank you — looking forward to hosting you!',
+    'msg.block': 'Block user',
+    'msg.unblock': 'Unblock',
+    'msg.blockedNotice': 'Blocked — messaging is disabled.',
     'msg.attach': 'Attach a file',
 
     'notif.title': 'Notifications',
@@ -775,6 +778,9 @@ export const translations = {
     'msg.qr.checkin': 'O check-in é a partir das 15h e o check-out até às 11h.',
     'msg.qr.getBack': 'Vou confirmar e respondo-lhe em breve.',
     'msg.qr.thanks': 'Obrigado — será um prazer recebê-lo!',
+    'msg.block': 'Bloquear utilizador',
+    'msg.unblock': 'Desbloquear',
+    'msg.blockedNotice': 'Bloqueado — as mensagens estão desativadas.',
     'msg.attach': 'Anexar ficheiro',
 
     'notif.title': 'Notificações',

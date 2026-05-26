@@ -25,6 +25,7 @@ import (
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
+	"github.com/airhost/backend/internal/domain/userblock"
 	"github.com/google/uuid"
 )
 
@@ -1407,6 +1408,60 @@ func (r *ReportRepository) HasOpenFromReporter(_ context.Context, targetType rep
 		if rep.TargetType == targetType && rep.TargetID == targetID && rep.ReporterID == reporterID && rep.Status == report.StatusOpen {
 			return true, nil
 		}
+	}
+	return false, nil
+}
+
+// --- User blocks -------------------------------------------------------------
+
+// UserBlockRepository is an in-memory userblock.Repository.
+type UserBlockRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]map[uuid.UUID]struct{} // blocker -> set of blocked
+}
+
+// NewUserBlockRepository builds an empty in-memory user-block repository.
+func NewUserBlockRepository() *UserBlockRepository {
+	return &UserBlockRepository{m: map[uuid.UUID]map[uuid.UUID]struct{}{}}
+}
+
+var _ userblock.Repository = (*UserBlockRepository)(nil)
+
+func (r *UserBlockRepository) Add(_ context.Context, blockerID, blockedID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.m[blockerID] == nil {
+		r.m[blockerID] = map[uuid.UUID]struct{}{}
+	}
+	r.m[blockerID][blockedID] = struct{}{}
+	return nil
+}
+
+func (r *UserBlockRepository) Remove(_ context.Context, blockerID, blockedID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.m[blockerID], blockedID)
+	return nil
+}
+
+func (r *UserBlockRepository) ListBlocked(_ context.Context, blockerID uuid.UUID) ([]uuid.UUID, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var ids []uuid.UUID
+	for id := range r.m[blockerID] {
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func (r *UserBlockRepository) IsBlocked(_ context.Context, a, b uuid.UUID) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if _, ok := r.m[a][b]; ok {
+		return true, nil
+	}
+	if _, ok := r.m[b][a]; ok {
+		return true, nil
 	}
 	return false, nil
 }

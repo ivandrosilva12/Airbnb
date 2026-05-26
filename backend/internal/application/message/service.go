@@ -15,6 +15,7 @@ import (
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/domain/userblock"
 	"github.com/google/uuid"
 )
 
@@ -22,15 +23,28 @@ import (
 type Service struct {
 	messages   message.Repository
 	properties property.Repository
+	blocks     userblock.Repository
 	storage    port.Storage
 	uow        port.UnitOfWork
 }
 
 // NewService wires the messaging application service. The UnitOfWork makes the
 // message write and its MessageSent event commit atomically; storage backs
-// message attachments.
-func NewService(messages message.Repository, properties property.Repository, storage port.Storage, uow port.UnitOfWork) *Service {
-	return &Service{messages: messages, properties: properties, storage: storage, uow: uow}
+// message attachments; blocks gates contact between users who blocked each other.
+func NewService(messages message.Repository, properties property.Repository, blocks userblock.Repository, storage port.Storage, uow port.UnitOfWork) *Service {
+	return &Service{messages: messages, properties: properties, blocks: blocks, storage: storage, uow: uow}
+}
+
+// ensureNotBlocked refuses contact when either party has blocked the other.
+func (s *Service) ensureNotBlocked(ctx context.Context, a, b uuid.UUID) error {
+	blocked, err := s.blocks.IsBlocked(ctx, a, b)
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return shared.NewValidationError("messaging is unavailable between you and this user")
+	}
+	return nil
 }
 
 // StartConversation returns the thread between the guest and the property's
@@ -43,6 +57,9 @@ func (s *Service) StartConversation(ctx context.Context, guestID, propertyID uui
 	}
 	if prop.IsOwnedBy(guestID) {
 		return nil, shared.NewValidationError("hosts cannot start a conversation on their own property")
+	}
+	if err := s.ensureNotBlocked(ctx, guestID, prop.HostID); err != nil {
+		return nil, err
 	}
 
 	existing, err := s.messages.FindConversationByPropertyAndGuest(ctx, propertyID, guestID)
@@ -67,6 +84,9 @@ func (s *Service) StartConversation(ctx context.Context, guestID, propertyID uui
 func (s *Service) SendMessage(ctx context.Context, actorID, conversationID uuid.UUID, body string) (*message.Message, error) {
 	conv, err := s.messages.FindConversationByID(ctx, conversationID)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureNotBlocked(ctx, conv.HostID, conv.GuestID); err != nil {
 		return nil, err
 	}
 	msg, err := conv.PostMessage(actorID, body)
@@ -99,6 +119,9 @@ func (s *Service) SendAttachment(ctx context.Context, actorID, conversationID uu
 	}
 	if !conv.HasParticipant(actorID) {
 		return nil, shared.ErrForbidden
+	}
+	if err := s.ensureNotBlocked(ctx, conv.HostID, conv.GuestID); err != nil {
+		return nil, err
 	}
 	objectKey := fmt.Sprintf("attachments/%s/%s%s", conversationID, uuid.NewString(), path.Ext(in.Filename))
 	url, err := s.storage.Upload(ctx, objectKey, in.Reader, in.Size, in.ContentType)

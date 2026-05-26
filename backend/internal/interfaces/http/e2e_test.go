@@ -32,6 +32,7 @@ import (
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	searchapp "github.com/airhost/backend/internal/application/search"
 	userapp "github.com/airhost/backend/internal/application/user"
+	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
 	domainuser "github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/infrastructure/email"
@@ -92,6 +93,7 @@ func newHarness(t *testing.T) *harness {
 	identityRepo := memory.NewIdentityRepository()
 	reportRepo := memory.NewReportRepository()
 	couponRepo := memory.NewCouponRepository()
+	userBlockRepo := memory.NewUserBlockRepository()
 
 	dispatcher := event.NewDispatcher()
 	outbox := event.NewMemoryOutbox()
@@ -102,7 +104,8 @@ func newHarness(t *testing.T) *harness {
 	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{})
 	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, 0.10, uow) // 10% service fee
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
-	messageSvc := messageapp.NewService(messageRepo, propertyRepo, fakeStorage{}, uow)
+	messageSvc := messageapp.NewService(messageRepo, propertyRepo, userBlockRepo, fakeStorage{}, uow)
+	userBlockSvc := userblockapp.NewService(userBlockRepo)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
@@ -177,6 +180,7 @@ func newHarness(t *testing.T) *harness {
 			ConnectWebhook: handler.NewConnectWebhookHandler(payoutSvc, nil, memory.NewWebhookEventRepository(), metrics),
 			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc, ""),
 			Coupon:         handler.NewCouponHandler(couponSvc),
+			UserBlock:      handler.NewUserBlockHandler(userBlockSvc),
 		},
 	})
 

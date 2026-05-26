@@ -36,6 +36,7 @@ import (
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	searchapp "github.com/airhost/backend/internal/application/search"
 	userapp "github.com/airhost/backend/internal/application/user"
+	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
 	domainuser "github.com/airhost/backend/internal/domain/user"
 	infraalerting "github.com/airhost/backend/internal/infrastructure/alerting"
@@ -105,6 +106,7 @@ func run() error {
 	bookingRepo := postgres.NewBookingRepository(pool)
 	reviewRepo := postgres.NewReviewRepository(pool)
 	messageRepo := postgres.NewMessageRepository(pool)
+	userBlockRepo := postgres.NewUserBlockRepository(pool)
 	favoriteRepo := postgres.NewFavoriteRepository(pool)
 	notificationRepo := postgres.NewNotificationRepository(pool)
 	paymentRepo := postgres.NewPaymentRepository(pool)
@@ -131,7 +133,7 @@ func run() error {
 	propertySvc := propertyapp.NewService(propertyRepo, objectStore)
 	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, cfg.Pricing.ServiceFeeRate, uow)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
-	messageSvc := messageapp.NewService(messageRepo, propertyRepo, objectStore, uow)
+	messageSvc := messageapp.NewService(messageRepo, propertyRepo, userBlockRepo, objectStore, uow)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
@@ -144,6 +146,7 @@ func run() error {
 	identitySvc := identityapp.NewService(identityRepo, uow)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo, reviewRepo)
 	couponSvc := couponapp.NewService(couponRepo)
+	userBlockSvc := userblockapp.NewService(userBlockRepo)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
 	alertStateSvc := alertstateapp.NewService()
 	realtimeHub := realtime.NewHub()
@@ -200,6 +203,7 @@ func run() error {
 			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc, cfg.Alerting.WebhookToken),
 			Privacy:        handler.NewPrivacyHandler(privacySvc),
 			Coupon:         handler.NewCouponHandler(couponSvc),
+			UserBlock:      handler.NewUserBlockHandler(userBlockSvc),
 		},
 	})
 

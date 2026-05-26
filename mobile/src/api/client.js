@@ -59,6 +59,11 @@ export function createApi(getAccessToken) {
     getVerification: () => request('GET', '/me/verification', { auth: true }),
     submitVerification: (body) => request('POST', '/me/verification', { body, auth: true }),
 
+    // Blocking users
+    listUserBlocks: () => request('GET', '/me/blocks', { auth: true }),
+    blockUser: (userId) => request('POST', `/users/${userId}/block`, { auth: true }),
+    unblockUser: (userId) => request('DELETE', `/users/${userId}/block`, { auth: true }),
+
     createBooking: (body) => request('POST', '/bookings', { body, auth: true }),
     previewCoupon: (body) => request('POST', '/bookings/preview-coupon', { body, auth: true }),
     myBookings: () => request('GET', '/bookings/me', { auth: true }),

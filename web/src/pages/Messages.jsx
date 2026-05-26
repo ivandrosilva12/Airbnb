@@ -44,6 +44,7 @@ export default function Messages() {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [blocked, setBlocked] = useState([]);
   const [error, setError] = useState(null);
   const endRef = useRef(null);
   const fileRef = useRef(null);
@@ -74,7 +75,23 @@ export default function Messages() {
 
   useEffect(() => {
     loadConversations();
+    api.listUserBlocks().then((r) => setBlocked(r.blocked || [])).catch(() => {});
   }, []);
+
+  async function toggleBlock(otherId) {
+    setError(null);
+    try {
+      if (blocked.includes(otherId)) {
+        await api.unblockUser(otherId);
+        setBlocked((b) => b.filter((x) => x !== otherId));
+      } else {
+        await api.blockUser(otherId);
+        setBlocked((b) => [...b, otherId]);
+      }
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   useEffect(() => {
     if (!activeId) return undefined;
@@ -173,6 +190,20 @@ export default function Messages() {
           </div>
 
           <div className="thread">
+            {(() => {
+              const conv = conversations.find((c) => c.id === activeId);
+              if (!conv) return null;
+              const otherId = conv.hostId === profile?.id ? conv.guestId : conv.hostId;
+              const isBlocked = blocked.includes(otherId);
+              return (
+                <div className="thread-header">
+                  {isBlocked && <span className="thread-blocked">{t('msg.blockedNotice')}</span>}
+                  <button className="btn-link-danger" onClick={() => toggleBlock(otherId)}>
+                    {isBlocked ? t('msg.unblock') : t('msg.block')}
+                  </button>
+                </div>
+              );
+            })()}
             <div className="thread-messages">
               {messages.map((m) => (
                 <MessageBubble key={m.id} message={m} mine={m.senderId === profile?.id} />

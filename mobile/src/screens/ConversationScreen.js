@@ -24,6 +24,27 @@ export default function ConversationScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
+  const [blockedIds, setBlockedIds] = useState([]);
+
+  // The counterparty is the sender of any message that isn't ours.
+  const otherId = messages.find((m) => myId && m.senderId !== myId)?.senderId || null;
+  const isBlocked = otherId ? blockedIds.includes(otherId) : false;
+
+  async function toggleBlock() {
+    if (!otherId) return;
+    setError(null);
+    try {
+      if (isBlocked) {
+        await api.unblockUser(otherId);
+        setBlockedIds((b) => b.filter((x) => x !== otherId));
+      } else {
+        await api.blockUser(otherId);
+        setBlockedIds((b) => [...b, otherId]);
+      }
+    } catch (e) {
+      setError(e.message);
+    }
+  }
   // Keep the latest api in a ref so the realtime subscription (registered once)
   // always uses a live token without re-subscribing on every render.
   const apiRef = useRef(api);
@@ -35,9 +56,14 @@ export default function ConversationScreen({ route, navigation }) {
 
   const load = useCallback(async () => {
     try {
-      const [me, res] = await Promise.all([api.me().catch(() => null), api.listMessages(id)]);
+      const [me, res, blocks] = await Promise.all([
+        api.me().catch(() => null),
+        api.listMessages(id),
+        api.listUserBlocks().catch(() => ({ blocked: [] })),
+      ]);
       if (me) setMyId(me.id);
       setMessages(res.items || []);
+      setBlockedIds(blocks?.blocked || []);
       api.markConversationRead(id).catch(() => {});
     } catch (e) {
       setError(e.message);
@@ -142,6 +168,14 @@ export default function ConversationScreen({ route, navigation }) {
         }}
       />
       {error && <Text style={styles.error}>{error}</Text>}
+      {otherId && (
+        <View style={styles.blockBar}>
+          {isBlocked && <Text style={styles.blockNotice}>Blocked — messaging is disabled.</Text>}
+          <Pressable onPress={toggleBlock}>
+            <Text style={styles.blockLink}>{isBlocked ? 'Unblock' : 'Block user'}</Text>
+          </Pressable>
+        </View>
+      )}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickReplies} contentContainerStyle={styles.quickRepliesContent}>
         {QUICK_REPLIES.map((q) => (
           <Pressable key={q} style={styles.quickChip} onPress={() => setDraft(q)}>
@@ -179,6 +213,9 @@ const styles = StyleSheet.create({
   attachLink: { marginTop: 6, textDecorationLine: 'underline' },
   empty: { textAlign: 'center', color: '#717171', marginTop: 24 },
   error: { color: '#c0392b', paddingHorizontal: 12 },
+  blockBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, paddingHorizontal: 12, paddingVertical: 6, borderTopWidth: 1, borderColor: '#eee' },
+  blockNotice: { color: '#c0392b', fontSize: 12, marginRight: 'auto' },
+  blockLink: { color: '#c0392b', fontWeight: '600', fontSize: 13 },
   quickReplies: { maxHeight: 44, borderTopWidth: 1, borderColor: '#eee' },
   quickRepliesContent: { gap: 6, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center' },
   quickChip: { backgroundColor: '#f7f7f7', borderWidth: 1, borderColor: '#ddd', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, maxWidth: 220 },

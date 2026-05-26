@@ -33,6 +33,7 @@ type Handlers struct {
 	Alert          *handler.AlertHandler
 	Privacy        *handler.PrivacyHandler
 	Coupon         *handler.CouponHandler
+	UserBlock      *handler.UserBlockHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -156,6 +157,11 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.POST("/conversations/:id/messages", h.Message.Send)
 		auth.POST("/conversations/:id/attachments", h.Message.SendAttachment)
 		auth.POST("/conversations/:id/read", h.Message.MarkRead)
+
+		// Blocking users (gates messaging both ways).
+		auth.GET("/me/blocks", h.UserBlock.ListBlocked)
+		auth.POST("/users/:id/block", h.UserBlock.Block)
+		auth.DELETE("/users/:id/block", h.UserBlock.Unblock)
 
 		// Favorites (wishlist).
 		auth.GET("/favorites", h.Favorite.List)
