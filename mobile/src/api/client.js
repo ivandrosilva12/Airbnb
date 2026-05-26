@@ -24,6 +24,24 @@ export function createApi(getAccessToken) {
     return data;
   }
 
+  // upload sends a multipart/form-data file (from an image/document picker).
+  // React Native's fetch sets the multipart boundary itself, so we must NOT set
+  // Content-Type manually.
+  async function upload(path, field, file) {
+    const token = await getAccessToken();
+    const fd = new FormData();
+    fd.append(field, { uri: file.uri, name: file.name || 'upload.jpg', type: file.type || 'image/jpeg' });
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    });
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!res.ok) throw new Error((data && data.error) || res.statusText);
+    return data;
+  }
+
   return {
     searchProperties: (params = {}) => {
       const qs = new URLSearchParams(params).toString();
@@ -70,6 +88,14 @@ export function createApi(getAccessToken) {
     myProperties: () => request('GET', '/host/properties', { auth: true }),
     propertyBookings: (id) => request('GET', `/properties/${id}/bookings`, { auth: true }),
 
+    // Listing management (host)
+    createProperty: (body) => request('POST', '/properties', { body, auth: true }),
+    updateProperty: (id, body) => request('PATCH', `/properties/${id}`, { body, auth: true }),
+    publishProperty: (id) => request('POST', `/properties/${id}/publish`, { auth: true }),
+    deleteProperty: (id) => request('DELETE', `/properties/${id}`, { auth: true }),
+    uploadPhoto: (id, file) => upload(`/properties/${id}/photos`, 'photo', file),
+    deletePhoto: (id, photoId) => request('DELETE', `/properties/${id}/photos/${photoId}`, { auth: true }),
+
     // Calendar blocks (host)
     listBlocks: (propertyId) => request('GET', `/properties/${propertyId}/blocks`, { auth: true }),
     createBlock: (propertyId, body) => request('POST', `/properties/${propertyId}/blocks`, { body, auth: true }),
@@ -98,6 +124,7 @@ export function createApi(getAccessToken) {
     startConversation: (propertyId) => request('POST', '/conversations', { body: { propertyId }, auth: true }),
     listMessages: (id) => request('GET', `/conversations/${id}/messages`, { auth: true }),
     sendMessage: (id, body) => request('POST', `/conversations/${id}/messages`, { body: { body }, auth: true }),
+    sendAttachment: (id, file) => upload(`/conversations/${id}/attachments`, 'file', file),
     markConversationRead: (id) => request('POST', `/conversations/${id}/read`, { auth: true }),
   };
 }

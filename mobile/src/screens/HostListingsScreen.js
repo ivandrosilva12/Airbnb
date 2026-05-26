@@ -45,23 +45,29 @@ export default function HostListingsScreen({ navigation }) {
           <Metric value={String(metrics.upcomingCheckins)} label="Upcoming" />
         </View>
       )}
+      <Pressable style={styles.newBtn} onPress={() => navigation.navigate('HostListingForm')}>
+        <Text style={styles.newBtnText}>+ New listing</Text>
+      </Pressable>
       <FlatList
         data={listings}
         keyExtractor={(i) => i.id}
         ListEmptyComponent={<Text style={styles.empty}>No listings yet.</Text>}
         renderItem={({ item }) => (
-          <Pressable
-            style={styles.row}
-            onPress={() => navigation.navigate('HostPropertyBookings', { id: item.id, title: item.title })}
-          >
-            <View style={{ flex: 1 }}>
+          <View style={styles.row}>
+            <Pressable
+              style={{ flex: 1 }}
+              onPress={() => navigation.navigate('HostPropertyBookings', { id: item.id, title: item.title })}
+            >
               <Text style={styles.title}>{item.title}</Text>
               <Text style={styles.meta}>{item.address.city} · {item.pricePerNight.display}/night</Text>
-            </View>
+            </Pressable>
             <View style={[styles.badge, item.status === 'published' ? styles.badgeOn : styles.badgeOff]}>
               <Text style={styles.badgeText}>{item.status}</Text>
             </View>
-          </Pressable>
+            <Pressable style={styles.editBtn} onPress={() => navigation.navigate('HostListingForm', { id: item.id })}>
+              <Text style={styles.editText}>Edit</Text>
+            </Pressable>
+          </View>
         )}
       />
     </View>
@@ -83,6 +89,10 @@ const styles = StyleSheet.create({
   metric: { flex: 1, borderWidth: 1, borderColor: '#eee', borderRadius: 10, padding: 12, alignItems: 'center' },
   metricValue: { fontWeight: '800', fontSize: 16 },
   metricLabel: { color: '#717171', fontSize: 12, marginTop: 2, textAlign: 'center' },
+  newBtn: { backgroundColor: '#ff385c', borderRadius: 8, padding: 12, alignItems: 'center', marginBottom: 12 },
+  newBtnText: { color: '#fff', fontWeight: '700' },
+  editBtn: { marginLeft: 10, paddingHorizontal: 10, paddingVertical: 6 },
+  editText: { color: '#ff385c', fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderColor: '#eee' },
   title: { fontWeight: '600', fontSize: 16 },
   meta: { color: '#717171', marginTop: 2 },
