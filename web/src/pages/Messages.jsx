@@ -6,6 +6,9 @@ import { useMessages } from '../context/MessagesContext';
 import { useRealtime } from '../context/RealtimeContext';
 import { useT } from '../i18n/I18nContext';
 
+// Canned quick-reply templates a user can tap to fill the composer.
+const QUICK_REPLY_KEYS = ['greeting', 'available', 'unavailable', 'checkin', 'getBack', 'thanks'];
+
 // MessageBubble renders a chat message: its text, and an attachment when present
 // (an inline image preview, or a download link for other file types like PDFs).
 function MessageBubble({ message: m, mine }) {
@@ -175,6 +178,18 @@ export default function Messages() {
                 <MessageBubble key={m.id} message={m} mine={m.senderId === profile?.id} />
               ))}
               <div ref={endRef} />
+            </div>
+            <div className="quick-replies">
+              {QUICK_REPLY_KEYS.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  className="quick-reply-chip"
+                  onClick={() => setDraft(t(`msg.qr.${k}`))}
+                >
+                  {t(`msg.qr.${k}`)}
+                </button>
+              ))}
             </div>
             <form className="thread-composer" onSubmit={send}>
               <input

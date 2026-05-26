@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState, useCallback, useLayoutEffect } from 'react';
-import { View, Text, FlatList, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Image, Linking } from 'react-native';
+import { View, Text, FlatList, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Image, Linking, ScrollView } from 'react-native';
+
+// Canned quick-reply templates a user can tap to fill the composer.
+const QUICK_REPLIES = [
+  'Hi! Thanks for reaching out 😊',
+  'Yes, those dates are available.',
+  'Sorry, those dates are not available.',
+  'Check-in is from 3 PM and check-out by 11 AM.',
+  'Let me check and get back to you shortly.',
+  'Thank you — looking forward to hosting you!',
+];
 import * as ImagePicker from 'expo-image-picker';
 import { useApi } from '../api/useApi';
 import { useRealtime } from '../api/RealtimeContext';
@@ -132,6 +142,13 @@ export default function ConversationScreen({ route, navigation }) {
         }}
       />
       {error && <Text style={styles.error}>{error}</Text>}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickReplies} contentContainerStyle={styles.quickRepliesContent}>
+        {QUICK_REPLIES.map((q) => (
+          <Pressable key={q} style={styles.quickChip} onPress={() => setDraft(q)}>
+            <Text style={styles.quickChipText} numberOfLines={1}>{q}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
       <View style={styles.composer}>
         <Pressable style={styles.attachBtn} onPress={attach} disabled={sending}>
           <Text style={styles.attachText}>📎</Text>
@@ -162,6 +179,10 @@ const styles = StyleSheet.create({
   attachLink: { marginTop: 6, textDecorationLine: 'underline' },
   empty: { textAlign: 'center', color: '#717171', marginTop: 24 },
   error: { color: '#c0392b', paddingHorizontal: 12 },
+  quickReplies: { maxHeight: 44, borderTopWidth: 1, borderColor: '#eee' },
+  quickRepliesContent: { gap: 6, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center' },
+  quickChip: { backgroundColor: '#f7f7f7', borderWidth: 1, borderColor: '#ddd', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, maxWidth: 220 },
+  quickChipText: { color: '#222', fontSize: 12 },
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, padding: 10, borderTopWidth: 1, borderColor: '#eee' },
   attachBtn: { paddingHorizontal: 8, paddingVertical: 8, justifyContent: 'center' },
   attachText: { fontSize: 22 },
