@@ -493,6 +493,16 @@ func (r *ReviewRepository) Update(_ context.Context, rv *review.Review) error {
 	return nil
 }
 
+func (r *ReviewRepository) Delete(_ context.Context, id uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[id]; !ok {
+		return shared.ErrNotFound
+	}
+	delete(r.m, id)
+	return nil
+}
+
 func (r *ReviewRepository) ExistsForBookingKind(_ context.Context, bookingID uuid.UUID, kind review.Kind) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

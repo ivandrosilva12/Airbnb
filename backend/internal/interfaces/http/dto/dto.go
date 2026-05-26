@@ -268,6 +268,7 @@ type ReviewView struct {
 	Response    string               `json:"response,omitempty"`
 	RespondedAt *time.Time           `json:"respondedAt,omitempty"`
 	CreatedAt   time.Time            `json:"createdAt"`
+	UpdatedAt   *time.Time           `json:"updatedAt,omitempty"`
 }
 
 // FromReview maps a review aggregate to its view.
@@ -283,6 +284,7 @@ func FromReview(r *review.Review) ReviewView {
 		Response:    r.Response,
 		RespondedAt: r.RespondedAt,
 		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
 	}
 	if r.Categories.Any() {
 		v.Categories = &CategoryRatingsView{

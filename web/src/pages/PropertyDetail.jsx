@@ -200,7 +200,10 @@ export default function PropertyDetail() {
               key={r.id}
               review={r}
               canRespond={isOwnListing}
+              currentUserId={profile?.id}
               onResponded={(updated) => setReviews((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))}
+              onChanged={(updated) => setReviews((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))}
+              onDeleted={(deletedId) => setReviews((prev) => prev.filter((x) => x.id !== deletedId))}
             />
           ))}
         </div>
@@ -278,14 +281,25 @@ export default function PropertyDetail() {
   );
 }
 
+// The author may edit/delete their own review for this long after posting.
+// Mirrors the backend's review.EditWindow (48h).
+const REVIEW_EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
+
 // ReviewItem renders a guest review and the host's reply. The owning host can
-// post one public response inline when a review has none yet.
-function ReviewItem({ review: r, canRespond, onResponded }) {
+// post one public response inline when a review has none yet, and the review's
+// own author can edit or delete it within the edit window.
+function ReviewItem({ review: r, canRespond, currentUserId, onResponded, onChanged, onDeleted }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({ rating: r.rating, comment: r.comment, cats: r.categories || {} });
+
+  const isAuthor = currentUserId && r.authorId === currentUserId;
+  const withinWindow = Date.now() - Date.parse(r.createdAt) <= REVIEW_EDIT_WINDOW_MS;
+  const canEdit = isAuthor && withinWindow;
 
   async function submit(e) {
     e.preventDefault();
@@ -302,9 +316,67 @@ function ReviewItem({ review: r, canRespond, onResponded }) {
     }
   }
 
+  async function saveEdit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const categories = {};
+      for (const k of REVIEW_CATEGORIES) categories[k] = Number(draft.cats[k] || 0);
+      const updated = await api.editReview(r.id, { rating: Number(draft.rating), comment: draft.comment, categories });
+      onChanged(updated);
+      setEditing(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!window.confirm(t('review.deleteConfirm'))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.deleteReview(r.id);
+      onDeleted(r.id);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <form className="review review-edit" onSubmit={saveEdit}>
+        <select value={draft.rating} aria-label={t('review.overall')} onChange={(e) => setDraft((d) => ({ ...d, rating: e.target.value }))}>
+          {[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{'★'.repeat(n)}</option>)}
+        </select>
+        <textarea rows="2" value={draft.comment} onChange={(e) => setDraft((d) => ({ ...d, comment: e.target.value }))} placeholder={t('trips.shareExperience')} />
+        <div className="review-cats">
+          {REVIEW_CATEGORIES.map((k) => (
+            <label key={k} className="review-cat">
+              <span>{t(`review.cat.${k}`)}</span>
+              <select value={draft.cats[k] || 0} onChange={(e) => setDraft((d) => ({ ...d, cats: { ...d.cats, [k]: Number(e.target.value) } }))}>
+                <option value={0}>—</option>
+                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          ))}
+        </div>
+        {error && <p className="error">{error}</p>}
+        <div className="report-actions">
+          <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? '…' : t('review.saveEdit')}</button>
+          <button className="btn btn-ghost" type="button" onClick={() => setEditing(false)}>{t('common.cancel')}</button>
+        </div>
+      </form>
+    );
+  }
+
   return (
     <div className="review">
       <strong>★ {r.rating}</strong>
+      {r.updatedAt && <span className="review-edited"> · {t('review.edited')}</span>}
       <p>{r.comment}</p>
       {r.categories && (
         <ul className="review-cat-chips">
@@ -313,6 +385,13 @@ function ReviewItem({ review: r, canRespond, onResponded }) {
           ))}
         </ul>
       )}
+      {canEdit && (
+        <div className="review-owner-actions">
+          <button className="btn-link" onClick={() => { setError(null); setDraft({ rating: r.rating, comment: r.comment, cats: r.categories || {} }); setEditing(true); }}>{t('review.edit')}</button>
+          <button className="btn-link-danger" onClick={remove} disabled={busy}>{t('review.delete')}</button>
+        </div>
+      )}
+      {error && !editing && <p className="error">{error}</p>}
       {r.response ? (
         <div className="review-response">
           <strong>{t('detail.hostResponse')}</strong>

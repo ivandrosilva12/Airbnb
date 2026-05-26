@@ -20,16 +20,16 @@ func NewReviewRepository(pool *pgxpool.Pool) *ReviewRepository {
 }
 
 const reviewColumns = `id, booking_id, property_id, author_id, guest_id, kind, rating, comment, response, responded_at, created_at, ` +
-	`rating_cleanliness, rating_accuracy, rating_communication, rating_location, rating_checkin, rating_value`
+	`rating_cleanliness, rating_accuracy, rating_communication, rating_location, rating_checkin, rating_value, updated_at`
 
 func (r *ReviewRepository) Create(ctx context.Context, rv *review.Review) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO reviews (`+reviewColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
 		rv.ID, rv.BookingID, rv.PropertyID, rv.AuthorID, rv.GuestID, string(rv.Kind), rv.Rating, rv.Comment,
 		rv.Response, rv.RespondedAt, rv.CreatedAt,
 		rv.Categories.Cleanliness, rv.Categories.Accuracy, rv.Categories.Communication,
-		rv.Categories.Location, rv.Categories.CheckIn, rv.Categories.Value,
+		rv.Categories.Location, rv.Categories.CheckIn, rv.Categories.Value, rv.UpdatedAt,
 	)
 	return mapError(err)
 }
@@ -44,9 +44,25 @@ func (r *ReviewRepository) FindByID(ctx context.Context, id uuid.UUID) (*review.
 
 func (r *ReviewRepository) Update(ctx context.Context, rv *review.Review) error {
 	ct, err := r.pool.Exec(ctx,
-		`UPDATE reviews SET comment=$2, response=$3, responded_at=$4 WHERE id=$1`,
-		rv.ID, rv.Comment, rv.Response, rv.RespondedAt,
+		`UPDATE reviews SET rating=$2, comment=$3, response=$4, responded_at=$5, updated_at=$6,
+		        rating_cleanliness=$7, rating_accuracy=$8, rating_communication=$9,
+		        rating_location=$10, rating_checkin=$11, rating_value=$12
+		   WHERE id=$1`,
+		rv.ID, rv.Rating, rv.Comment, rv.Response, rv.RespondedAt, rv.UpdatedAt,
+		rv.Categories.Cleanliness, rv.Categories.Accuracy, rv.Categories.Communication,
+		rv.Categories.Location, rv.Categories.CheckIn, rv.Categories.Value,
 	)
+	if err != nil {
+		return mapError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
+func (r *ReviewRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM reviews WHERE id=$1`, id)
 	if err != nil {
 		return mapError(err)
 	}
@@ -156,7 +172,7 @@ func scanReview(row rowScanner) (*review.Review, error) {
 		kind string
 	)
 	err := row.Scan(&rv.ID, &rv.BookingID, &rv.PropertyID, &rv.AuthorID, &rv.GuestID, &kind, &rv.Rating, &rv.Comment, &rv.Response, &rv.RespondedAt, &rv.CreatedAt,
-		&rv.Categories.Cleanliness, &rv.Categories.Accuracy, &rv.Categories.Communication, &rv.Categories.Location, &rv.Categories.CheckIn, &rv.Categories.Value)
+		&rv.Categories.Cleanliness, &rv.Categories.Accuracy, &rv.Categories.Communication, &rv.Categories.Location, &rv.Categories.CheckIn, &rv.Categories.Value, &rv.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}

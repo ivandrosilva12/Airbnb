@@ -18,6 +18,8 @@ export default function PropertyScreen({ route, navigation }) {
   const [myId, setMyId] = useState(null);
   const [respondingId, setRespondingId] = useState(null);
   const [respondText, setRespondText] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState({ rating: 5, comment: '', categories: {} });
   const [message, setMessage] = useState(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
@@ -77,6 +79,39 @@ export default function PropertyScreen({ route, navigation }) {
       setReviews((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
       setRespondingId(null);
       setRespondText('');
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  // The author may edit/delete their own review for 48h after posting (mirrors
+  // the backend's review.EditWindow).
+  const REVIEW_EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
+  function canEditReview(r) {
+    return !!(myId && r.authorId === myId) && Date.now() - Date.parse(r.createdAt) <= REVIEW_EDIT_WINDOW_MS;
+  }
+
+  async function submitEdit(reviewId) {
+    setError(null);
+    try {
+      // Preserve any existing category ratings, since the backend overwrites them.
+      const updated = await api.editReview(reviewId, {
+        rating: Number(editDraft.rating) || 1,
+        comment: editDraft.comment,
+        categories: editDraft.categories || {},
+      });
+      setReviews((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setEditingId(null);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function deleteReview(reviewId) {
+    setError(null);
+    try {
+      await api.deleteReview(reviewId);
+      setReviews((prev) => prev.filter((r) => r.id !== reviewId));
     } catch (e) {
       setError(e.message);
     }
@@ -215,12 +250,49 @@ export default function PropertyScreen({ route, navigation }) {
           ) : (
             reviews.map((r) => (
               <View key={r.id} style={styles.reviewItem}>
-                <Text style={styles.reviewStars}>★ {r.rating}</Text>
-                {!!r.comment && <Text style={styles.reviewComment}>{r.comment}</Text>}
-                {r.categories && (
+                <Text style={styles.reviewStars}>★ {r.rating}{r.updatedAt ? ' · edited' : ''}</Text>
+                {editingId === r.id ? (
+                  <View style={styles.respondBox}>
+                    <View style={styles.starRow}>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <Pressable key={n} onPress={() => setEditDraft((d) => ({ ...d, rating: n }))}>
+                          <Text style={n <= editDraft.rating ? styles.starOn : styles.starOff}>★</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <TextInput
+                      style={[styles.input, { marginBottom: 8 }]}
+                      placeholder="Update your review…"
+                      value={editDraft.comment}
+                      onChangeText={(v) => setEditDraft((d) => ({ ...d, comment: v }))}
+                      multiline
+                    />
+                    <View style={styles.secondaryActions}>
+                      <Pressable style={styles.btn} onPress={() => submitEdit(r.id)}>
+                        <Text style={styles.btnText}>Save</Text>
+                      </Pressable>
+                      <Pressable style={styles.secondaryBtn} onPress={() => setEditingId(null)}>
+                        <Text style={styles.secondaryText}>Cancel</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
+                  !!r.comment && <Text style={styles.reviewComment}>{r.comment}</Text>
+                )}
+                {editingId !== r.id && r.categories && (
                   <Text style={styles.reviewCats}>
                     {REVIEW_CATS.filter((k) => r.categories[k] > 0).map((k) => `${CAT_LABELS[k]} ${r.categories[k]}`).join(' · ')}
                   </Text>
+                )}
+                {editingId !== r.id && canEditReview(r) && (
+                  <View style={styles.secondaryActions}>
+                    <Pressable onPress={() => { setEditDraft({ rating: r.rating, comment: r.comment, categories: r.categories || {} }); setEditingId(r.id); }}>
+                      <Text style={styles.respondLink}>Edit</Text>
+                    </Pressable>
+                    <Pressable onPress={() => deleteReview(r.id)}>
+                      <Text style={styles.reportLink}>Delete</Text>
+                    </Pressable>
+                  </View>
                 )}
                 {!!r.response && (
                   <View style={styles.reviewResponse}>
@@ -326,7 +398,10 @@ const styles = StyleSheet.create({
   btnText: { color: '#fff', fontWeight: '700' },
   success: { color: '#1a7f47', marginTop: 10 },
   error: { color: '#c0392b', marginTop: 10 },
-  secondaryActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  secondaryActions: { flexDirection: 'row', gap: 10, marginTop: 12, alignItems: 'center' },
+  starRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
+  starOn: { color: '#ff385c', fontSize: 26 },
+  starOff: { color: '#ddd', fontSize: 26 },
   secondaryBtn: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
   secondaryText: { fontWeight: '600', color: '#222' },
   couponRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },

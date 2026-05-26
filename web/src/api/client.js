@@ -136,6 +136,8 @@ export const api = {
 
   // Reviews
   createReview: (body) => request('POST', '/reviews', { body, auth: true }),
+  editReview: (id, body) => request('PATCH', `/reviews/${id}`, { body, auth: true }),
+  deleteReview: (id) => request('DELETE', `/reviews/${id}`, { auth: true }),
   respondToReview: (reviewId, response) => request('POST', `/reviews/${reviewId}/response`, { body: { response }, auth: true }),
   createGuestReview: (body) => request('POST', '/reviews/guest', { body, auth: true }),
   myGuestReviews: () => request('GET', '/me/guest-reviews', { auth: true }),

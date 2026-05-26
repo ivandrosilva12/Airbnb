@@ -100,6 +100,58 @@ func (h *ReviewHandler) Respond(c *gin.Context) {
 	response.OK(c, dto.FromReview(r))
 }
 
+type editReviewRequest struct {
+	Rating     int                     `json:"rating" binding:"required"`
+	Comment    string                  `json:"comment"`
+	Categories *categoryRatingsRequest `json:"categories"`
+}
+
+// Edit lets the review's author change their rating/comment within the edit
+// window.
+func (h *ReviewHandler) Edit(c *gin.Context) {
+	authorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	var req editReviewRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	r, err := h.svc.EditOwnReview(c.Request.Context(), reviewapp.EditInput{
+		AuthorID:   authorID,
+		ReviewID:   id,
+		Rating:     req.Rating,
+		Comment:    req.Comment,
+		Categories: req.Categories.toDomain(),
+	})
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromReview(r))
+}
+
+// Delete lets the review's author remove it within the edit window.
+func (h *ReviewHandler) Delete(c *gin.Context) {
+	authorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteOwnReview(c.Request.Context(), authorID, id); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.NoContent(c)
+}
+
 // CreateGuest publishes the host's review of the guest for a completed booking.
 func (h *ReviewHandler) CreateGuest(c *gin.Context) {
 	hostID, ok := requireUser(c)

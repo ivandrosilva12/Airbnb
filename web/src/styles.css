@@ -319,6 +319,11 @@ main:focus { outline: none; }
 
 /* Listing report (on the detail page) */
 .btn-link-danger { background: none; border: none; color: #c0392b; cursor: pointer; font-size: .85rem; padding: 8px 0 0; text-decoration: underline; display: block; }
+.btn-link { background: none; border: none; color: var(--brand, #ff385c); cursor: pointer; font-size: .85rem; padding: 8px 0 0; text-decoration: underline; }
+.review-owner-actions { display: flex; gap: 14px; align-items: center; }
+.review-owner-actions .btn-link-danger { display: inline; }
+.review-edited { color: var(--muted, #717171); font-size: .8rem; }
+.review-edit { display: flex; flex-direction: column; gap: 8px; }
 .report-form { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border, #eee); padding-top: 12px; }
 .report-form label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; }
 .report-form select, .report-form textarea { padding: 8px; border: 1px solid var(--border, #ddd); border-radius: 8px; font: inherit; }

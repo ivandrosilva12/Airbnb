@@ -148,6 +148,85 @@ func TestReview_RefreshesPropertyRating(t *testing.T) {
 	}
 }
 
+func TestEditOwnReview_WithinWindowRepricesRating(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	guestID := uuid.New()
+	p := makeProperty(t, f.properties, uuid.New())
+	b := makeBooking(t, guestID, p.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, b)
+	rv, err := f.svc.Create(ctx, reviewapp.CreateInput{GuestID: guestID, BookingID: b.ID, Rating: 5, Comment: "Great"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	edited, err := f.svc.EditOwnReview(ctx, reviewapp.EditInput{AuthorID: guestID, ReviewID: rv.ID, Rating: 2, Comment: "Changed my mind"})
+	if err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if edited.Rating != 2 || edited.Comment != "Changed my mind" {
+		t.Fatalf("edit not applied: rating=%d comment=%q", edited.Rating, edited.Comment)
+	}
+	if edited.UpdatedAt == nil {
+		t.Error("expected UpdatedAt to be set after an edit")
+	}
+	// The listing's cached rating is re-derived from the new rating.
+	prop, _ := f.properties.FindByID(ctx, p.ID)
+	if prop.AverageRating != 2 {
+		t.Errorf("property rating = %v, want 2 after edit", prop.AverageRating)
+	}
+}
+
+func TestEditOwnReview_OnlyAuthor(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	guestID := uuid.New()
+	p := makeProperty(t, f.properties, uuid.New())
+	b := makeBooking(t, guestID, p.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, b)
+	rv, _ := f.svc.Create(ctx, reviewapp.CreateInput{GuestID: guestID, BookingID: b.ID, Rating: 5})
+	if _, err := f.svc.EditOwnReview(ctx, reviewapp.EditInput{AuthorID: uuid.New(), ReviewID: rv.ID, Rating: 1}); err != shared.ErrForbidden {
+		t.Errorf("expected ErrForbidden for non-author, got %v", err)
+	}
+}
+
+func TestEditOwnReview_WindowExpired(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	guestID := uuid.New()
+	p := makeProperty(t, f.properties, uuid.New())
+	b := makeBooking(t, guestID, p.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, b)
+	rv, _ := f.svc.Create(ctx, reviewapp.CreateInput{GuestID: guestID, BookingID: b.ID, Rating: 5})
+	// Age the review beyond the edit window, then persist the change.
+	rv.CreatedAt = time.Now().UTC().Add(-review.EditWindow - time.Hour)
+	_ = f.reviews.Update(ctx, rv)
+	if _, err := f.svc.EditOwnReview(ctx, reviewapp.EditInput{AuthorID: guestID, ReviewID: rv.ID, Rating: 1}); err == nil {
+		t.Fatal("expected edit to be rejected after the window passed")
+	}
+}
+
+func TestDeleteOwnReview_RemovesAndReprices(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	guestID := uuid.New()
+	p := makeProperty(t, f.properties, uuid.New())
+	b := makeBooking(t, guestID, p.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, b)
+	rv, _ := f.svc.Create(ctx, reviewapp.CreateInput{GuestID: guestID, BookingID: b.ID, Rating: 5})
+
+	if err := f.svc.DeleteOwnReview(ctx, guestID, rv.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := f.reviews.FindByID(ctx, rv.ID); err != shared.ErrNotFound {
+		t.Errorf("expected the review to be gone, got %v", err)
+	}
+	prop, _ := f.properties.FindByID(ctx, p.ID)
+	if prop.ReviewCount != 0 {
+		t.Errorf("review count = %d, want 0 after delete", prop.ReviewCount)
+	}
+}
+
 func TestReview_RecomputesHostSuperhost(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()

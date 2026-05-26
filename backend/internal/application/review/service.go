@@ -50,6 +50,68 @@ func (s *Service) RespondToReview(ctx context.Context, hostID, reviewID uuid.UUI
 	return rv, nil
 }
 
+// EditInput carries an author's change to their own review.
+type EditInput struct {
+	AuthorID   uuid.UUID
+	ReviewID   uuid.UUID
+	Rating     int
+	Comment    string
+	Categories review.CategoryRatings
+}
+
+// EditOwnReview lets the author change the rating/comment (and, for a property
+// review, the per-aspect category ratings) of their own review, but only within
+// the edit window. A changed rating re-derives the listing's cached rating.
+func (s *Service) EditOwnReview(ctx context.Context, in EditInput) (*review.Review, error) {
+	rv, err := s.reviews.FindByID(ctx, in.ReviewID)
+	if err != nil {
+		return nil, err
+	}
+	if rv.AuthorID != in.AuthorID {
+		return nil, shared.ErrForbidden
+	}
+	if !rv.EditableAt(time.Now().UTC()) {
+		return nil, shared.NewValidationError("the edit window for this review has passed")
+	}
+	if err := rv.Edit(in.Rating, in.Comment); err != nil {
+		return nil, err
+	}
+	if rv.Kind == review.KindGuestToProperty {
+		if err := rv.SetCategories(in.Categories); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.reviews.Update(ctx, rv); err != nil {
+		return nil, err
+	}
+	if rv.Kind == review.KindGuestToProperty {
+		s.refreshPropertyRating(ctx, rv.PropertyID)
+	}
+	return rv, nil
+}
+
+// DeleteOwnReview lets the author remove their own review within the edit
+// window. Deleting a property review re-derives the listing's cached rating.
+func (s *Service) DeleteOwnReview(ctx context.Context, authorID, reviewID uuid.UUID) error {
+	rv, err := s.reviews.FindByID(ctx, reviewID)
+	if err != nil {
+		return err
+	}
+	if rv.AuthorID != authorID {
+		return shared.ErrForbidden
+	}
+	if !rv.EditableAt(time.Now().UTC()) {
+		return shared.NewValidationError("the deletion window for this review has passed")
+	}
+	if err := s.reviews.Delete(ctx, reviewID); err != nil {
+		return err
+	}
+	if rv.Kind == review.KindGuestToProperty {
+		s.refreshPropertyRating(ctx, rv.PropertyID)
+	}
+	return nil
+}
+
 // CreateInput carries data to publish a property review (guest -> property).
 type CreateInput struct {
 	GuestID    uuid.UUID

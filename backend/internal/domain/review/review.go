@@ -38,6 +38,35 @@ type Review struct {
 	Response    string
 	RespondedAt *time.Time
 	CreatedAt   time.Time
+	// UpdatedAt is set when the author edits the review; nil while untouched.
+	UpdatedAt *time.Time
+}
+
+// EditWindow is how long after posting an author may still edit or delete their
+// own review. After this, the review is locked to keep public ratings stable.
+const EditWindow = 48 * time.Hour
+
+// EditableAt reports whether the review is still within its edit/delete window
+// at the given time.
+func (r *Review) EditableAt(now time.Time) bool {
+	return !now.After(r.CreatedAt.Add(EditWindow))
+}
+
+// Edit replaces the headline rating and comment of a review, applying the same
+// validation as creation. Callers enforce authorship and the edit window.
+func (r *Review) Edit(rating int, comment string) error {
+	if rating < 1 || rating > 5 {
+		return shared.NewValidationError("rating must be between 1 and 5")
+	}
+	comment = strings.TrimSpace(comment)
+	if len(comment) > 2000 {
+		return shared.NewValidationError("comment is too long")
+	}
+	now := time.Now().UTC()
+	r.Rating = rating
+	r.Comment = comment
+	r.UpdatedAt = &now
+	return nil
 }
 
 // CategoryRatings holds a guest's optional per-aspect sub-ratings for a property
