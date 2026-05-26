@@ -176,6 +176,10 @@ main:focus { outline: none; }
 .inline-review { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
 .inline-review input { flex: 1; min-width: 140px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; }
 .inline-review select { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; }
+.inline-modify { display: flex; gap: 8px; align-items: flex-end; margin-top: 6px; flex-wrap: wrap; }
+.inline-modify label { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--muted); }
+.inline-modify input { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; }
+.inline-modify .muted-text { flex-basis: 100%; }
 .review-cats { display: flex; flex-wrap: wrap; gap: 6px 12px; width: 100%; }
 .review-cat { display: flex; align-items: center; gap: 5px; font-size: .78rem; color: var(--muted); }
 .review-cat select { padding: 3px 6px; }

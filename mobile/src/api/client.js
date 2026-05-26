@@ -62,6 +62,7 @@ export function createApi(getAccessToken) {
     createBooking: (body) => request('POST', '/bookings', { body, auth: true }),
     previewCoupon: (body) => request('POST', '/bookings/preview-coupon', { body, auth: true }),
     myBookings: () => request('GET', '/bookings/me', { auth: true }),
+    modifyBooking: (id, body) => request('POST', `/bookings/${id}/modify`, { body, auth: true }),
     cancelBooking: (id) => request('POST', `/bookings/${id}/cancel`, { auth: true }),
 
     // Post-stay reviews

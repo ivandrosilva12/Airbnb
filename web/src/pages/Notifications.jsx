@@ -7,6 +7,7 @@ const ICONS = {
   booking_requested: '📩',
   booking_confirmed: '✅',
   booking_cancelled: '❌',
+  booking_modified: '📝',
   message_received: '💬',
 };
 

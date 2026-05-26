@@ -252,6 +252,86 @@ func TestComplete_OnlyHostAndAfterCheckout(t *testing.T) {
 	}
 }
 
+func TestModify_RepricesAndReschedules(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	b, err := f.svc.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 2})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// 3 nights -> 30000. Extend the stay to 5 nights and add a guest.
+	mod, err := f.svc.Modify(ctx, bookingapp.ModifyInput{ActorID: f.guestID, BookingID: b.ID, CheckIn: days(1), CheckOut: days(6), Guests: 3})
+	if err != nil {
+		t.Fatalf("modify: %v", err)
+	}
+	if mod.Dates.Nights() != 5 {
+		t.Errorf("nights = %d, want 5", mod.Dates.Nights())
+	}
+	if mod.Guests != 3 {
+		t.Errorf("guests = %d, want 3", mod.Guests)
+	}
+	if mod.TotalPrice().AmountCents() != 50000 { // 5 nights * 100.00, no fees in fixture
+		t.Errorf("total = %d, want 50000", mod.TotalPrice().AmountCents())
+	}
+	stored, err := f.bookings.FindByID(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if stored.Dates.Nights() != 5 || stored.Guests != 3 {
+		t.Errorf("persisted nights/guests = %d/%d, want 5/3", stored.Dates.Nights(), stored.Guests)
+	}
+}
+
+func TestModify_RejectsConfirmedBooking(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.prop.SetInstantBook(true)
+	if err := f.properties.Update(ctx, f.prop); err != nil {
+		t.Fatalf("enable instant book: %v", err)
+	}
+	b, err := f.svc.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := f.svc.Modify(ctx, bookingapp.ModifyInput{ActorID: f.guestID, BookingID: b.ID, CheckIn: days(2), CheckOut: days(5), Guests: 1}); err == nil {
+		t.Fatal("expected modifying a confirmed (instant-book) booking to be rejected")
+	}
+}
+
+func TestModify_OnlyGuestMayModify(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	b, err := f.svc.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := f.svc.Modify(ctx, bookingapp.ModifyInput{ActorID: uuid.New(), BookingID: b.ID, CheckIn: days(2), CheckOut: days(5), Guests: 1}); err != shared.ErrForbidden {
+		t.Errorf("expected ErrForbidden for non-guest, got %v", err)
+	}
+}
+
+func TestModify_RejectsOverlapButIgnoresSelf(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	mine, err := f.svc.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1})
+	if err != nil {
+		t.Fatalf("create mine: %v", err)
+	}
+	// Another guest occupies days 6..9.
+	if _, err := f.svc.Create(ctx, bookingapp.CreateInput{GuestID: uuid.New(), PropertyID: f.prop.ID, CheckIn: days(6), CheckOut: days(9), Guests: 1}); err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+	// Moving my stay onto the other booking's range must be rejected.
+	if _, err := f.svc.Modify(ctx, bookingapp.ModifyInput{ActorID: f.guestID, BookingID: mine.ID, CheckIn: days(5), CheckOut: days(8), Guests: 1}); err == nil {
+		t.Fatal("expected overlap with another booking to be rejected")
+	}
+	// Extending into days my own booking already (partly) covers must succeed —
+	// the availability check ignores the booking being modified.
+	if _, err := f.svc.Modify(ctx, bookingapp.ModifyInput{ActorID: f.guestID, BookingID: mine.ID, CheckIn: days(1), CheckOut: days(5), Guests: 1}); err != nil {
+		t.Fatalf("self-overlapping extension should be allowed, got: %v", err)
+	}
+}
+
 func TestAvailability_ReturnsBookedRanges(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

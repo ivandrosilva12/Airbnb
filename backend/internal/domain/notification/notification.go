@@ -18,6 +18,7 @@ const (
 	TypeBookingRequested Type = "booking_requested"
 	TypeBookingConfirmed Type = "booking_confirmed"
 	TypeBookingCancelled Type = "booking_cancelled"
+	TypeBookingModified  Type = "booking_modified"
 	TypeMessageReceived  Type = "message_received"
 	TypeIdentityVerified Type = "identity_verified"
 	TypeReviewRequested  Type = "review_requested"

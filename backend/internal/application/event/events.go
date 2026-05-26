@@ -9,6 +9,7 @@ func init() {
 	Register(BookingConfirmed{}.EventName(), jsonDecoder[BookingConfirmed]())
 	Register(BookingCancelled{}.EventName(), jsonDecoder[BookingCancelled]())
 	Register(BookingCompleted{}.EventName(), jsonDecoder[BookingCompleted]())
+	Register(BookingModified{}.EventName(), jsonDecoder[BookingModified]())
 	Register(MessageSent{}.EventName(), jsonDecoder[MessageSent]())
 	Register(IdentityVerified{}.EventName(), jsonDecoder[IdentityVerified]())
 }
@@ -67,6 +68,21 @@ type BookingCompleted struct {
 }
 
 func (BookingCompleted) EventName() string { return "booking.completed" }
+
+// BookingModified is published when a guest changes the dates and/or guest count
+// of a still-pending booking. The host is notified, and the payment context
+// adjusts the outstanding authorization hold to the new total.
+type BookingModified struct {
+	BookingID     uuid.UUID
+	PropertyID    uuid.UUID
+	PropertyTitle string
+	HostID        uuid.UUID
+	GuestID       uuid.UUID
+	TotalCents    int64
+	Currency      string
+}
+
+func (BookingModified) EventName() string { return "booking.modified" }
 
 // MessageSent is published when a message is posted; the recipient is notified.
 type MessageSent struct {

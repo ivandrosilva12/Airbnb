@@ -61,6 +61,19 @@ func (p *Payment) Authorize(gatewayRef string) error {
 	return nil
 }
 
+// Reauthorize replaces an outstanding hold with a new one (a fresh gateway
+// reference and amount) after the booking it pays for was modified. It is only
+// valid while the payment is still authorized — nothing has been captured yet.
+func (p *Payment) Reauthorize(gatewayRef string, amount shared.Money) error {
+	if p.Status != StatusAuthorized {
+		return shared.NewValidationError("only an authorized payment can be re-authorized")
+	}
+	p.GatewayRef = gatewayRef
+	p.Amount = amount
+	p.touch()
+	return nil
+}
+
 // Capture charges previously authorized funds.
 func (p *Payment) Capture() error {
 	if p.Status != StatusAuthorized {

@@ -84,6 +84,7 @@ func TestDurablePublisher_DecoderRegisteredForAllEvents(t *testing.T) {
 		BookingConfirmed{}.EventName(),
 		BookingCancelled{}.EventName(),
 		BookingCompleted{}.EventName(),
+		BookingModified{}.EventName(),
 		MessageSent{}.EventName(),
 		IdentityVerified{}.EventName(),
 	} {

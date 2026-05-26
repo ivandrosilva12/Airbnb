@@ -58,6 +58,39 @@ function ReviewForm({ bookingId, onDone, onError }) {
   );
 }
 
+// ModifyForm lets a guest change the dates and/or party size of a still-pending
+// booking. The backend re-validates availability and re-prices the stay.
+function ModifyForm({ booking, onDone, onError }) {
+  const { t } = useT();
+  const [checkIn, setCheckIn] = useState(booking.checkIn);
+  const [checkOut, setCheckOut] = useState(booking.checkOut);
+  const [guests, setGuests] = useState(booking.guests);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await api.modifyBooking(booking.id, { checkIn, checkOut, guests: Number(guests) });
+      onDone();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="inline-modify" onSubmit={submit}>
+      <label>{t('trips.checkIn')}<input type="date" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} required /></label>
+      <label>{t('trips.checkOut')}<input type="date" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} required /></label>
+      <label>{t('common.guests')}<input type="number" min="1" value={guests} onChange={(e) => setGuests(e.target.value)} required /></label>
+      <small className="muted-text">{t('trips.modifyNote')}</small>
+      <button className="btn btn-primary btn-sm" type="submit" disabled={submitting}>{submitting ? '…' : t('trips.saveChanges')}</button>
+    </form>
+  );
+}
+
 export default function MyTrips() {
   const { t } = useT();
   const [bookings, setBookings] = useState([]);
@@ -68,6 +101,7 @@ export default function MyTrips() {
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState(null);
   const [reviewed, setReviewed] = useState({});
+  const [modifying, setModifying] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -174,8 +208,18 @@ export default function MyTrips() {
                   )}
                 </td>
                 <td>
+                  {b.status === 'pending' && modifying !== b.id && (
+                    <button className="btn btn-ghost" onClick={() => { setError(null); setModifying(b.id); }}>{t('trips.modify')}</button>
+                  )}
                   {(b.status === 'pending' || b.status === 'confirmed') && (
                     <button className="btn btn-ghost" onClick={() => cancel(b.id)}>{t('common.cancel')}</button>
+                  )}
+                  {modifying === b.id && (
+                    <ModifyForm
+                      booking={b}
+                      onDone={() => { setModifying(null); load(); }}
+                      onError={setError}
+                    />
                   )}
                   {b.status === 'completed' && !reviewed[b.id] && reviewing !== b.id && (
                     <button className="btn btn-ghost" onClick={() => { setError(null); setReviewing(b.id); }}>{t('trips.leaveReview')}</button>

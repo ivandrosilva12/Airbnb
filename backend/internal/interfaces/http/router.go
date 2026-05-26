@@ -134,6 +134,7 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.POST("/bookings/preview-coupon", h.Booking.PreviewCoupon)
 		auth.GET("/bookings/me", h.Booking.ListMine)
 		auth.GET("/bookings/:id", h.Booking.Get)
+		auth.POST("/bookings/:id/modify", h.Booking.Modify)
 		auth.POST("/bookings/:id/cancel", h.Booking.Cancel)
 
 		// Reviews (guest -> property, and host -> guest).

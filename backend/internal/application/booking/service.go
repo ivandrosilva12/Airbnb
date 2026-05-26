@@ -197,6 +197,108 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	return b, nil
 }
 
+// ModifyInput carries a request to change a pending booking's dates and/or
+// guest count.
+type ModifyInput struct {
+	ActorID   uuid.UUID
+	BookingID uuid.UUID
+	CheckIn   time.Time
+	CheckOut  time.Time
+	Guests    int
+}
+
+// Modify changes the dates and/or guest count of a pending booking. It
+// re-validates availability and the listing's stay rules and re-prices the stay
+// at the listing's current rates. Only the booking's guest may modify it, and
+// only while it is still pending — a confirmed booking's payment has already been
+// captured. A BookingModified event lets the payment context adjust the
+// outstanding authorization hold to the new total.
+//
+// Any promo code applied at creation is not carried over (see Booking.Reschedule).
+func (s *Service) Modify(ctx context.Context, in ModifyInput) (*booking.Booking, error) {
+	b, prop, err := s.bookingWithProperty(ctx, in.BookingID)
+	if err != nil {
+		return nil, err
+	}
+	if b.GuestID != in.ActorID {
+		return nil, shared.ErrForbidden
+	}
+	if b.Status != booking.StatusPending {
+		return nil, shared.NewValidationError("only a pending booking can be modified")
+	}
+	if in.Guests > prop.MaxGuests {
+		return nil, shared.NewValidationError("number of guests exceeds property capacity")
+	}
+
+	dates, err := booking.NewDateRange(in.CheckIn, in.CheckOut)
+	if err != nil {
+		return nil, err
+	}
+
+	// Availability: the new range must be free, ignoring this booking's own
+	// current dates (which it is about to vacate).
+	occupied, err := s.bookings.ListActiveInRange(ctx, prop.ID, dates.CheckIn, dates.CheckOut)
+	if err != nil {
+		return nil, err
+	}
+	for _, other := range occupied {
+		if other.ID != b.ID {
+			return nil, shared.NewValidationError("selected dates are not available")
+		}
+	}
+	blocked, err := s.blocks.HasOverlap(ctx, prop.ID, dates)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, shared.NewValidationError("selected dates are blocked by the host")
+	}
+
+	nights := dates.Nights()
+	if prop.MinNights > 0 && nights < prop.MinNights {
+		return nil, shared.NewValidationError(fmt.Sprintf("this listing requires a stay of at least %d nights", prop.MinNights))
+	}
+	if prop.MaxNights > 0 && nights > prop.MaxNights {
+		return nil, shared.NewValidationError(fmt.Sprintf("this listing allows a stay of at most %d nights", prop.MaxNights))
+	}
+
+	includedGuests := prop.GuestsIncluded
+	if includedGuests <= 0 {
+		includedGuests = prop.MaxGuests
+	}
+	extraGuests := in.Guests - includedGuests
+	if extraGuests < 0 {
+		extraGuests = 0
+	}
+	extraGuestFeeCents := int64(extraGuests) * prop.ExtraGuestFee.AmountCents() * int64(nights)
+
+	if err := b.Reschedule(dates, in.Guests, prop.PricePerNight, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
+		WeeklyPct:            prop.PricingPolicy.WeeklyDiscountPct,
+		MonthlyPct:           prop.PricingPolicy.MonthlyDiscountPct,
+		TaxPct:               prop.PricingPolicy.TaxRatePct,
+		ExtraGuestFeeCents:   extraGuestFeeCents,
+		SecurityDepositCents: prop.SecurityDeposit.AmountCents(),
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := s.emit(ctx,
+		func(tx port.Tx) error { return tx.Bookings.Update(ctx, b) },
+		event.BookingModified{
+			BookingID:     b.ID,
+			PropertyID:    prop.ID,
+			PropertyTitle: prop.Title,
+			HostID:        prop.HostID,
+			GuestID:       b.GuestID,
+			TotalCents:    b.Pricing.Total.AmountCents(),
+			Currency:      b.Pricing.Total.Currency(),
+		},
+	); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
 // couponByCode loads a coupon, mapping a missing code to a friendly validation
 // error rather than a bare not-found.
 func (s *Service) couponByCode(ctx context.Context, code string) (*coupon.Coupon, error) {

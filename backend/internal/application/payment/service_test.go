@@ -67,6 +67,47 @@ func TestPaymentLifecycleFromEvents(t *testing.T) {
 	}
 }
 
+func TestModified_AdjustsAuthorizedHold(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewPaymentRepository()
+	svc := paymentapp.NewService(repo, infrapayment.NewFakeGateway(), memory.NewBookingRepository(), memory.NewPropertyRepository())
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	bookingID := uuid.New()
+	guestID := uuid.New()
+
+	// Initial hold for the original total.
+	dispatcher.Publish(ctx, event.BookingRequested{BookingID: bookingID, GuestID: guestID, TotalCents: 30000, Currency: "EUR"})
+
+	// The guest extends the stay; the booking re-prices and the hold is adjusted.
+	dispatcher.Publish(ctx, event.BookingModified{BookingID: bookingID, GuestID: guestID, TotalCents: 50000, Currency: "EUR"})
+	p, err := svc.GetForBooking(ctx, guestID, bookingID)
+	if err != nil {
+		t.Fatalf("get payment: %v", err)
+	}
+	if p.Status != payment.StatusAuthorized {
+		t.Fatalf("status after modify = %s, want authorized", p.Status)
+	}
+	if p.Amount.AmountCents() != 50000 {
+		t.Fatalf("hold after modify = %d, want 50000", p.Amount.AmountCents())
+	}
+
+	// A redelivery of the same modification is a no-op (idempotent).
+	dispatcher.Publish(ctx, event.BookingModified{BookingID: bookingID, GuestID: guestID, TotalCents: 50000, Currency: "EUR"})
+	p, _ = svc.GetForBooking(ctx, guestID, bookingID)
+	if p.Status != payment.StatusAuthorized || p.Amount.AmountCents() != 50000 {
+		t.Fatalf("after redelivery = status %s amount %d, want authorized 50000", p.Status, p.Amount.AmountCents())
+	}
+
+	// Capturing now charges the adjusted amount.
+	dispatcher.Publish(ctx, event.BookingConfirmed{BookingID: bookingID, GuestID: guestID})
+	p, _ = svc.GetForBooking(ctx, guestID, bookingID)
+	if p.Status != payment.StatusCaptured {
+		t.Fatalf("status after confirm = %s, want captured", p.Status)
+	}
+}
+
 func TestCancel_ReleasesAuthorizedHoldInFull(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewPaymentRepository()

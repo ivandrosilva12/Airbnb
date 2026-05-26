@@ -38,6 +38,8 @@ func (s *Service) EventHandler() event.Handler {
 				}
 				return p.Capture()
 			})
+		case event.BookingModified:
+			s.reauthorize(ctx, ev)
 		case event.BookingCancelled:
 			fraction := ev.RefundFraction
 			s.transition(ctx, ev.BookingID, "refund", func(p *payment.Payment) error {
@@ -90,6 +92,49 @@ func (s *Service) authorize(ctx context.Context, ev event.BookingRequested) {
 	}
 	if err := s.repo.Create(ctx, p); err != nil {
 		slog.Error("payment: failed to persist authorization", "booking", ev.BookingID, "error", err)
+	}
+}
+
+// reauthorize adjusts the outstanding hold after a booking is modified: it
+// releases the old authorization and places a new one for the updated total.
+// Only an authorized (not yet captured) payment can be adjusted this way.
+//
+// Idempotency: BookingModified may be delivered more than once. Once the hold
+// already matches the new total there is nothing to do, so a redelivery is a
+// no-op. (The release+re-hold is two gateway calls and not atomic; a crash
+// between them leaves the booking without a hold, which reconciliation/retry of
+// the original authorize path would surface — acceptable for a pending booking.)
+func (s *Service) reauthorize(ctx context.Context, ev event.BookingModified) {
+	p, err := s.repo.FindByBookingID(ctx, ev.BookingID)
+	if err != nil {
+		if !errors.Is(err, shared.ErrNotFound) {
+			slog.Error("payment: lookup failed", "action", "reauthorize", "booking", ev.BookingID, "error", err)
+		}
+		return
+	}
+	if p.Status != payment.StatusAuthorized {
+		return // captured/refunded/failed: the hold can no longer be adjusted
+	}
+	newAmount, err := shared.NewMoney(ev.TotalCents, ev.Currency)
+	if err != nil {
+		slog.Error("payment: invalid amount", "action", "reauthorize", "booking", ev.BookingID, "error", err)
+		return
+	}
+	if newAmount.AmountCents() == p.Amount.AmountCents() {
+		return // total unchanged (or a redelivery already applied it)
+	}
+	if err := s.gateway.Refund(ctx, p.GatewayRef, p.Amount.AmountCents()); err != nil {
+		slog.Error("payment: releasing old hold failed", "booking", ev.BookingID, "error", err)
+		return
+	}
+	ref, err := s.gateway.Authorize(ctx, newAmount, ev.BookingID.String())
+	if err != nil {
+		p.Fail(err.Error())
+	} else if err := p.Reauthorize(ref, newAmount); err != nil {
+		p.Fail(err.Error())
+	}
+	if err := s.repo.Update(ctx, p); err != nil {
+		slog.Error("payment: persist re-authorization failed", "booking", ev.BookingID, "error", err)
 	}
 }
 

@@ -28,6 +28,11 @@ func (s *Service) EventHandler() event.Handler {
 				"Booking confirmed",
 				fmt.Sprintf("Your booking for %q was confirmed.", ev.PropertyTitle), ev.BookingID)
 
+		case event.BookingModified:
+			err = s.create(ctx, ev.HostID, notification.TypeBookingModified,
+				"Booking changed",
+				fmt.Sprintf("A guest changed their booking dates or party size for %q.", ev.PropertyTitle), ev.BookingID)
+
 		case event.BookingCancelled:
 			recipient := ev.GuestID
 			if ev.CancelledBy == ev.GuestID {

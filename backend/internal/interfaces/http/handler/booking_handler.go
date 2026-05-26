@@ -72,6 +72,50 @@ func (h *BookingHandler) Create(c *gin.Context) {
 	response.Created(c, dto.FromBooking(b))
 }
 
+type modifyBookingRequest struct {
+	CheckIn  string `json:"checkIn" binding:"required"`
+	CheckOut string `json:"checkOut" binding:"required"`
+	Guests   int    `json:"guests" binding:"required"`
+}
+
+// Modify changes the dates and/or guest count of a pending booking (guest only).
+func (h *BookingHandler) Modify(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	var req modifyBookingRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	checkIn, err := time.Parse("2006-01-02", req.CheckIn)
+	if err != nil {
+		response.FailMessage(c, http.StatusBadRequest, "checkIn must be YYYY-MM-DD")
+		return
+	}
+	checkOut, err := time.Parse("2006-01-02", req.CheckOut)
+	if err != nil {
+		response.FailMessage(c, http.StatusBadRequest, "checkOut must be YYYY-MM-DD")
+		return
+	}
+	b, err := h.svc.Modify(c.Request.Context(), bookingapp.ModifyInput{
+		ActorID:   actorID,
+		BookingID: id,
+		CheckIn:   checkIn,
+		CheckOut:  checkOut,
+		Guests:    req.Guests,
+	})
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromBooking(b))
+}
+
 type previewCouponRequest struct {
 	PropertyID string `json:"propertyId" binding:"required"`
 	CheckIn    string `json:"checkIn" binding:"required"`

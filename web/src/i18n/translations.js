@@ -291,6 +291,11 @@ export const translations = {
     'trips.refunded': 'refunded {amount}',
     'trips.receipt': 'receipt',
     'trips.shareExperience': 'Share your experience',
+    'trips.modify': 'Change',
+    'trips.checkIn': 'Check-in',
+    'trips.checkOut': 'Check-out',
+    'trips.saveChanges': 'Save changes',
+    'trips.modifyNote': 'Changing your dates or party size re-prices the stay at the current rates (any promo code is not carried over).',
 
     'fav.title': 'Saved listings',
     'fav.none': 'No saved listings yet. Tap the heart on any listing to save it.',
@@ -721,6 +726,11 @@ export const translations = {
     'trips.refunded': 'reembolsado {amount}',
     'trips.receipt': 'recibo',
     'trips.shareExperience': 'Partilhe a sua experiência',
+    'trips.modify': 'Alterar',
+    'trips.checkIn': 'Check-in',
+    'trips.checkOut': 'Check-out',
+    'trips.saveChanges': 'Guardar alterações',
+    'trips.modifyNote': 'Alterar as datas ou o número de hóspedes recalcula o preço da estadia às tarifas atuais (qualquer código promocional não é mantido).',
 
     'fav.title': 'Alojamentos guardados',
     'fav.none': 'Ainda nada guardado. Toque no coração de um alojamento para o guardar.',

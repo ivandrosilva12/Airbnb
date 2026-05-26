@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, TextInput } from 'react-native';
 import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
 
@@ -19,6 +19,8 @@ export default function TripsScreen() {
   const [reviewed, setReviewed] = useState({});
   const [reviewing, setReviewing] = useState(null);
   const [draft, setDraft] = useState({ rating: 5, cats: {} });
+  const [modifying, setModifying] = useState(null);
+  const [modDraft, setModDraft] = useState({ checkIn: '', checkOut: '', guests: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -81,6 +83,26 @@ export default function TripsScreen() {
     }
   }
 
+  function openModify(item) {
+    setError(null);
+    setModDraft({ checkIn: item.checkIn, checkOut: item.checkOut, guests: String(item.guests) });
+    setModifying(item.id);
+  }
+
+  async function submitModify(id) {
+    try {
+      await api.modifyBooking(id, {
+        checkIn: modDraft.checkIn,
+        checkOut: modDraft.checkOut,
+        guests: Number(modDraft.guests) || 1,
+      });
+      setModifying(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   function toggle(id) {
     setExpanded((e) => ({ ...e, [id]: !e[id] }));
   }
@@ -119,10 +141,49 @@ export default function TripsScreen() {
                     </Text>
                   )}
                 </View>
-                {(item.status === 'pending' || item.status === 'confirmed') && (
-                  <Pressable onPress={() => cancel(item.id)}><Text style={styles.cancel}>Cancel</Text></Pressable>
-                )}
+                <View style={styles.rowActions}>
+                  {item.status === 'pending' && (
+                    <Pressable onPress={() => (modifying === item.id ? setModifying(null) : openModify(item))}>
+                      <Text style={styles.change}>Change</Text>
+                    </Pressable>
+                  )}
+                  {(item.status === 'pending' || item.status === 'confirmed') && (
+                    <Pressable onPress={() => cancel(item.id)}><Text style={styles.cancel}>Cancel</Text></Pressable>
+                  )}
+                </View>
               </View>
+
+              {modifying === item.id && (
+                <View style={styles.modForm}>
+                  <Text style={styles.reviewFormLabel}>Change dates & guests</Text>
+                  <View style={styles.modFields}>
+                    <View style={styles.modField}>
+                      <Text style={styles.modLabel}>Check-in</Text>
+                      <TextInput style={styles.modInput} value={modDraft.checkIn} placeholder="YYYY-MM-DD" placeholderTextColor="#999"
+                        autoCapitalize="none" onChangeText={(v) => setModDraft((d) => ({ ...d, checkIn: v }))} />
+                    </View>
+                    <View style={styles.modField}>
+                      <Text style={styles.modLabel}>Check-out</Text>
+                      <TextInput style={styles.modInput} value={modDraft.checkOut} placeholder="YYYY-MM-DD" placeholderTextColor="#999"
+                        autoCapitalize="none" onChangeText={(v) => setModDraft((d) => ({ ...d, checkOut: v }))} />
+                    </View>
+                    <View style={styles.modField}>
+                      <Text style={styles.modLabel}>Guests</Text>
+                      <TextInput style={styles.modInput} value={modDraft.guests} keyboardType="number-pad"
+                        onChangeText={(v) => setModDraft((d) => ({ ...d, guests: v }))} />
+                    </View>
+                  </View>
+                  <Text style={styles.modNote}>Re-prices the stay at current rates (promo codes are not carried over).</Text>
+                  <View style={styles.reviewFormActions}>
+                    <Pressable style={styles.btnSm} onPress={() => submitModify(item.id)}>
+                      <Text style={styles.btnText}>Save changes</Text>
+                    </Pressable>
+                    <Pressable onPress={() => setModifying(null)}>
+                      <Text style={styles.cancel}>Cancel</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
 
               <Pressable onPress={() => toggle(item.id)}>
                 <Text style={styles.receiptToggle}>{open ? 'Hide receipt' : 'View receipt'}</Text>
@@ -204,6 +265,14 @@ const styles = StyleSheet.create({
   meta: { color: '#717171', marginVertical: 2 },
   payLine: { color: '#444', fontSize: 13, marginTop: 2 },
   cancel: { color: '#c0392b', fontWeight: '600' },
+  change: { color: '#ff385c', fontWeight: '600' },
+  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  modForm: { marginTop: 10, backgroundColor: '#fafafa', borderRadius: 8, padding: 12 },
+  modFields: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  modField: { flex: 1 },
+  modLabel: { fontSize: 12, color: '#717171', marginBottom: 3 },
+  modInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8 },
+  modNote: { color: '#717171', fontSize: 12, marginTop: 8 },
   receiptToggle: { color: '#ff385c', fontWeight: '600', marginTop: 8 },
   reviewCta: { color: '#ff385c', fontWeight: '700', marginTop: 8 },
   reviewedText: { color: '#1e7e44', fontWeight: '700', marginTop: 8 },

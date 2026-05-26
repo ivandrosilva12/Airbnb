@@ -105,6 +105,38 @@ func NewBooking(
 	}, nil
 }
 
+// Reschedule changes the dates and/or guest count of a still-pending booking and
+// recomputes its full price breakdown at the listing's current rates. Only a
+// pending booking may be modified: once confirmed the payment has been captured,
+// so a change would require a host-approved payment adjustment instead.
+//
+// Any promo code applied at creation is not carried over — the recomputed
+// discount reflects only the listing's length-of-stay rules. Callers communicate
+// this to the guest before they confirm the change.
+func (b *Booking) Reschedule(
+	dates DateRange,
+	guests int,
+	pricePerNight, cleaningFee shared.Money,
+	serviceFeeRate float64,
+	discounts Discounts,
+) error {
+	if b.Status != StatusPending {
+		return shared.NewValidationError("only a pending booking can be modified")
+	}
+	if guests < 1 {
+		return shared.NewValidationError("at least one guest is required")
+	}
+	pricing, err := ComputePricing(pricePerNight, cleaningFee, dates.Nights(), serviceFeeRate, discounts)
+	if err != nil {
+		return err
+	}
+	b.Dates = dates
+	b.Guests = guests
+	b.Pricing = pricing
+	b.touch()
+	return nil
+}
+
 // Confirm transitions a pending booking to confirmed.
 func (b *Booking) Confirm() error {
 	if b.Status != StatusPending {
