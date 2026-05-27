@@ -1,11 +1,12 @@
 # AirHost — full local stack.
 #
-# NOTE on Keycloak hostnames: tokens are issued with an `iss` claim that must be
-# resolvable identically by the browser and by the backend. We pin Keycloak's
-# hostname to `keycloak`, reachable inside the Docker network by service name.
-# For browser logins to work, add this line to your hosts file:
-#     127.0.0.1   keycloak
-# (Windows: C:\Windows\System32\drivers\etc\hosts)
+# Keycloak hostnames: tokens carry an `iss` claim that the browser and backend
+# must agree on. We make `http://localhost:8080` the canonical (browser-facing)
+# issuer, so logins work out of the box with no hosts-file edits. Keycloak runs
+# with KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true, so its backchannel URLs (token,
+# JWKS) are resolved from the request — the backend reaches it inside the Docker
+# network at http://keycloak:8080 (KEYCLOAK_DISCOVERY_URL) while still validating
+# the localhost issuer. Everything runs in Docker; nothing extra is required.
 
 services:
   postgres:
@@ -30,7 +31,11 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      KC_HOSTNAME: keycloak
+      # Canonical (browser-facing) base URL → tokens get iss=http://localhost:8080.
+      KC_HOSTNAME: http://localhost:8080
+      # Resolve backchannel URLs (token/JWKS) from the request, so the backend
+      # reaching Keycloak at http://keycloak:8080 gets reachable internal URLs.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
@@ -106,7 +111,10 @@ services:
       DB_NAME: airhost
       DB_SSLMODE: disable
       DB_MIGRATIONS_PATH: /app/internal/infrastructure/persistence/postgres/migrations
-      KEYCLOAK_ISSUER: http://keycloak:8080/realms/airhost
+      # The issuer the browser sees (must match the tokens' iss claim)…
+      KEYCLOAK_ISSUER: http://localhost:8080/realms/airhost
+      # …while the backend discovers OIDC/JWKS over the Docker network.
+      KEYCLOAK_DISCOVERY_URL: http://keycloak:8080/realms/airhost
       KEYCLOAK_CLIENT_ID: airhost-api
       SERVICE_FEE_RATE: "0.12"
       MINIO_ENDPOINT: minio:9000

@@ -39,12 +39,25 @@ type Verifier struct {
 // NewVerifier builds a Verifier by discovering the OIDC provider. It retries
 // briefly because Keycloak may still be starting in a fresh environment.
 func NewVerifier(ctx context.Context, cfg config.KeycloakConfig) (*Verifier, error) {
+	// Tokens carry cfg.Issuer (the browser-facing URL). When the backend reaches
+	// Keycloak at a different internal address (cfg.DiscoveryURL, e.g. inside
+	// Docker), fetch the discovery document and JWKS from there while still
+	// validating the canonical issuer. InsecureIssuerURLContext tells go-oidc to
+	// accept the issuer/discovery-URL divergence; the discovery doc's backchannel
+	// endpoints (jwks_uri) then point at the reachable internal host.
+	discoverURL := cfg.Issuer
+	discoverCtx := ctx
+	if cfg.DiscoveryURL != "" && cfg.DiscoveryURL != cfg.Issuer {
+		discoverURL = cfg.DiscoveryURL
+		discoverCtx = oidc.InsecureIssuerURLContext(ctx, cfg.Issuer)
+	}
+
 	var (
 		provider *oidc.Provider
 		err      error
 	)
 	for attempt := 0; attempt < 10; attempt++ {
-		provider, err = oidc.NewProvider(ctx, cfg.Issuer)
+		provider, err = oidc.NewProvider(discoverCtx, discoverURL)
 		if err == nil {
 			break
 		}
@@ -55,7 +68,7 @@ func NewVerifier(ctx context.Context, cfg config.KeycloakConfig) (*Verifier, err
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("discover oidc provider at %s: %w", cfg.Issuer, err)
+		return nil, fmt.Errorf("discover oidc provider at %s: %w", discoverURL, err)
 	}
 
 	oidcCfg := &oidc.Config{

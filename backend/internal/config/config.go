@@ -158,8 +158,13 @@ func (d DatabaseConfig) DSN() string {
 
 // KeycloakConfig holds OIDC settings for token verification.
 type KeycloakConfig struct {
-	Issuer   string // e.g. http://localhost:8080/realms/airhost
-	ClientID string // expected audience
+	Issuer string // canonical issuer in tokens, e.g. http://localhost:8080/realms/airhost
+	// DiscoveryURL is the address the backend uses to fetch OIDC discovery and
+	// JWKS, when it differs from Issuer (e.g. in Docker the browser sees
+	// http://localhost:8080 but the backend reaches Keycloak at
+	// http://keycloak:8080). Empty means discover at Issuer.
+	DiscoveryURL string
+	ClientID     string // expected audience
 }
 
 // StorageConfig holds MinIO/S3 settings.
@@ -201,8 +206,9 @@ func Load() (*Config, error) {
 			MigrationsPath: getEnv("DB_MIGRATIONS_PATH", "internal/infrastructure/persistence/postgres/migrations"),
 		},
 		Keycloak: KeycloakConfig{
-			Issuer:   getEnv("KEYCLOAK_ISSUER", "http://localhost:8080/realms/airhost"),
-			ClientID: getEnv("KEYCLOAK_CLIENT_ID", "airhost-api"),
+			Issuer:       getEnv("KEYCLOAK_ISSUER", "http://localhost:8080/realms/airhost"),
+			DiscoveryURL: getEnv("KEYCLOAK_DISCOVERY_URL", ""),
+			ClientID:     getEnv("KEYCLOAK_CLIENT_ID", "airhost-api"),
 		},
 		Storage: StorageConfig{
 			Endpoint:   getEnv("MINIO_ENDPOINT", "localhost:9000"),
