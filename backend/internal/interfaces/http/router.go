@@ -35,6 +35,7 @@ type Handlers struct {
 	Coupon         *handler.CouponHandler
 	UserBlock      *handler.UserBlockHandler
 	Offer          *handler.OfferHandler
+	SavedSearch    *handler.SavedSearchHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -140,6 +141,12 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.GET("/bookings/:id", h.Booking.Get)
 		auth.POST("/bookings/:id/modify", h.Booking.Modify)
 		auth.POST("/bookings/:id/cancel", h.Booking.Cancel)
+
+		// Saved searches & new-listing alerts.
+		auth.GET("/saved-searches", h.SavedSearch.List)
+		auth.POST("/saved-searches", h.SavedSearch.Create)
+		auth.DELETE("/saved-searches/:id", h.SavedSearch.Delete)
+		auth.PATCH("/saved-searches/:id", h.SavedSearch.SetAlerts)
 
 		// Offers addressed to the guest (pre-approvals / special offers).
 		auth.GET("/offers", h.Offer.ListMine)

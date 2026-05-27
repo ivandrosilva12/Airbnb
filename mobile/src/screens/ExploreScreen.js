@@ -1,8 +1,27 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, FlatList, TextInput, Image, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, TextInput, Image, Pressable, StyleSheet, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { useApi } from '../api/useApi';
 
 const PAGE_SIZE = 12;
+
+// Serialise a cleaned params object to a URL query string, and back.
+function paramsToQuery(params) {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) v.forEach((x) => sp.append(k, x));
+    else if (v !== '' && v != null) sp.append(k, String(v));
+  }
+  return sp.toString();
+}
+function queryToParams(query) {
+  const sp = new URLSearchParams(query);
+  const out = {};
+  for (const k of new Set(sp.keys())) {
+    const all = sp.getAll(k);
+    out[k] = all.length > 1 ? all : all[0];
+  }
+  return out;
+}
 
 export default function ExploreScreen({ navigation }) {
   const api = useApi();
@@ -17,7 +36,38 @@ export default function ExploreScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
+  const [saved, setSaved] = useState([]);
   const paramsRef = useRef({});
+
+  const loadSaved = useCallback(() => {
+    api.listSavedSearches().then((r) => setSaved(r.items || [])).catch(() => {});
+  }, [api]);
+
+  async function saveCurrent() {
+    try {
+      await api.saveSearch({
+        name: city.trim() || 'Saved search',
+        query: paramsToQuery(paramsRef.current),
+        alertsEnabled: true,
+      });
+      loadSaved();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function applySaved(s) {
+    const params = queryToParams(s.query);
+    setCity(params.city || '');
+    load(params);
+  }
+
+  function confirmRemoveSaved(s) {
+    Alert.alert(s.name, 'Remove this saved search?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => { try { await api.deleteSavedSearch(s.id); loadSaved(); } catch (e) { setError(e.message); } } },
+    ]);
+  }
 
   function applyFilters() {
     const toCents = (v) => (v ? Math.round(Number(v) * 100) : '');
@@ -68,6 +118,7 @@ export default function ExploreScreen({ navigation }) {
 
   useEffect(() => {
     load();
+    loadSaved();
   }, []);
 
   return (
@@ -101,6 +152,14 @@ export default function ExploreScreen({ navigation }) {
           </Pressable>
         </View>
       )}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.savedRow} contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 12 }}>
+        <Pressable onPress={saveCurrent}><Text style={styles.saveLink}>★ Save</Text></Pressable>
+        {saved.map((s) => (
+          <Pressable key={s.id} style={styles.savedChip} onPress={() => applySaved(s)} onLongPress={() => confirmRemoveSaved(s)}>
+            <Text style={styles.savedChipText}>{s.alertsEnabled ? '🔔 ' : ''}{s.name}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
       {error && <Text style={styles.error}>{error}</Text>}
       {loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} color="#ff385c" />
@@ -142,6 +201,10 @@ const styles = StyleSheet.create({
   filterToggle: { borderWidth: 1, borderColor: '#ddd', borderRadius: 999, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff' },
   filterToggleText: { fontWeight: '700', color: '#222' },
   filters: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#eee', padding: 12, marginBottom: 12 },
+  savedRow: { flexGrow: 0, marginBottom: 10 },
+  saveLink: { color: '#ff385c', fontWeight: '700', paddingVertical: 6 },
+  savedChip: { borderWidth: 1, borderColor: '#ddd', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff' },
+  savedChipText: { fontSize: 13, color: '#222' },
   filterRow: { flexDirection: 'row', gap: 8 },
   filterInput: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 8 },
   instantToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },

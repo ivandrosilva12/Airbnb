@@ -24,6 +24,7 @@ import (
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/report"
 	"github.com/airhost/backend/internal/domain/review"
+	"github.com/airhost/backend/internal/domain/savedsearch"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/domain/userblock"
@@ -1571,6 +1572,88 @@ func (r *OfferRepository) listBy(pred func(offer.Offer) bool) []*offer.Offer {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return out
+}
+
+// --- Saved searches ----------------------------------------------------------
+
+// SavedSearchRepository is an in-memory savedsearch.Repository.
+type SavedSearchRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]savedsearch.SavedSearch
+}
+
+// NewSavedSearchRepository builds an empty in-memory saved-search repository.
+func NewSavedSearchRepository() *SavedSearchRepository {
+	return &SavedSearchRepository{m: map[uuid.UUID]savedsearch.SavedSearch{}}
+}
+
+var _ savedsearch.Repository = (*SavedSearchRepository)(nil)
+
+func (r *SavedSearchRepository) Create(_ context.Context, s *savedsearch.SavedSearch) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.m[s.ID] = *s
+	return nil
+}
+
+func (r *SavedSearchRepository) ListByUser(_ context.Context, userID uuid.UUID) ([]*savedsearch.SavedSearch, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []*savedsearch.SavedSearch
+	for _, s := range r.m {
+		if s.UserID == userID {
+			c := s
+			out = append(out, &c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out, nil
+}
+
+func (r *SavedSearchRepository) Delete(_ context.Context, userID, id uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.m[id]
+	if !ok || s.UserID != userID {
+		return shared.ErrNotFound
+	}
+	delete(r.m, id)
+	return nil
+}
+
+func (r *SavedSearchRepository) SetAlerts(_ context.Context, userID, id uuid.UUID, enabled bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.m[id]
+	if !ok || s.UserID != userID {
+		return shared.ErrNotFound
+	}
+	s.AlertsEnabled = enabled
+	r.m[id] = s
+	return nil
+}
+
+func (r *SavedSearchRepository) ListAlertable(_ context.Context) ([]*savedsearch.SavedSearch, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []*savedsearch.SavedSearch
+	for _, s := range r.m {
+		if s.AlertsEnabled {
+			c := s
+			out = append(out, &c)
+		}
+	}
+	return out, nil
+}
+
+func (r *SavedSearchRepository) MarkNotified(_ context.Context, id uuid.UUID, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if s, ok := r.m[id]; ok {
+		s.LastNotifiedAt = at
+		r.m[id] = s
+	}
+	return nil
 }
 
 // --- helpers -----------------------------------------------------------------

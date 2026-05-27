@@ -31,6 +31,7 @@ import (
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reportapp "github.com/airhost/backend/internal/application/report"
 	reviewapp "github.com/airhost/backend/internal/application/review"
+	savedsearchapp "github.com/airhost/backend/internal/application/savedsearch"
 	searchapp "github.com/airhost/backend/internal/application/search"
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
@@ -114,6 +115,7 @@ func newHarness(t *testing.T) *harness {
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
+	savedSearchSvc := savedsearchapp.NewService(memory.NewSavedSearchRepository(), searchSvc, notificationSvc)
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway(), bookingRepo, propertyRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
@@ -186,6 +188,7 @@ func newHarness(t *testing.T) *harness {
 			Coupon:         handler.NewCouponHandler(couponSvc),
 			UserBlock:      handler.NewUserBlockHandler(userBlockSvc),
 			Offer:          handler.NewOfferHandler(offerSvc),
+			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
 		},
 	})
 

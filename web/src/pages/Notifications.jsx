@@ -8,6 +8,7 @@ const ICONS = {
   booking_confirmed: '✅',
   booking_cancelled: '❌',
   booking_modified: '📝',
+  saved_search_alert: '🔎',
   message_received: '💬',
 };
 

@@ -48,6 +48,10 @@ export function createApi(getAccessToken) {
       return request('GET', `/properties${qs ? `?${qs}` : ''}`);
     },
     getProperty: (id) => request('GET', `/properties/${id}`),
+    // Saved searches & alerts
+    listSavedSearches: () => request('GET', '/saved-searches', { auth: true }),
+    saveSearch: (body) => request('POST', '/saved-searches', { body, auth: true }),
+    deleteSavedSearch: (id) => request('DELETE', `/saved-searches/${id}`, { auth: true }),
     getReviews: (id) => request('GET', `/properties/${id}/reviews`),
     getReviewSummary: (id) => request('GET', `/properties/${id}/reviews/summary`),
     me: () => request('GET', '/me', { auth: true }),

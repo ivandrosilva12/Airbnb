@@ -45,6 +45,13 @@ func (s *Service) MarkAllRead(ctx context.Context, userID uuid.UUID) error {
 	return s.repo.MarkAllRead(ctx, userID)
 }
 
+// Notify delivers a saved-search alert notification to a user. It is the public
+// entry used by the saved-search alert job (other notifications are produced by
+// the event subscriber).
+func (s *Service) Notify(ctx context.Context, userID uuid.UUID, title, body string, relatedID uuid.UUID) error {
+	return s.create(ctx, userID, notification.TypeSavedSearchAlert, title, body, relatedID)
+}
+
 // create is the internal helper used by the event subscriber.
 func (s *Service) create(ctx context.Context, userID uuid.UUID, t notification.Type, title, body string, relatedID uuid.UUID) error {
 	n, err := notification.New(userID, t, title, body, relatedID)

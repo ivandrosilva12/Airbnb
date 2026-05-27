@@ -35,6 +35,7 @@ import (
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reportapp "github.com/airhost/backend/internal/application/report"
 	reviewapp "github.com/airhost/backend/internal/application/review"
+	savedsearchapp "github.com/airhost/backend/internal/application/savedsearch"
 	searchapp "github.com/airhost/backend/internal/application/search"
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
@@ -109,6 +110,7 @@ func run() error {
 	messageRepo := postgres.NewMessageRepository(pool)
 	userBlockRepo := postgres.NewUserBlockRepository(pool)
 	offerRepo := postgres.NewOfferRepository(pool)
+	savedSearchRepo := postgres.NewSavedSearchRepository(pool)
 	favoriteRepo := postgres.NewFavoriteRepository(pool)
 	notificationRepo := postgres.NewNotificationRepository(pool)
 	paymentRepo := postgres.NewPaymentRepository(pool)
@@ -152,6 +154,7 @@ func run() error {
 	couponSvc := couponapp.NewService(couponRepo)
 	userBlockSvc := userblockapp.NewService(userBlockRepo)
 	offerSvc := offerapp.NewService(offerRepo, propertyRepo, bookingSvc)
+	savedSearchSvc := savedsearchapp.NewService(savedSearchRepo, searchSvc, notificationSvc)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
 	alertStateSvc := alertstateapp.NewService()
 	realtimeHub := realtime.NewHub()
@@ -210,6 +213,7 @@ func run() error {
 			Coupon:         handler.NewCouponHandler(couponSvc),
 			UserBlock:      handler.NewUserBlockHandler(userBlockSvc),
 			Offer:          handler.NewOfferHandler(offerSvc),
+			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
 		},
 	})
 
@@ -244,6 +248,12 @@ func run() error {
 			_, err := eventPublisher.Recover(ctx, 500)
 			return err
 		},
+	})
+	// Alert users when new listings match their saved searches.
+	sched.Add(scheduler.Job{
+		Name:     "saved-search-alerts",
+		Interval: time.Hour,
+		Run:      savedSearchSvc.RunAlerts,
 	})
 	sched.Start(ctx)
 

@@ -3,15 +3,38 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import PropertyCard from '../components/PropertyCard';
 import MapView from '../components/MapView';
+import { useAuth } from '../context/AuthContext';
 import { useT } from '../i18n/I18nContext';
 import { AMENITY_CODES } from '../amenities';
 
 const PAGE_SIZE = 12;
 
+// Serialise/parse a cleaned search-params object to/from a URL query string,
+// used to store and replay saved searches (amenity may be a repeated key).
+function paramsToQuery(params) {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) v.forEach((x) => sp.append(k, x));
+    else if (v !== '' && v != null) sp.append(k, v);
+  }
+  return sp.toString();
+}
+function queryToParams(query) {
+  const sp = new URLSearchParams(query);
+  const out = {};
+  for (const k of new Set(sp.keys())) {
+    const all = sp.getAll(k);
+    out[k] = all.length > 1 ? all : all[0];
+  }
+  return out;
+}
+
 export default function Home() {
   const { t } = useT();
+  const { authenticated } = useAuth();
   const navigate = useNavigate();
   const [view, setView] = useState('list');
+  const [saved, setSaved] = useState([]);
   const [amenityOptions, setAmenityOptions] = useState(AMENITY_CODES);
   const [filters, setFilters] = useState({ q: '', city: '', type: '', minGuests: '', minPrice: '', maxPrice: '', bedrooms: '', instantBook: false, checkIn: '', checkOut: '', sort: '', amenities: [] });
   const [showMore, setShowMore] = useState(false);
@@ -50,6 +73,46 @@ export default function Home() {
     load();
     api.listAmenities().then((r) => r?.amenities?.length && setAmenityOptions(r.amenities)).catch(() => {});
   }, []);
+
+  function loadSaved() {
+    if (!authenticated) return;
+    api.listSavedSearches().then((r) => setSaved(r.items || [])).catch(() => {});
+  }
+  useEffect(loadSaved, [authenticated]);
+
+  async function saveCurrent() {
+    const name = window.prompt(t('saved.namePrompt'));
+    if (!name || !name.trim()) return;
+    try {
+      await api.saveSearch({ name: name.trim(), query: paramsToQuery(lastParams), alertsEnabled: true });
+      loadSaved();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function applySaved(s) {
+    load(queryToParams(s.query));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function toggleAlerts(s) {
+    try {
+      await api.setSearchAlerts(s.id, !s.alertsEnabled);
+      loadSaved();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function removeSaved(s) {
+    try {
+      await api.deleteSavedSearch(s.id);
+      loadSaved();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   function buildParams(f = filters, g = geo) {
     const { amenities, instantBook, minPrice, maxPrice, ...rest } = f;
@@ -205,6 +268,27 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      {authenticated && (
+        <div className="saved-searches">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={saveCurrent}>★ {t('saved.save')}</button>
+          {saved.map((s) => (
+            <span key={s.id} className="saved-chip">
+              <button type="button" className="saved-chip-name" onClick={() => applySaved(s)}>{s.name}</button>
+              <button
+                type="button"
+                className="saved-chip-bell"
+                title={s.alertsEnabled ? t('saved.alertsOn') : t('saved.alertsOff')}
+                aria-label={s.alertsEnabled ? t('saved.alertsOn') : t('saved.alertsOff')}
+                onClick={() => toggleAlerts(s)}
+              >
+                {s.alertsEnabled ? '🔔' : '🔕'}
+              </button>
+              <button type="button" className="saved-chip-x" aria-label={t('saved.remove')} onClick={() => removeSaved(s)}>✕</button>
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="results-bar">
         {!loading && <span className="results-count">{t('home.results', { n: results.total })}</span>}

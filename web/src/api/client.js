@@ -84,6 +84,11 @@ export const api = {
   },
   getProperty: (id) => request('GET', `/properties/${id}`),
   listAmenities: () => request('GET', '/amenities'),
+  // Saved searches & alerts
+  listSavedSearches: () => request('GET', '/saved-searches', { auth: true }),
+  saveSearch: (body) => request('POST', '/saved-searches', { body, auth: true }),
+  deleteSavedSearch: (id) => request('DELETE', `/saved-searches/${id}`, { auth: true }),
+  setSearchAlerts: (id, alertsEnabled) => request('PATCH', `/saved-searches/${id}`, { body: { alertsEnabled }, auth: true }),
   getReviews: (id) => request('GET', `/properties/${id}/reviews`),
   getReviewSummary: (id) => request('GET', `/properties/${id}/reviews/summary`),
 
