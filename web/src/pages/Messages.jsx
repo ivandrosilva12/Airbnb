@@ -9,6 +9,58 @@ import { useT } from '../i18n/I18nContext';
 // Canned quick-reply templates a user can tap to fill the composer.
 const QUICK_REPLY_KEYS = ['greeting', 'available', 'unavailable', 'checkin', 'getBack', 'thanks'];
 
+// OfferComposer lets a host send a pre-approval (no price) or a special offer
+// (custom nightly price) to the guest in the current conversation.
+function OfferComposer({ conv, onError }) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ checkIn: '', checkOut: '', guests: 1, price: '', message: '' });
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    onError(null);
+    try {
+      await api.sendOffer({
+        propertyId: conv.propertyId,
+        guestId: conv.guestId,
+        checkIn: form.checkIn,
+        checkOut: form.checkOut,
+        guests: Number(form.guests) || 1,
+        priceCents: form.price ? Math.round(Number(form.price) * 100) : 0,
+        message: form.message,
+      });
+      setDone(true);
+      setOpen(false);
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (done) return <span className="offer-sent">{t('offers.sent')}</span>;
+  if (!open) {
+    return <button className="btn-link" type="button" onClick={() => setOpen(true)}>🏷️ {t('offers.send')}</button>;
+  }
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  return (
+    <form className="offer-composer" onSubmit={submit}>
+      <label>{t('trips.checkIn')}<input type="date" required value={form.checkIn} onChange={set('checkIn')} /></label>
+      <label>{t('trips.checkOut')}<input type="date" required value={form.checkOut} onChange={set('checkOut')} /></label>
+      <label>{t('common.guests')}<input type="number" min="1" value={form.guests} onChange={set('guests')} /></label>
+      <label>{t('offers.priceHint')}<input type="number" min="0" step="0.01" placeholder={t('offers.pricePlaceholder')} value={form.price} onChange={set('price')} /></label>
+      <input className="offer-msg" placeholder={t('offers.messagePlaceholder')} value={form.message} onChange={set('message')} />
+      <div className="offer-composer-actions">
+        <button className="btn btn-primary btn-sm" type="submit" disabled={busy}>{busy ? '…' : t('offers.send')}</button>
+        <button className="btn btn-ghost btn-sm" type="button" onClick={() => setOpen(false)}>{t('common.cancel')}</button>
+      </div>
+    </form>
+  );
+}
+
 // MessageBubble renders a chat message: its text, and an attachment when present
 // (an inline image preview, or a download link for other file types like PDFs).
 function MessageBubble({ message: m, mine }) {
@@ -193,11 +245,13 @@ export default function Messages() {
             {(() => {
               const conv = conversations.find((c) => c.id === activeId);
               if (!conv) return null;
-              const otherId = conv.hostId === profile?.id ? conv.guestId : conv.hostId;
+              const isHost = conv.hostId === profile?.id;
+              const otherId = isHost ? conv.guestId : conv.hostId;
               const isBlocked = blocked.includes(otherId);
               return (
                 <div className="thread-header">
                   {isBlocked && <span className="thread-blocked">{t('msg.blockedNotice')}</span>}
+                  {isHost && <OfferComposer conv={conv} onError={setError} />}
                   <button className="btn-link-danger" onClick={() => toggleBlock(otherId)}>
                     {isBlocked ? t('msg.unblock') : t('msg.block')}
                   </button>

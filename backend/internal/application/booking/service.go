@@ -76,6 +76,9 @@ type CreateInput struct {
 	CheckOut   time.Time
 	Guests     int
 	CouponCode string // optional promo code
+	// OverridePricePerNightCents, when > 0, replaces the listing's nightly price
+	// (used when a guest accepts a host's special offer). 0 uses the listing price.
+	OverridePricePerNightCents int64
 }
 
 // Create makes a reservation, enforcing availability and capacity rules.
@@ -98,6 +101,16 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	}
 	if in.Guests > prop.MaxGuests {
 		return nil, shared.NewValidationError("number of guests exceeds property capacity")
+	}
+
+	// The effective nightly price is the listing's, unless a host special offer
+	// overrides it.
+	pricePerNight := prop.PricePerNight
+	if in.OverridePricePerNightCents > 0 {
+		pricePerNight, err = shared.NewMoney(in.OverridePricePerNightCents, prop.PricePerNight.Currency())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	dates, err := booking.NewDateRange(in.CheckIn, in.CheckOut)
@@ -161,7 +174,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	}
 	extraGuestFeeCents := int64(extraGuests) * prop.ExtraGuestFee.AmountCents() * int64(nights)
 
-	b, err := booking.NewBooking(in.PropertyID, in.GuestID, dates, in.Guests, prop.PricePerNight, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
+	b, err := booking.NewBooking(in.PropertyID, in.GuestID, dates, in.Guests, pricePerNight, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
 		WeeklyPct:            prop.PricingPolicy.WeeklyDiscountPct,
 		MonthlyPct:           prop.PricingPolicy.MonthlyDiscountPct,
 		TaxPct:               prop.PricingPolicy.TaxRatePct,

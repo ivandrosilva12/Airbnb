@@ -21,16 +21,18 @@ export default function TripsScreen() {
   const [draft, setDraft] = useState({ rating: 5, cats: {} });
   const [modifying, setModifying] = useState(null);
   const [modDraft, setModDraft] = useState({ checkIn: '', checkOut: '', guests: '' });
+  const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [bookingsRes, paymentsRes, pendingRes] = await Promise.all([
+      const [bookingsRes, paymentsRes, pendingRes, offersRes] = await Promise.all([
         api.myBookings(),
         api.listPayments(),
         api.pendingReviews(),
+        api.myOffers().catch(() => ({ items: [] })),
       ]);
       setItems(bookingsRes.items || []);
       const byBooking = {};
@@ -39,12 +41,33 @@ export default function TripsScreen() {
       const pend = {};
       for (const p of pendingRes.items || []) pend[p.bookingId] = true;
       setPending(pend);
+      setOffers((offersRes.items || []).filter((o) => o.status === 'pending'));
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
   }, [api]);
+
+  async function acceptOffer(id) {
+    setError(null);
+    try {
+      await api.acceptOffer(id);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function declineOffer(id) {
+    setError(null);
+    try {
+      await api.declineOffer(id);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
 
   function openReview(bookingId) {
     setError(null);
@@ -125,6 +148,23 @@ export default function TripsScreen() {
         data={items}
         keyExtractor={(i) => i.id}
         ListEmptyComponent={<Text style={styles.meta}>No trips yet.</Text>}
+        ListHeaderComponent={offers.length > 0 ? (
+          <View style={styles.offers}>
+            <Text style={styles.offersTitle}>Offers from a host</Text>
+            {offers.map((o) => (
+              <View key={o.id} style={styles.offerCard}>
+                <Text style={styles.offerText}>
+                  {o.kind === 'special_offer' ? `Special offer: ${(o.priceCents / 100).toFixed(2)} ${o.currency}/night` : 'Pre-approved to book'}
+                </Text>
+                <Text style={styles.offerMeta}>{o.checkIn} → {o.checkOut} · {o.guests} guest(s){o.message ? ` · “${o.message}”` : ''}</Text>
+                <View style={styles.offerActions}>
+                  <Pressable style={styles.btnSm} onPress={() => acceptOffer(o.id)}><Text style={styles.btnText}>Accept & book</Text></Pressable>
+                  <Pressable onPress={() => declineOffer(o.id)}><Text style={styles.cancel}>Decline</Text></Pressable>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
         renderItem={({ item }) => {
           const pay = payments[item.id];
           const open = !!expanded[item.id];
@@ -288,6 +328,12 @@ const styles = StyleSheet.create({
   catPickLabel: { color: '#717171' },
   reviewFormActions: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 12 },
   btnSm: { backgroundColor: '#ff385c', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10 },
+  offers: { marginBottom: 16 },
+  offersTitle: { fontSize: 16, fontWeight: '800', marginBottom: 8 },
+  offerCard: { backgroundColor: '#fff5f7', borderRadius: 10, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#ffd9e0' },
+  offerText: { fontWeight: '700', color: '#222' },
+  offerMeta: { color: '#717171', marginTop: 2, marginBottom: 8 },
+  offerActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   receipt: { marginTop: 8, backgroundColor: '#fafafa', borderRadius: 8, padding: 12 },
   receiptLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
   receiptLabel: { color: '#717171' },

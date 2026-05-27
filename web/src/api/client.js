@@ -131,6 +131,11 @@ export const api = {
   createBooking: (body) => request('POST', '/bookings', { body, auth: true }),
   previewCoupon: (body) => request('POST', '/bookings/preview-coupon', { body, auth: true }),
   myBookings: () => request('GET', '/bookings/me', { auth: true }),
+  // Offers (host pre-approval / special offer)
+  myOffers: () => request('GET', '/offers', { auth: true }),
+  acceptOffer: (id) => request('POST', `/offers/${id}/accept`, { auth: true }),
+  declineOffer: (id) => request('POST', `/offers/${id}/decline`, { auth: true }),
+  sendOffer: (body) => request('POST', '/offers', { body, auth: true }),
   modifyBooking: (id, body) => request('POST', `/bookings/${id}/modify`, { body, auth: true }),
   cancelBooking: (id) => request('POST', `/bookings/${id}/cancel`, { auth: true }),
 

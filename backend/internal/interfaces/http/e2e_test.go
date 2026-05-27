@@ -24,6 +24,7 @@ import (
 	identityapp "github.com/airhost/backend/internal/application/identity"
 	messageapp "github.com/airhost/backend/internal/application/message"
 	notificationapp "github.com/airhost/backend/internal/application/notification"
+	offerapp "github.com/airhost/backend/internal/application/offer"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
 	payoutapp "github.com/airhost/backend/internal/application/payout"
 	propertyapp "github.com/airhost/backend/internal/application/property"
@@ -94,6 +95,7 @@ func newHarness(t *testing.T) *harness {
 	reportRepo := memory.NewReportRepository()
 	couponRepo := memory.NewCouponRepository()
 	userBlockRepo := memory.NewUserBlockRepository()
+	offerRepo := memory.NewOfferRepository()
 
 	dispatcher := event.NewDispatcher()
 	outbox := event.NewMemoryOutbox()
@@ -108,6 +110,7 @@ func newHarness(t *testing.T) *harness {
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, userBlockRepo, fakeStorage{}, uow)
 	userBlockSvc := userblockapp.NewService(userBlockRepo)
+	offerSvc := offerapp.NewService(offerRepo, propertyRepo, bookingSvc)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
 	notificationSvc := notificationapp.NewService(notificationRepo)
@@ -182,6 +185,7 @@ func newHarness(t *testing.T) *harness {
 			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc, ""),
 			Coupon:         handler.NewCouponHandler(couponSvc),
 			UserBlock:      handler.NewUserBlockHandler(userBlockSvc),
+			Offer:          handler.NewOfferHandler(offerSvc),
 		},
 	})
 

@@ -27,6 +27,7 @@ import (
 	identityapp "github.com/airhost/backend/internal/application/identity"
 	messageapp "github.com/airhost/backend/internal/application/message"
 	notificationapp "github.com/airhost/backend/internal/application/notification"
+	offerapp "github.com/airhost/backend/internal/application/offer"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
 	payoutapp "github.com/airhost/backend/internal/application/payout"
 	privacyapp "github.com/airhost/backend/internal/application/privacy"
@@ -107,6 +108,7 @@ func run() error {
 	reviewRepo := postgres.NewReviewRepository(pool)
 	messageRepo := postgres.NewMessageRepository(pool)
 	userBlockRepo := postgres.NewUserBlockRepository(pool)
+	offerRepo := postgres.NewOfferRepository(pool)
 	favoriteRepo := postgres.NewFavoriteRepository(pool)
 	notificationRepo := postgres.NewNotificationRepository(pool)
 	paymentRepo := postgres.NewPaymentRepository(pool)
@@ -149,6 +151,7 @@ func run() error {
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo, reviewRepo)
 	couponSvc := couponapp.NewService(couponRepo)
 	userBlockSvc := userblockapp.NewService(userBlockRepo)
+	offerSvc := offerapp.NewService(offerRepo, propertyRepo, bookingSvc)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
 	alertStateSvc := alertstateapp.NewService()
 	realtimeHub := realtime.NewHub()
@@ -206,6 +209,7 @@ func run() error {
 			Privacy:        handler.NewPrivacyHandler(privacySvc),
 			Coupon:         handler.NewCouponHandler(couponSvc),
 			UserBlock:      handler.NewUserBlockHandler(userBlockSvc),
+			Offer:          handler.NewOfferHandler(offerSvc),
 		},
 	})
 

@@ -102,15 +102,17 @@ export default function MyTrips() {
   const [reviewing, setReviewing] = useState(null);
   const [reviewed, setReviewed] = useState({});
   const [modifying, setModifying] = useState(null);
+  const [offers, setOffers] = useState([]);
 
   async function load() {
     setLoading(true);
     try {
-      const [bookingsRes, paymentsRes, guestReviews, pendingRes] = await Promise.all([
+      const [bookingsRes, paymentsRes, guestReviews, pendingRes, offersRes] = await Promise.all([
         api.myBookings(),
         api.listPayments(),
         api.myGuestReviews(),
         api.myPendingReviews(),
+        api.myOffers().catch(() => ({ items: [] })),
       ]);
       setBookings(bookingsRes.items || []);
       const byBooking = {};
@@ -118,10 +120,31 @@ export default function MyTrips() {
       setPayments(byBooking);
       setGuestRating(guestReviews?.summary || null);
       setPending(pendingRes?.items || []);
+      setOffers((offersRes?.items || []).filter((o) => o.status === 'pending'));
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function acceptOffer(id) {
+    setError(null);
+    try {
+      await api.acceptOffer(id);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function declineOffer(id) {
+    setError(null);
+    try {
+      await api.declineOffer(id);
+      load();
+    } catch (e) {
+      setError(e.message);
     }
   }
 
@@ -151,6 +174,28 @@ export default function MyTrips() {
       <h1>{t('trips.title')}</h1>
       {guestRating && guestRating.count > 0 && (
         <p className="card-meta">{t('trips.guestRating', { rating: guestRating.averageRating.toFixed(1), count: guestRating.count })}</p>
+      )}
+      {offers.length > 0 && (
+        <div className="review-prompt">
+          <strong>{t('offers.title', { count: offers.length })}</strong>
+          <ul>
+            {offers.map((o) => (
+              <li key={o.id}>
+                <span>
+                  {o.kind === 'special_offer'
+                    ? t('offers.special', { price: (o.priceCents / 100).toFixed(2), currency: o.currency })
+                    : t('offers.preApproval')}
+                  {' · '}{o.checkIn} → {o.checkOut} · {t('common.guests')}: {o.guests}
+                  {o.message ? ` · “${o.message}”` : ''}
+                </span>
+                <span className="offer-actions">
+                  <button className="btn btn-primary btn-sm" onClick={() => acceptOffer(o.id)}>{t('offers.accept')}</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => declineOffer(o.id)}>{t('offers.decline')}</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {pending.length > 0 && (
         <div className="review-prompt">

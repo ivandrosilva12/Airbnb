@@ -165,7 +165,14 @@ main:focus { outline: none; }
 .bubble-file { display: inline-block; margin-top: 6px; font-size: .85rem; text-decoration: underline; color: inherit; }
 .thread-composer button[type="button"] { padding: 8px 10px; font-size: 1.05rem; line-height: 1; }
 .thread-composer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
-.thread-header { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.thread-header { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.offer-actions { display: inline-flex; gap: 8px; }
+.offer-sent { color: #1a7f47; font-size: .85rem; }
+.offer-composer { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; width: 100%; padding: 8px 0; }
+.offer-composer label { display: flex; flex-direction: column; gap: 3px; font-size: .76rem; color: var(--muted); }
+.offer-composer input { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; }
+.offer-composer .offer-msg { flex: 1; min-width: 160px; }
+.offer-composer-actions { display: flex; gap: 8px; }
 .thread-blocked { color: #c0392b; font-size: .8rem; margin-right: auto; }
 .thread-header .btn-link-danger { padding: 0; }
 .quick-replies { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 12px 0; }

@@ -18,6 +18,7 @@ import (
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/notification"
+	"github.com/airhost/backend/internal/domain/offer"
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
@@ -1506,6 +1507,70 @@ func (r *UserBlockRepository) IsBlocked(_ context.Context, a, b uuid.UUID) (bool
 		return true, nil
 	}
 	return false, nil
+}
+
+// --- Offers ------------------------------------------------------------------
+
+// OfferRepository is an in-memory offer.Repository.
+type OfferRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]offer.Offer
+}
+
+// NewOfferRepository builds an empty in-memory offer repository.
+func NewOfferRepository() *OfferRepository {
+	return &OfferRepository{m: map[uuid.UUID]offer.Offer{}}
+}
+
+var _ offer.Repository = (*OfferRepository)(nil)
+
+func (r *OfferRepository) Create(_ context.Context, o *offer.Offer) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.m[o.ID] = *o
+	return nil
+}
+
+func (r *OfferRepository) Update(_ context.Context, o *offer.Offer) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[o.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[o.ID] = *o
+	return nil
+}
+
+func (r *OfferRepository) FindByID(_ context.Context, id uuid.UUID) (*offer.Offer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if o, ok := r.m[id]; ok {
+		c := o
+		return &c, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *OfferRepository) ListForGuest(_ context.Context, guestID uuid.UUID) ([]*offer.Offer, error) {
+	return r.listBy(func(o offer.Offer) bool { return o.GuestID == guestID }), nil
+}
+
+func (r *OfferRepository) ListForHost(_ context.Context, hostID uuid.UUID) ([]*offer.Offer, error) {
+	return r.listBy(func(o offer.Offer) bool { return o.HostID == hostID }), nil
+}
+
+func (r *OfferRepository) listBy(pred func(offer.Offer) bool) []*offer.Offer {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []*offer.Offer
+	for _, o := range r.m {
+		if pred(o) {
+			c := o
+			out = append(out, &c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out
 }
 
 // --- helpers -----------------------------------------------------------------

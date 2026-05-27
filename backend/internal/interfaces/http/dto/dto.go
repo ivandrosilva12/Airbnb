@@ -20,6 +20,7 @@ import (
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/notification"
+	"github.com/airhost/backend/internal/domain/offer"
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
@@ -789,6 +790,44 @@ func FromEnrichedReport(e reportapp.EnrichedReport) ReportView {
 	v := FromReport(e.Report)
 	v.PropertyTitle = e.PropertyTitle
 	return v
+}
+
+// OfferView is the public representation of a host's offer to a guest.
+type OfferView struct {
+	ID         uuid.UUID `json:"id"`
+	PropertyID uuid.UUID `json:"propertyId"`
+	HostID     uuid.UUID `json:"hostId"`
+	GuestID    uuid.UUID `json:"guestId"`
+	CheckIn    string    `json:"checkIn"`
+	CheckOut   string    `json:"checkOut"`
+	Guests     int       `json:"guests"`
+	PriceCents int64     `json:"priceCents"`
+	Currency   string    `json:"currency"`
+	Message    string    `json:"message,omitempty"`
+	Kind       string    `json:"kind"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"createdAt"`
+	ExpiresAt  time.Time `json:"expiresAt"`
+}
+
+// FromOffer maps an offer aggregate to its view.
+func FromOffer(o *offer.Offer) OfferView {
+	return OfferView{
+		ID:         o.ID,
+		PropertyID: o.PropertyID,
+		HostID:     o.HostID,
+		GuestID:    o.GuestID,
+		CheckIn:    o.CheckIn.Format("2006-01-02"),
+		CheckOut:   o.CheckOut.Format("2006-01-02"),
+		Guests:     o.Guests,
+		PriceCents: o.PriceCents,
+		Currency:   o.Currency,
+		Message:    o.Message,
+		Kind:       string(o.Kind),
+		Status:     string(o.Status),
+		CreatedAt:  o.CreatedAt,
+		ExpiresAt:  o.ExpiresAt,
+	}
 }
 
 // PageView wraps a paginated list response.

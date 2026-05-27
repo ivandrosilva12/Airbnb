@@ -34,6 +34,7 @@ type Handlers struct {
 	Privacy        *handler.PrivacyHandler
 	Coupon         *handler.CouponHandler
 	UserBlock      *handler.UserBlockHandler
+	Offer          *handler.OfferHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -140,6 +141,11 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.POST("/bookings/:id/modify", h.Booking.Modify)
 		auth.POST("/bookings/:id/cancel", h.Booking.Cancel)
 
+		// Offers addressed to the guest (pre-approvals / special offers).
+		auth.GET("/offers", h.Offer.ListMine)
+		auth.POST("/offers/:id/accept", h.Offer.Accept)
+		auth.POST("/offers/:id/decline", h.Offer.Decline)
+
 		// Reviews (guest -> property, and host -> guest).
 		auth.POST("/reviews", h.Review.Create)
 		auth.PATCH("/reviews/:id", h.Review.Edit)
@@ -220,6 +226,11 @@ func NewRouter(d Deps) *gin.Engine {
 			host.GET("/properties/:id/bookings", h.Booking.ListForProperty)
 			host.POST("/bookings/:id/confirm", h.Booking.Confirm)
 			host.POST("/bookings/:id/complete", h.Booking.Complete)
+
+			// Host offers (pre-approval / special offer) to guests.
+			host.POST("/offers", h.Offer.Create)
+			host.GET("/offers/sent", h.Offer.ListSent)
+			host.POST("/offers/:id/withdraw", h.Offer.Withdraw)
 
 			// Calendar blocks.
 			host.GET("/properties/:id/blocks", h.Block.ListForProperty)
