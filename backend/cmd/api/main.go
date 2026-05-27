@@ -130,8 +130,11 @@ func run() error {
 
 	// --- Application services ---------------------------------------------
 	userSvc := userapp.NewService(userRepo)
-	propertySvc := propertyapp.NewService(propertyRepo, objectStore)
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, cfg.Pricing.ServiceFeeRate, uow)
+	// Identity (KYC) is wired first so the booking and property services can gate
+	// on it when the REQUIRE_KYC_* policy flags are enabled.
+	identitySvc := identityapp.NewService(identityRepo, uow)
+	propertySvc := propertyapp.NewService(propertyRepo, objectStore, identitySvc, cfg.Identity.RequireKYCToHost)
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, cfg.Pricing.ServiceFeeRate, identitySvc, cfg.Identity.RequireKYCToBook, uow)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, userBlockRepo, objectStore, uow)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
@@ -143,7 +146,6 @@ func run() error {
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment))
 	privacySvc := privacyapp.NewService(userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo)
-	identitySvc := identityapp.NewService(identityRepo, uow)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo, reviewRepo)
 	couponSvc := couponapp.NewService(couponRepo)
 	userBlockSvc := userblockapp.NewService(userBlockRepo)

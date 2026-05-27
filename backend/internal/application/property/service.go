@@ -13,15 +13,25 @@ import (
 	"github.com/google/uuid"
 )
 
-// Service orchestrates property use cases.
-type Service struct {
-	repo    property.Repository
-	storage port.Storage
+// IdentityVerifier reports whether a user has a verified identity. The property
+// service consults it when KYC gating is enabled, before a host publishes.
+type IdentityVerifier interface {
+	IsVerified(ctx context.Context, userID uuid.UUID) (bool, error)
 }
 
-// NewService wires the property application service.
-func NewService(repo property.Repository, storage port.Storage) *Service {
-	return &Service{repo: repo, storage: storage}
+// Service orchestrates property use cases.
+type Service struct {
+	repo       property.Repository
+	storage    port.Storage
+	identity   IdentityVerifier
+	requireKYC bool
+}
+
+// NewService wires the property application service. When requireKYC is true, a
+// host must have a verified identity (per the IdentityVerifier) before
+// publishing a listing.
+func NewService(repo property.Repository, storage port.Storage, identity IdentityVerifier, requireKYC bool) *Service {
+	return &Service{repo: repo, storage: storage, identity: identity, requireKYC: requireKYC}
 }
 
 // CreateInput carries the data required to create a listing.
@@ -194,6 +204,15 @@ func (s *Service) Publish(ctx context.Context, actorID, propertyID uuid.UUID) (*
 	p, err := s.ownedProperty(ctx, actorID, propertyID)
 	if err != nil {
 		return nil, err
+	}
+	if s.requireKYC {
+		verified, err := s.identity.IsVerified(ctx, actorID)
+		if err != nil {
+			return nil, err
+		}
+		if !verified {
+			return nil, shared.NewValidationError("verify your identity before publishing a listing")
+		}
 	}
 	if err := p.Publish(); err != nil {
 		return nil, err

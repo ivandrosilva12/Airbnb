@@ -19,6 +19,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// IdentityVerifier reports whether a user has a verified identity. The booking
+// service consults it when KYC gating is enabled.
+type IdentityVerifier interface {
+	IsVerified(ctx context.Context, userID uuid.UUID) (bool, error)
+}
+
 // Service orchestrates booking use cases.
 type Service struct {
 	bookings       booking.Repository
@@ -26,14 +32,18 @@ type Service struct {
 	blocks         block.Repository
 	coupons        coupon.Repository
 	serviceFeeRate float64
+	identity       IdentityVerifier
+	requireKYC     bool
 	uow            port.UnitOfWork
 }
 
 // NewService wires the booking application service. serviceFeeRate is the
-// platform fee applied to each booking (e.g. 0.12 for 12%). The UnitOfWork makes
-// the booking write and its domain event commit atomically.
-func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, coupons coupon.Repository, serviceFeeRate float64, uow port.UnitOfWork) *Service {
-	return &Service{bookings: bookings, properties: properties, blocks: blocks, coupons: coupons, serviceFeeRate: serviceFeeRate, uow: uow}
+// platform fee applied to each booking (e.g. 0.12 for 12%). When requireKYC is
+// true, a guest must have a verified identity (per the IdentityVerifier) before
+// booking. The UnitOfWork makes the booking write and its domain event commit
+// atomically.
+func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, coupons coupon.Repository, serviceFeeRate float64, identity IdentityVerifier, requireKYC bool, uow port.UnitOfWork) *Service {
+	return &Service{bookings: bookings, properties: properties, blocks: blocks, coupons: coupons, serviceFeeRate: serviceFeeRate, identity: identity, requireKYC: requireKYC, uow: uow}
 }
 
 // emit runs the booking write and records the event(s) in one transaction, so
@@ -76,6 +86,15 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	}
 	if err := prop.CanBeBookedBy(in.GuestID); err != nil {
 		return nil, err
+	}
+	if s.requireKYC {
+		verified, err := s.identity.IsVerified(ctx, in.GuestID)
+		if err != nil {
+			return nil, err
+		}
+		if !verified {
+			return nil, shared.NewValidationError("verify your identity before booking")
+		}
 	}
 	if in.Guests > prop.MaxGuests {
 		return nil, shared.NewValidationError("number of guests exceeds property capacity")

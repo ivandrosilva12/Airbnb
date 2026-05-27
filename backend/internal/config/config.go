@@ -22,6 +22,15 @@ type Config struct {
 	Payment  PaymentConfig
 	Security SecurityConfig
 	Alerting AlertingConfig
+	Identity IdentityConfig
+}
+
+// IdentityConfig holds the KYC gating policy. When a flag is on, the matching
+// action requires the actor to have a verified identity. Both default off so
+// the platform is usable without KYC unless an operator opts in.
+type IdentityConfig struct {
+	RequireKYCToBook bool // a guest must be verified to create a booking
+	RequireKYCToHost bool // a host must be verified to publish a listing
 }
 
 // AlertingConfig holds settings for operating the alerting stack. When
@@ -261,6 +270,10 @@ func Load() (*Config, error) {
 		Alerting: AlertingConfig{
 			AlertmanagerURL: getEnv("ALERTMANAGER_URL", ""),
 			WebhookToken:    getEnv("ALERT_WEBHOOK_TOKEN", ""),
+		},
+		Identity: IdentityConfig{
+			RequireKYCToBook: getBool("REQUIRE_KYC_TO_BOOK", false),
+			RequireKYCToHost: getBool("REQUIRE_KYC_TO_HOST", false),
 		},
 	}
 

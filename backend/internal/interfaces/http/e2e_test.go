@@ -101,8 +101,10 @@ func newHarness(t *testing.T) *harness {
 	uow := memory.NewUnitOfWork(bookingRepo, messageRepo, identityRepo, outbox, relay)
 
 	userSvc := userapp.NewService(userRepo)
-	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{})
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, 0.10, uow) // 10% service fee
+	identitySvc := identityapp.NewService(identityRepo, uow)
+	// KYC gating off in the e2e harness (the suite books/publishes without KYC).
+	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{}, identitySvc, false)
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, 0.10, identitySvc, false, uow) // 10% service fee
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, userBlockRepo, fakeStorage{}, uow)
 	userBlockSvc := userblockapp.NewService(userBlockRepo)
@@ -115,7 +117,6 @@ func newHarness(t *testing.T) *harness {
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewFakeDisburser(), paymentgw.NewFakeConnectGateway())
-	identitySvc := identityapp.NewService(identityRepo, uow)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo, reviewRepo)
 	couponSvc := couponapp.NewService(couponRepo)
 	silencer := newMemSilencer()

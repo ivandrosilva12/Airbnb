@@ -33,7 +33,7 @@ func newFixture(t *testing.T) *fixture {
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
 	uow := memory.NewUnitOfWork(bookings, nil, nil, outbox, relay)
-	svc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), coupons, 0, uow)
+	svc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), coupons, 0, stubVerifier{}, false, uow)
 
 	hostID := uuid.New()
 	price, _ := shared.NewMoney(10000, "EUR") // 100.00/night
@@ -55,6 +55,34 @@ func newFixture(t *testing.T) *fixture {
 }
 
 func days(n int) time.Time { return time.Now().UTC().AddDate(0, 0, n) }
+
+// stubVerifier is a test IdentityVerifier with a fixed set of verified users.
+type stubVerifier struct{ verified map[uuid.UUID]bool }
+
+func (s stubVerifier) IsVerified(_ context.Context, id uuid.UUID) (bool, error) {
+	return s.verified[id], nil
+}
+
+func TestCreate_KYCGatingBlocksUnverifiedGuest(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	// A second booking service over the same repos, with KYC gating enabled.
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, outbox, relay)
+	verifier := stubVerifier{verified: map[uuid.UUID]bool{}}
+	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, 0, verifier, true, uow)
+
+	// An unverified guest is refused.
+	if _, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1}); err == nil {
+		t.Fatal("expected an unverified guest to be blocked by KYC gating")
+	}
+	// Once verified, the booking goes through.
+	verifier.verified[f.guestID] = true
+	if _, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1}); err != nil {
+		t.Fatalf("a verified guest should be able to book: %v", err)
+	}
+}
 
 func TestCreate_HappyPathDerivesPrice(t *testing.T) {
 	f := newFixture(t)
