@@ -26,6 +26,52 @@ func makeProperty(t *testing.T, props *memory.PropertyRepository) uuid.UUID {
 	return p.ID
 }
 
+func TestShareCollection(t *testing.T) {
+	ctx := context.Background()
+	favs := memory.NewFavoriteRepository()
+	props := memory.NewPropertyRepository()
+	svc := favoriteapp.NewService(favs, props)
+
+	userID := uuid.New()
+	propA := makeProperty(t, props)
+	col, err := svc.CreateCollection(ctx, userID, "Lisbon faves")
+	if err != nil {
+		t.Fatalf("create collection: %v", err)
+	}
+	if err := svc.Add(ctx, userID, propA, &col.ID); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	// An unknown token is not found.
+	if _, err := svc.GetSharedCollection(ctx, "nope", shared.NewPage(0, 0)); err != shared.ErrNotFound {
+		t.Fatalf("unknown token err = %v, want ErrNotFound", err)
+	}
+
+	token, err := svc.ShareCollection(ctx, userID, col.ID)
+	if err != nil {
+		t.Fatalf("share: %v", err)
+	}
+	if token == "" {
+		t.Fatal("expected a non-empty share token")
+	}
+
+	shared1, err := svc.GetSharedCollection(ctx, token, shared.NewPage(0, 0))
+	if err != nil {
+		t.Fatalf("get shared: %v", err)
+	}
+	if shared1.Name != "Lisbon faves" || len(shared1.Listings.Items) != 1 || shared1.Listings.Items[0].ID != propA {
+		t.Fatalf("shared view = %q with %d listings, want the collection with propA", shared1.Name, len(shared1.Listings.Items))
+	}
+
+	// Unsharing revokes access by the old token.
+	if err := svc.UnshareCollection(ctx, userID, col.ID); err != nil {
+		t.Fatalf("unshare: %v", err)
+	}
+	if _, err := svc.GetSharedCollection(ctx, token, shared.NewPage(0, 0)); err != shared.ErrNotFound {
+		t.Fatalf("after unshare err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestWishlistCollections(t *testing.T) {
 	ctx := context.Background()
 	favs := memory.NewFavoriteRepository()

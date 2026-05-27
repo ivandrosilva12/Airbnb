@@ -92,6 +92,8 @@ func NewRouter(d Deps) *gin.Engine {
 	api.GET("/properties/:id/calendar.ics", h.Booking.CalendarICS)
 	api.GET("/properties/:id/reviews", h.Review.ListForProperty)
 	api.GET("/properties/:id/reviews/summary", h.Review.Summary)
+		// Publicly shared wishlist collection (anyone with the link).
+		api.GET("/shared/collections/:token", h.Favorite.GetShared)
 
 	// Payment gateway webhooks (authenticated by per-provider signature, not by a
 	// user token, so they live outside the auth group). Rate-limited per IP to
@@ -174,6 +176,8 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.GET("/wishlist/collections", h.Favorite.ListCollections)
 		auth.POST("/wishlist/collections", h.Favorite.CreateCollection)
 		auth.DELETE("/wishlist/collections/:id", h.Favorite.DeleteCollection)
+		auth.POST("/wishlist/collections/:id/share", h.Favorite.Share)
+		auth.DELETE("/wishlist/collections/:id/share", h.Favorite.Unshare)
 
 		// Report a listing for moderation (any authenticated user).
 		auth.POST("/properties/:id/reports", h.Report.Create)

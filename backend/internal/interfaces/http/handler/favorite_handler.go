@@ -197,6 +197,61 @@ func (h *FavoriteHandler) DeleteCollection(c *gin.Context) {
 	response.NoContent(c)
 }
 
+// Share turns on a public share link for a collection and returns its token.
+func (h *FavoriteHandler) Share(c *gin.Context) {
+	userID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	token, err := h.svc.ShareCollection(c.Request.Context(), userID, id)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, gin.H{"shareToken": token})
+}
+
+// Unshare revokes a collection's public share link.
+func (h *FavoriteHandler) Unshare(c *gin.Context) {
+	userID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.svc.UnshareCollection(c.Request.Context(), userID, id); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.NoContent(c)
+}
+
+// GetShared returns a publicly shared collection (name + listings) by its share
+// token. No authentication required — anyone holding the link may view it.
+func (h *FavoriteHandler) GetShared(c *gin.Context) {
+	token := c.Param("token")
+	res, err := h.svc.GetSharedCollection(c.Request.Context(), token, pageFromQuery(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	items := make([]dto.PropertyView, 0, len(res.Listings.Items))
+	for _, p := range res.Listings.Items {
+		items = append(items, dto.FromProperty(p))
+	}
+	response.OK(c, gin.H{
+		"name":  res.Name,
+		"items": items,
+		"total": res.Listings.Total,
+	})
+}
+
 // optionalCollectionID parses an optional collection id from a request body
 // field: empty means the default bucket (nil); a malformed value is a 400.
 func optionalCollectionID(c *gin.Context, raw string) (*uuid.UUID, bool) {

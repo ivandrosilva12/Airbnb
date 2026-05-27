@@ -326,19 +326,21 @@ func FromReviewSummary(s review.Summary) ReviewSummaryView {
 // CollectionView is the public representation of a wishlist collection, with the
 // number of listings saved in it.
 type CollectionView struct {
-	ID        uuid.UUID `json:"id"`
-	Name      string    `json:"name"`
-	Count     int       `json:"count"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID         uuid.UUID `json:"id"`
+	Name       string    `json:"name"`
+	Count      int       `json:"count"`
+	ShareToken string    `json:"shareToken,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 // FromCollection maps a collection (with its count) to its view.
 func FromCollection(c favorite.CollectionWithCount) CollectionView {
 	return CollectionView{
-		ID:        c.Collection.ID,
-		Name:      c.Collection.Name,
-		Count:     c.Count,
-		CreatedAt: c.Collection.CreatedAt,
+		ID:         c.Collection.ID,
+		Name:       c.Collection.Name,
+		Count:      c.Count,
+		ShareToken: c.Collection.ShareToken,
+		CreatedAt:  c.Collection.CreatedAt,
 	}
 }
 

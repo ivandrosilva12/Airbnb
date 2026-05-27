@@ -86,6 +86,8 @@ main:focus { outline: none; }
 .chip-x { font-weight: 700; opacity: .7; cursor: pointer; }
 .chip-x:hover { opacity: 1; }
 .wishlist-new { display: flex; gap: 8px; margin-bottom: 8px; }
+.wishlist-share { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.wishlist-share input { flex: 1; min-width: 220px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface, #f7f7f7); color: var(--muted, #555); }
 .wishlist-new input { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: .9rem; }
 .wishlist-item { display: flex; flex-direction: column; gap: 6px; }
 .wishlist-move { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: .82rem; background: #fff; }

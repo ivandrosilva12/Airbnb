@@ -209,6 +209,9 @@ export const api = {
   listCollections: () => request('GET', '/wishlist/collections', { auth: true }),
   createCollection: (name) => request('POST', '/wishlist/collections', { body: { name }, auth: true }),
   deleteCollection: (id) => request('DELETE', `/wishlist/collections/${id}`, { auth: true }),
+  shareCollection: (id) => request('POST', `/wishlist/collections/${id}/share`, { auth: true }),
+  unshareCollection: (id) => request('DELETE', `/wishlist/collections/${id}/share`, { auth: true }),
+  getSharedCollection: (token) => request('GET', `/shared/collections/${encodeURIComponent(token)}`),
 
   // Notifications
   listNotifications: () => request('GET', '/notifications', { auth: true }),

@@ -881,6 +881,36 @@ func (r *FavoriteRepository) FindCollection(_ context.Context, userID, collectio
 	return nil, shared.ErrNotFound
 }
 
+func (r *FavoriteRepository) SetCollectionShareToken(_ context.Context, userID, collectionID uuid.UUID, token string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	list := r.collections[userID]
+	for i := range list {
+		if list[i].ID == collectionID {
+			list[i].ShareToken = token
+			return nil
+		}
+	}
+	return shared.ErrNotFound
+}
+
+func (r *FavoriteRepository) FindCollectionByShareToken(_ context.Context, token string) (*favorite.Collection, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if token == "" {
+		return nil, shared.ErrNotFound
+	}
+	for _, list := range r.collections {
+		for _, c := range list {
+			if c.ShareToken == token {
+				cc := c
+				return &cc, nil
+			}
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
 // --- Notifications -----------------------------------------------------------
 
 // NotificationRepository is an in-memory notification.Repository.

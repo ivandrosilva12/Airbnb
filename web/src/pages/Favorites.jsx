@@ -81,6 +81,31 @@ export default function Favorites() {
     }
   }
 
+  async function shareCurrent() {
+    try {
+      await api.shareCollection(filter);
+      loadCollections();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function unshareCurrent() {
+    if (!window.confirm(t('fav.unshareConfirm'))) return;
+    try {
+      await api.unshareCollection(filter);
+      loadCollections();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function shareUrl(token) {
+    return `${window.location.origin}/wishlist/${token}`;
+  }
+
+  const selected = collections.find((c) => c.id === filter);
+
   const chip = (key, label, extra) => (
     <button
       key={key}
@@ -137,6 +162,22 @@ export default function Favorites() {
         />
         <button className="btn btn-ghost" type="submit">{t('fav.create')}</button>
       </form>
+
+      {selected && (
+        <div className="wishlist-share">
+          {selected.shareToken ? (
+            <>
+              <input readOnly value={shareUrl(selected.shareToken)} aria-label={t('fav.shareLink')} onFocus={(e) => e.target.select()} />
+              <button className="btn btn-ghost" type="button" onClick={() => navigator.clipboard?.writeText(shareUrl(selected.shareToken))}>
+                {t('fav.copyLink')}
+              </button>
+              <button className="btn-link-danger" type="button" onClick={unshareCurrent}>{t('fav.unshare')}</button>
+            </>
+          ) : (
+            <button className="btn btn-ghost" type="button" onClick={shareCurrent}>🔗 {t('fav.share')}</button>
+          )}
+        </div>
+      )}
 
       {error && <p className="error">{error}</p>}
       {loading ? (

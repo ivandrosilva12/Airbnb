@@ -13,3 +13,6 @@ export const KEYCLOAK_URL = isWeb ? 'http://localhost:8080' : (extra.keycloakUrl
 export const KEYCLOAK_REALM = extra.keycloakRealm ?? 'airhost';
 export const KEYCLOAK_CLIENT_ID = extra.keycloakClientId ?? 'airhost-web';
 export const KEYCLOAK_ISSUER = `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}`;
+
+// Public web app origin, used to build shareable links (e.g. a shared wishlist).
+export const WEB_BASE_URL = extra.webBaseUrl ?? 'http://localhost:5173';

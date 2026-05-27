@@ -16,6 +16,7 @@ import HostPhotos from './pages/HostPhotos';
 import HostEarnings from './pages/HostEarnings';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
+import SharedWishlist from './pages/SharedWishlist';
 
 function Protected({ children, requireHost, requireAdmin }) {
   const { ready, authenticated, isHost, isAdmin, login } = useAuth();
@@ -45,6 +46,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/properties/:id" element={<PropertyDetail />} />
+            <Route path="/wishlist/:token" element={<SharedWishlist />} />
             <Route path="/trips" element={<Protected><MyTrips /></Protected>} />
             <Route path="/saved" element={<Protected><Favorites /></Protected>} />
             <Route path="/messages" element={<Protected><Messages /></Protected>} />

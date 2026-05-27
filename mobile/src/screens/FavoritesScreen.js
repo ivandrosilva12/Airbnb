@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, FlatList, Image, Pressable, TextInput, StyleSheet, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import { View, Text, FlatList, Image, Pressable, TextInput, StyleSheet, ActivityIndicator, ScrollView, Alert, Share } from 'react-native';
 import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
+import { WEB_BASE_URL } from '../config';
 
 export default function FavoritesScreen({ navigation }) {
   const api = useApi();
@@ -98,6 +99,35 @@ export default function FavoritesScreen({ navigation }) {
     }
   }
 
+  // Turn on a public link for the selected collection and open the share sheet.
+  async function shareCurrent(collection) {
+    try {
+      const token = collection.shareToken || (await api.shareCollection(collection.id)).shareToken;
+      await loadCollections();
+      await Share.share({ message: `${collection.name} — ${WEB_BASE_URL}/wishlist/${token}` });
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function confirmUnshare(id) {
+    Alert.alert('Stop sharing', 'The current link will stop working.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Stop sharing',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.unshareCollection(id);
+            loadCollections();
+          } catch (e) {
+            setError(e.message);
+          }
+        },
+      },
+    ]);
+  }
+
   if (!authenticated) {
     return (
       <View style={styles.center}>
@@ -142,6 +172,23 @@ export default function FavoritesScreen({ navigation }) {
         />
         <Pressable style={styles.newBtn} onPress={createCollection}><Text style={styles.newBtnText}>Add</Text></Pressable>
       </View>
+
+      {(() => {
+        const selected = collections.find((c) => c.id === filter);
+        if (!selected) return null;
+        return (
+          <View style={styles.shareRow}>
+            <Pressable onPress={() => shareCurrent(selected)}>
+              <Text style={styles.shareText}>🔗 {selected.shareToken ? 'Share link' : 'Share this collection'}</Text>
+            </Pressable>
+            {selected.shareToken && (
+              <Pressable onPress={() => confirmUnshare(selected.id)}>
+                <Text style={styles.unshareText}>Stop sharing</Text>
+              </Pressable>
+            )}
+          </View>
+        );
+      })()}
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} color="#ff385c" />
@@ -201,6 +248,9 @@ const styles = StyleSheet.create({
   newInput: { flex: 1, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#ddd', paddingHorizontal: 12, paddingVertical: 8 },
   newBtn: { backgroundColor: '#222', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' },
   newBtnText: { color: '#fff', fontWeight: '700' },
+  shareRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  shareText: { color: '#ff385c', fontWeight: '700' },
+  unshareText: { color: '#c0392b', textDecorationLine: 'underline' },
   card: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#eee' },
   photo: { width: '100%', height: 160 },
   placeholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0f0f0' },

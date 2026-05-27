@@ -36,4 +36,11 @@ type Repository interface {
 	ListCollections(ctx context.Context, userID uuid.UUID) ([]CollectionWithCount, error)
 	// FindCollection loads a collection the user owns (for ownership checks).
 	FindCollection(ctx context.Context, userID, collectionID uuid.UUID) (*Collection, error)
+	// SetCollectionShareToken sets (or clears, when token is empty) a collection's
+	// public share token. The collection must belong to the user; returns
+	// ErrNotFound otherwise.
+	SetCollectionShareToken(ctx context.Context, userID, collectionID uuid.UUID, token string) error
+	// FindCollectionByShareToken loads a collection by its public share token,
+	// regardless of owner. Returns ErrNotFound when the token is unknown.
+	FindCollectionByShareToken(ctx context.Context, token string) (*Collection, error)
 }

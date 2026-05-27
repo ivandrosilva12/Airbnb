@@ -125,3 +125,61 @@ func (s *Service) DeleteCollection(ctx context.Context, userID, collectionID uui
 func (s *Service) ListCollections(ctx context.Context, userID uuid.UUID) ([]favorite.CollectionWithCount, error) {
 	return s.favorites.ListCollections(ctx, userID)
 }
+
+// ShareCollection turns on a public share link for a collection the user owns
+// and returns the share token.
+func (s *Service) ShareCollection(ctx context.Context, userID, collectionID uuid.UUID) (string, error) {
+	c, err := s.favorites.FindCollection(ctx, userID, collectionID)
+	if err != nil {
+		return "", err
+	}
+	token := c.Share()
+	if err := s.favorites.SetCollectionShareToken(ctx, userID, collectionID, token); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// UnshareCollection revokes a collection's public share link.
+func (s *Service) UnshareCollection(ctx context.Context, userID, collectionID uuid.UUID) error {
+	return s.favorites.SetCollectionShareToken(ctx, userID, collectionID, "")
+}
+
+// SharedCollection is the public read-model of a shared wishlist: the
+// collection's name and the listings saved in it.
+type SharedCollection struct {
+	Name     string
+	Listings shared.PageResult[*property.Property]
+}
+
+// GetSharedCollection resolves a public share token to the collection's name and
+// its listings (hydrated; listings since deleted are skipped). No auth required.
+func (s *Service) GetSharedCollection(ctx context.Context, token string, page shared.Page) (SharedCollection, error) {
+	c, err := s.favorites.FindCollectionByShareToken(ctx, token)
+	if err != nil {
+		return SharedCollection{}, err
+	}
+	id := c.ID
+	ids, err := s.favorites.ListPropertyIDsInCollection(ctx, c.UserID, &id, page)
+	if err != nil {
+		return SharedCollection{}, err
+	}
+	loaded, err := s.properties.FindByIDs(ctx, ids.Items)
+	if err != nil {
+		return SharedCollection{}, err
+	}
+	byID := make(map[uuid.UUID]*property.Property, len(loaded))
+	for _, p := range loaded {
+		byID[p.ID] = p
+	}
+	items := make([]*property.Property, 0, len(ids.Items))
+	for _, pid := range ids.Items {
+		if p, ok := byID[pid]; ok {
+			items = append(items, p)
+		}
+	}
+	return SharedCollection{
+		Name:     c.Name,
+		Listings: shared.PageResult[*property.Property]{Items: items, Total: ids.Total},
+	}, nil
+}

@@ -133,7 +133,7 @@ func (r *FavoriteRepository) DeleteCollection(ctx context.Context, userID, colle
 
 func (r *FavoriteRepository) ListCollections(ctx context.Context, userID uuid.UUID) ([]favorite.CollectionWithCount, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT c.id, c.user_id, c.name, c.created_at, count(f.property_id)
+		SELECT c.id, c.user_id, c.name, COALESCE(c.share_token, ''), c.created_at, count(f.property_id)
 		FROM wishlist_collections c
 		LEFT JOIN favorites f ON f.collection_id = c.id
 		WHERE c.user_id=$1
@@ -149,7 +149,7 @@ func (r *FavoriteRepository) ListCollections(ctx context.Context, userID uuid.UU
 			c     favorite.Collection
 			count int
 		)
-		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &c.CreatedAt, &count); err != nil {
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &c.ShareToken, &c.CreatedAt, &count); err != nil {
 			return nil, mapError(err)
 		}
 		cc := c
@@ -161,9 +161,36 @@ func (r *FavoriteRepository) ListCollections(ctx context.Context, userID uuid.UU
 func (r *FavoriteRepository) FindCollection(ctx context.Context, userID, collectionID uuid.UUID) (*favorite.Collection, error) {
 	var c favorite.Collection
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, user_id, name, created_at FROM wishlist_collections WHERE id=$1 AND user_id=$2`,
+		`SELECT id, user_id, name, COALESCE(share_token, ''), created_at FROM wishlist_collections WHERE id=$1 AND user_id=$2`,
 		collectionID, userID,
-	).Scan(&c.ID, &c.UserID, &c.Name, &c.CreatedAt)
+	).Scan(&c.ID, &c.UserID, &c.Name, &c.ShareToken, &c.CreatedAt)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &c, nil
+}
+
+func (r *FavoriteRepository) SetCollectionShareToken(ctx context.Context, userID, collectionID uuid.UUID, token string) error {
+	// Store NULL (not '') when unsharing so the partial unique index ignores it.
+	ct, err := r.pool.Exec(ctx,
+		`UPDATE wishlist_collections SET share_token=NULLIF($3, '') WHERE id=$1 AND user_id=$2`,
+		collectionID, userID, token,
+	)
+	if err != nil {
+		return mapError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
+func (r *FavoriteRepository) FindCollectionByShareToken(ctx context.Context, token string) (*favorite.Collection, error) {
+	var c favorite.Collection
+	err := r.pool.QueryRow(ctx,
+		`SELECT id, user_id, name, COALESCE(share_token, ''), created_at FROM wishlist_collections WHERE share_token=$1`,
+		token,
+	).Scan(&c.ID, &c.UserID, &c.Name, &c.ShareToken, &c.CreatedAt)
 	if err != nil {
 		return nil, mapError(err)
 	}
