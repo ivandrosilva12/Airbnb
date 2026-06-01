@@ -13,15 +13,47 @@ import (
 	"github.com/google/uuid"
 )
 
+// CohostAuthorizer is the relaxed permission gate used to admit a co-host
+// with PermManagePricing on a listing they don't own. The pricerule service
+// defers to it when set; otherwise it falls back to strict ownership.
+type CohostAuthorizer interface {
+	Authorize(ctx context.Context, actorID, propertyID uuid.UUID, required property.CohostPermission) (*property.Property, error)
+}
+
 // Service orchestrates price-rule use cases.
 type Service struct {
 	rules      pricerule.Repository
 	properties property.Repository
+	cohosts    CohostAuthorizer
 }
 
 // NewService wires the price-rule application service.
 func NewService(rules pricerule.Repository, properties property.Repository) *Service {
 	return &Service{rules: rules, properties: properties}
+}
+
+// WithCohosts plugs in the relaxed gate so co-hosts with manage_pricing may
+// add/list/remove rules. Returns the receiver for chaining.
+func (s *Service) WithCohosts(c CohostAuthorizer) *Service {
+	s.cohosts = c
+	return s
+}
+
+// access resolves the calling user to the listing they're acting on, honouring
+// the co-host gate when configured. The strict path (ownership only) is used
+// when no authorizer was wired — preserves the pre-S17 behaviour.
+func (s *Service) access(ctx context.Context, actorID, propertyID uuid.UUID) (*property.Property, error) {
+	if s.cohosts != nil {
+		return s.cohosts.Authorize(ctx, actorID, propertyID, property.PermManagePricing)
+	}
+	prop, err := s.properties.FindByID(ctx, propertyID)
+	if err != nil {
+		return nil, err
+	}
+	if !prop.IsOwnedBy(actorID) {
+		return nil, shared.ErrForbidden
+	}
+	return prop, nil
 }
 
 // CreateInput carries the data required to add a price rule to a listing.
@@ -34,16 +66,14 @@ type CreateInput struct {
 	Label      string
 }
 
-// Create adds a price rule on a listing the host owns. The new rule must not
-// overlap any existing rule on the same property (host can delete first then
-// re-add if they want to replace a range).
+// Create adds a price rule on a listing the caller may manage (primary host
+// or co-host with manage_pricing). The new rule must not overlap any existing
+// rule on the same property (caller can delete first then re-add if they want
+// to replace a range).
 func (s *Service) Create(ctx context.Context, in CreateInput) (*pricerule.Rule, error) {
-	prop, err := s.properties.FindByID(ctx, in.PropertyID)
+	prop, err := s.access(ctx, in.HostID, in.PropertyID)
 	if err != nil {
 		return nil, err
-	}
-	if !prop.IsOwnedBy(in.HostID) {
-		return nil, shared.ErrForbidden
 	}
 	rule, err := pricerule.New(in.PropertyID, in.StartDate, in.EndDate, in.PriceCents, prop.PricePerNight.Currency(), in.Label)
 	if err != nil {
@@ -62,26 +92,20 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*pricerule.Rule, 
 	return rule, nil
 }
 
-// ListForHost returns every price rule attached to a listing the host owns.
+// ListForHost returns every price rule attached to a listing the caller may
+// manage (primary host or co-host with manage_pricing).
 func (s *Service) ListForHost(ctx context.Context, hostID, propertyID uuid.UUID) ([]*pricerule.Rule, error) {
-	prop, err := s.properties.FindByID(ctx, propertyID)
-	if err != nil {
+	if _, err := s.access(ctx, hostID, propertyID); err != nil {
 		return nil, err
-	}
-	if !prop.IsOwnedBy(hostID) {
-		return nil, shared.ErrForbidden
 	}
 	return s.rules.ListByProperty(ctx, propertyID)
 }
 
-// Delete removes a price rule on a listing the host owns.
+// Delete removes a price rule on a listing the caller may manage (primary
+// host or co-host with manage_pricing).
 func (s *Service) Delete(ctx context.Context, hostID, propertyID, ruleID uuid.UUID) error {
-	prop, err := s.properties.FindByID(ctx, propertyID)
-	if err != nil {
+	if _, err := s.access(ctx, hostID, propertyID); err != nil {
 		return err
-	}
-	if !prop.IsOwnedBy(hostID) {
-		return shared.ErrForbidden
 	}
 	return s.rules.Delete(ctx, propertyID, ruleID)
 }

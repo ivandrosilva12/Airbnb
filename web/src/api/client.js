@@ -222,6 +222,15 @@ export const api = {
   createPriceRule: (propertyId, body) => request('POST', `/properties/${propertyId}/price-rules`, { body, auth: true }),
   deletePriceRule: (propertyId, ruleId) => request('DELETE', `/properties/${propertyId}/price-rules/${ruleId}`, { auth: true }),
 
+  // Co-hosts (primary host invites and revokes; the cohost lists their listings).
+  listCohosts: (propertyId) => request('GET', `/host/properties/${propertyId}/cohosts`, { auth: true }),
+  inviteCohost: (propertyId, body) => request('POST', `/host/properties/${propertyId}/cohosts`, { body, auth: true }),
+  updateCohostPermissions: (propertyId, cohostId, permissions) =>
+    request('PATCH', `/host/properties/${propertyId}/cohosts/${cohostId}`, { body: { permissions }, auth: true }),
+  revokeCohost: (propertyId, cohostId) =>
+    request('DELETE', `/host/properties/${propertyId}/cohosts/${cohostId}`, { auth: true }),
+  myCohostListings: () => request('GET', '/me/cohost-listings', { auth: true }),
+
   // Availability (public)
   availability: (id, params = {}) => {
     const qs = new URLSearchParams(params).toString();

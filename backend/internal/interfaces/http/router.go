@@ -39,6 +39,7 @@ type Handlers struct {
 	PriceRule      *handler.PriceRuleHandler
 	PushToken      *handler.PushTokenHandler
 	Dispute        *handler.DisputeHandler
+	Cohost         *handler.CohostHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -213,6 +214,25 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.POST("/me/push-tokens", h.PushToken.Register)
 		auth.POST("/me/push-tokens/unregister", h.PushToken.Unregister)
 
+		// "Listings I help manage" — surfaces co-host grants regardless of
+		// whether the caller has the host role (a co-host is a regular user
+		// the primary host invited; they don't need to be a host themselves).
+		auth.GET("/me/cohost-listings", h.Cohost.ListMine)
+
+		// Calendar blocks and seasonal price rules: the per-listing gate
+		// (primary host OR co-host with the matching permission) lives in
+		// the application service, so these sit on the authenticated group
+		// rather than the host-only group. A user who's neither owner nor
+		// a co-host on the listing is rejected at the application layer
+		// with 403.
+		auth.GET("/properties/:id/blocks", h.Block.ListForProperty)
+		auth.POST("/properties/:id/blocks", h.Block.Create)
+		auth.POST("/properties/:id/calendar/import", h.Block.ImportCalendar)
+		auth.DELETE("/blocks/:id", h.Block.Delete)
+		auth.GET("/properties/:id/price-rules", h.PriceRule.ListForProperty)
+		auth.POST("/properties/:id/price-rules", h.PriceRule.Create)
+		auth.DELETE("/properties/:id/price-rules/:ruleId", h.PriceRule.Delete)
+
 		// Resolution Center — guests/hosts open and participate in post-stay
 		// cases; admins decide them (separate route group below).
 		auth.POST("/bookings/:id/disputes", h.Dispute.Open)
@@ -259,16 +279,19 @@ func NewRouter(d Deps) *gin.Engine {
 			host.GET("/offers/sent", h.Offer.ListSent)
 			host.POST("/offers/:id/withdraw", h.Offer.Withdraw)
 
-			// Calendar blocks.
-			host.GET("/properties/:id/blocks", h.Block.ListForProperty)
-			host.POST("/properties/:id/blocks", h.Block.Create)
-			host.POST("/properties/:id/calendar/import", h.Block.ImportCalendar)
-			host.DELETE("/blocks/:id", h.Block.Delete)
+			// Calendar blocks and seasonal pricing rules used to live here, but
+			// were moved to the authenticated group above so co-hosts (who
+			// may not have the global host role) can act on the listings
+			// they're granted on — the per-listing permission check sits in
+			// the application service.
 
-			// Seasonal / per-date pricing overrides.
-			host.GET("/properties/:id/price-rules", h.PriceRule.ListForProperty)
-			host.POST("/properties/:id/price-rules", h.PriceRule.Create)
-			host.DELETE("/properties/:id/price-rules/:ruleId", h.PriceRule.Delete)
+			// Co-host grants on a listing (primary host only — the handler
+			// enforces ownership; the route group sits on the host gate to
+			// keep accidental access out).
+			host.GET("/host/properties/:id/cohosts", h.Cohost.List)
+			host.POST("/host/properties/:id/cohosts", h.Cohost.Invite)
+			host.PATCH("/host/properties/:id/cohosts/:cohostId", h.Cohost.UpdatePermissions)
+			host.DELETE("/host/properties/:id/cohosts/:cohostId", h.Cohost.Revoke)
 		}
 
 		// Admin-only moderation.

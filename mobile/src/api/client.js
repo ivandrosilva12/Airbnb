@@ -136,6 +136,9 @@ export function createApi(getAccessToken) {
     createPriceRule: (propertyId, body) => request('POST', `/properties/${propertyId}/price-rules`, { body, auth: true }),
     deletePriceRule: (propertyId, ruleId) => request('DELETE', `/properties/${propertyId}/price-rules/${ruleId}`, { auth: true }),
 
+    // Co-host grants (read-only on mobile: surface "listings I help manage").
+    myCohostListings: () => request('GET', '/me/cohost-listings', { auth: true }),
+
     confirmBooking: (id) => request('POST', `/bookings/${id}/confirm`, { auth: true }),
     completeBooking: (id) => request('POST', `/bookings/${id}/complete`, { auth: true }),
 

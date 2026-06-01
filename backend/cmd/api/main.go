@@ -128,6 +128,7 @@ func run() error {
 	webhookEventRepo := postgres.NewWebhookEventRepository(pool)
 	pushTokenRepo := postgres.NewPushTokenRepository(pool)
 	disputeRepo := postgres.NewDisputeRepository(pool)
+	cohostRepo := postgres.NewCohostRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers,
@@ -162,8 +163,9 @@ func run() error {
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewGateway(cfg.Payment), bookingRepo, propertyRepo).
 		WithDeposits(depositRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
-	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
-	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo)
+	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo)
+	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc)
+	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo).WithCohosts(cohostSvc)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment))
 	privacySvc := privacyapp.NewService(userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo)
@@ -236,6 +238,7 @@ func run() error {
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
 			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
 			Dispute:        handler.NewDisputeHandler(disputeSvc),
+			Cohost:         handler.NewCohostHandler(cohostSvc, userRepo),
 		},
 	})
 

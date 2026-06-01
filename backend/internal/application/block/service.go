@@ -13,10 +13,18 @@ import (
 	"github.com/google/uuid"
 )
 
+// CohostAuthorizer is the relaxed permission gate used to admit a co-host
+// with PermManageCalendar on a listing they don't own. The block service
+// defers to it when set; otherwise it falls back to strict ownership.
+type CohostAuthorizer interface {
+	Authorize(ctx context.Context, actorID, propertyID uuid.UUID, required property.CohostPermission) (*property.Property, error)
+}
+
 // Service orchestrates block use cases.
 type Service struct {
 	blocks     block.Repository
 	properties property.Repository
+	cohosts    CohostAuthorizer
 }
 
 // NewService wires the block application service.
@@ -24,14 +32,35 @@ func NewService(blocks block.Repository, properties property.Repository) *Servic
 	return &Service{blocks: blocks, properties: properties}
 }
 
-// Create blocks a date range on a listing the host owns.
-func (s *Service) Create(ctx context.Context, hostID, propertyID uuid.UUID, from, to time.Time, reason string) (*block.Block, error) {
+// WithCohosts plugs in the relaxed gate so co-hosts with manage_calendar
+// can mutate blocks. Returns the receiver for chaining.
+func (s *Service) WithCohosts(c CohostAuthorizer) *Service {
+	s.cohosts = c
+	return s
+}
+
+// access resolves the calling user to the listing they're acting on, honouring
+// the co-host gate when configured. The strict path (ownership only) is used
+// when no authorizer was wired — preserves the pre-S17 behaviour.
+func (s *Service) access(ctx context.Context, actorID, propertyID uuid.UUID) (*property.Property, error) {
+	if s.cohosts != nil {
+		return s.cohosts.Authorize(ctx, actorID, propertyID, property.PermManageCalendar)
+	}
 	prop, err := s.properties.FindByID(ctx, propertyID)
 	if err != nil {
 		return nil, err
 	}
-	if !prop.IsOwnedBy(hostID) {
+	if !prop.IsOwnedBy(actorID) {
 		return nil, shared.ErrForbidden
+	}
+	return prop, nil
+}
+
+// Create blocks a date range on a listing the host owns (or a co-host with
+// the manage_calendar permission may act on the primary host's behalf).
+func (s *Service) Create(ctx context.Context, hostID, propertyID uuid.UUID, from, to time.Time, reason string) (*block.Block, error) {
+	if _, err := s.access(ctx, hostID, propertyID); err != nil {
+		return nil, err
 	}
 	dates, err := booking.NewDateRange(from, to)
 	if err != nil {
@@ -62,16 +91,13 @@ type ImportRange struct {
 	Reason string
 }
 
-// Import creates blocks for the given busy ranges on a listing the host owns,
-// skipping ranges in the past or ones that already overlap an existing block
-// (so re-importing the same feed is idempotent). It returns the number created.
+// Import creates blocks for the given busy ranges on a listing the caller may
+// manage (primary host or co-host with manage_calendar). Skips ranges in the
+// past or ones that already overlap an existing block (so re-importing the
+// same feed is idempotent). It returns the number created.
 func (s *Service) Import(ctx context.Context, hostID, propertyID uuid.UUID, ranges []ImportRange) (int, error) {
-	prop, err := s.properties.FindByID(ctx, propertyID)
-	if err != nil {
+	if _, err := s.access(ctx, hostID, propertyID); err != nil {
 		return 0, err
-	}
-	if !prop.IsOwnedBy(hostID) {
-		return 0, shared.ErrForbidden
 	}
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	created := 0
@@ -106,30 +132,25 @@ func (s *Service) Import(ctx context.Context, hostID, propertyID uuid.UUID, rang
 	return created, nil
 }
 
-// ListForHost returns the blocks on a listing the host owns.
+// ListForHost returns the blocks on a listing the caller may manage (primary
+// host or co-host with manage_calendar).
 func (s *Service) ListForHost(ctx context.Context, hostID, propertyID uuid.UUID, page shared.Page) (shared.PageResult[*block.Block], error) {
-	prop, err := s.properties.FindByID(ctx, propertyID)
-	if err != nil {
+	if _, err := s.access(ctx, hostID, propertyID); err != nil {
 		return shared.PageResult[*block.Block]{}, err
-	}
-	if !prop.IsOwnedBy(hostID) {
-		return shared.PageResult[*block.Block]{}, shared.ErrForbidden
 	}
 	return s.blocks.ListByProperty(ctx, propertyID, page)
 }
 
-// Delete removes a block on a listing the host owns.
+// Delete removes a block on a listing the caller may manage (primary host or
+// co-host with manage_calendar). The block id is resolved first so the access
+// check uses the actual property the block belongs to.
 func (s *Service) Delete(ctx context.Context, hostID, blockID uuid.UUID) error {
 	b, err := s.blocks.FindByID(ctx, blockID)
 	if err != nil {
 		return err
 	}
-	prop, err := s.properties.FindByID(ctx, b.PropertyID)
-	if err != nil {
+	if _, err := s.access(ctx, hostID, b.PropertyID); err != nil {
 		return err
-	}
-	if !prop.IsOwnedBy(hostID) {
-		return shared.ErrForbidden
 	}
 	return s.blocks.Delete(ctx, blockID)
 }

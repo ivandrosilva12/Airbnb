@@ -159,8 +159,10 @@ func newHarness(t *testing.T) *harness {
 	disputeSvc := disputeapp.NewService(disputeRepo, bookingRepo, propertyRepo, dispatcher).
 		WithPaymentAdjuster(paymentSvc)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
-	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
-	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo)
+	cohostRepo := memory.NewCohostRepository()
+	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo)
+	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc)
+	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo).WithCohosts(cohostSvc)
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewFakeDisburser(), paymentgw.NewFakeConnectGateway())
@@ -234,6 +236,7 @@ func newHarness(t *testing.T) *harness {
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
 			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
 			Dispute:        handler.NewDisputeHandler(disputeSvc),
+			Cohost:         handler.NewCohostHandler(cohostSvc, userRepo),
 		},
 	})
 

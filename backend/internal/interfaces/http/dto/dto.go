@@ -251,6 +251,43 @@ func FromPropertyForHost(p *property.Property) PropertyView {
 	return v
 }
 
+// CohostView is the wire shape for a per-listing co-host grant. It carries
+// just enough user identification (id + email) for the host UI to recognise
+// the invitee without exposing the rest of the profile.
+type CohostView struct {
+	ID          uuid.UUID `json:"id"`
+	PropertyID  uuid.UUID `json:"propertyId"`
+	UserID      uuid.UUID `json:"userId"`
+	Email       string    `json:"email,omitempty"`
+	DisplayName string    `json:"displayName,omitempty"`
+	Permissions []string  `json:"permissions"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+// FromCohost maps the domain grant to its wire shape. The optional `u` lets
+// callers fold in the invitee's email/display name when they have it; passing
+// nil omits those fields.
+func FromCohost(c *property.Cohost, u *user.User) CohostView {
+	perms := make([]string, 0, len(c.Permissions))
+	for _, p := range c.Permissions {
+		perms = append(perms, string(p))
+	}
+	v := CohostView{
+		ID:          c.ID,
+		PropertyID:  c.PropertyID,
+		UserID:      c.UserID,
+		Permissions: perms,
+		CreatedAt:   c.CreatedAt,
+		UpdatedAt:   c.UpdatedAt,
+	}
+	if u != nil {
+		v.Email = u.Email
+		v.DisplayName = u.FullName
+	}
+	return v
+}
+
 // FromProperty maps a property aggregate to its view.
 func FromProperty(p *property.Property) PropertyView {
 	photos := make([]PhotoView, 0, len(p.Photos))

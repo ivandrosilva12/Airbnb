@@ -93,6 +93,7 @@ export default function EditListing() {
       <h1>{t('edit.title')}</h1>
       {error && <p className="error">{error}</p>}
       <PriceRulesPanel propertyId={id} currency={form.currency} />
+      <CohostsPanel propertyId={id} />
 
       <form className="form-grid" onSubmit={submit}>
         <label>{t('create.fTitle')}<input required value={form.title} onChange={set('title')} /></label>
@@ -239,6 +240,164 @@ function PriceRulesPanel({ propertyId, currency }) {
               {r.label ? <em>{r.label}</em> : null}
               <button type="button" className="btn btn-link" onClick={() => remove(r.id)}>
                 {t('priceRules.remove')}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// The four permissions a co-host can be granted on a single listing. Kept in
+// sync with the backend's property.CohostPermission enum. The wire string is
+// the canonical token; the label is i18n'd in CohostsPanel.
+const COHOST_PERMS = ['manage_calendar', 'manage_pricing', 'reply_messages'];
+
+// CohostsPanel lets the primary host invite, update and revoke per-listing
+// co-hosts. The list is reloaded after every mutation so the UI reflects the
+// server view without local optimistic bookkeeping.
+function CohostsPanel({ propertyId }) {
+  const { t } = useT();
+  const [cohosts, setCohosts] = useState([]);
+  const [email, setEmail] = useState('');
+  const [perms, setPerms] = useState(new Set(['manage_calendar']));
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const reload = useCallback(() => {
+    api
+      .listCohosts(propertyId)
+      .then((r) => setCohosts(r.items || []))
+      .catch((e) => setError(e.message));
+  }, [propertyId]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  function togglePerm(p) {
+    const next = new Set(perms);
+    if (next.has(p)) next.delete(p);
+    else next.add(p);
+    setPerms(next);
+  }
+
+  async function invite(e) {
+    e.preventDefault();
+    setError(null);
+    if (perms.size === 0) {
+      setError(t('cohosts.errNoPerms'));
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.inviteCohost(propertyId, {
+        email: email.trim(),
+        permissions: Array.from(perms),
+      });
+      setEmail('');
+      setPerms(new Set(['manage_calendar']));
+      reload();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updatePerms(cohostId, nextSet) {
+    setError(null);
+    try {
+      await api.updateCohostPermissions(propertyId, cohostId, Array.from(nextSet));
+      reload();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function revoke(cohostId) {
+    setError(null);
+    try {
+      await api.revokeCohost(propertyId, cohostId);
+      reload();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <section className="cohosts-panel">
+      <h2>{t('cohosts.title')}</h2>
+      <p className="muted">{t('cohosts.hint')}</p>
+      {error && <p className="error">{error}</p>}
+      <form className="form-grid cohosts-form" onSubmit={invite}>
+        <label className="full">
+          {t('cohosts.fEmail')}
+          <input
+            required
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder={t('cohosts.fEmailPlaceholder')}
+          />
+        </label>
+        <fieldset className="full cohosts-perms">
+          <legend>{t('cohosts.permissions')}</legend>
+          {COHOST_PERMS.map((p) => (
+            <label key={p} className="cohosts-perm">
+              <input
+                type="checkbox"
+                checked={perms.has(p)}
+                onChange={() => togglePerm(p)}
+              />
+              <span>{t(`cohosts.perm.${p}`)}</span>
+            </label>
+          ))}
+        </fieldset>
+        <div className="full">
+          <button type="submit" className="btn" disabled={saving}>
+            {saving ? t('cohosts.inviting') : t('cohosts.invite')}
+          </button>
+        </div>
+      </form>
+
+      {cohosts.length === 0 ? (
+        <p className="muted">{t('cohosts.empty')}</p>
+      ) : (
+        <ul className="cohosts-list">
+          {cohosts.map((c) => (
+            <li key={c.id} className="cohosts-list-item">
+              <div>
+                <strong>{c.displayName || c.email || c.userId}</strong>
+                {c.email && c.displayName ? <small> ({c.email})</small> : null}
+              </div>
+              <div className="cohosts-perm-chips">
+                {COHOST_PERMS.map((p) => {
+                  const has = c.permissions.includes(p);
+                  return (
+                    <label key={p} className="cohosts-perm-chip">
+                      <input
+                        type="checkbox"
+                        checked={has}
+                        onChange={() => {
+                          const next = new Set(c.permissions);
+                          if (has) next.delete(p);
+                          else next.add(p);
+                          if (next.size === 0) {
+                            setError(t('cohosts.errNoPerms'));
+                            return;
+                          }
+                          updatePerms(c.id, next);
+                        }}
+                      />
+                      <span>{t(`cohosts.perm.${p}`)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <button type="button" className="btn btn-link" onClick={() => revoke(c.id)}>
+                {t('cohosts.revoke')}
               </button>
             </li>
           ))}

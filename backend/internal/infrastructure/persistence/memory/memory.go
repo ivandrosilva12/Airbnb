@@ -52,6 +52,7 @@ var (
 	_ coupon.Repository       = (*CouponRepository)(nil)
 	_ pushtoken.Repository    = (*PushTokenRepository)(nil)
 	_ dispute.Repository      = (*DisputeRepository)(nil)
+	_ property.CohostRepository = (*CohostRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -2080,4 +2081,111 @@ func (r *DepositRepository) FindByBookingID(_ context.Context, bookingID uuid.UU
 		}
 	}
 	return nil, shared.ErrNotFound
+}
+
+// --- Cohosts -----------------------------------------------------------------
+
+// CohostRepository is an in-memory property.CohostRepository.
+type CohostRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]property.Cohost
+}
+
+// NewCohostRepository builds an empty in-memory co-host repository.
+func NewCohostRepository() *CohostRepository {
+	return &CohostRepository{m: map[uuid.UUID]property.Cohost{}}
+}
+
+// cloneCohost deep-copies the grant so callers cannot mutate the stored
+// permissions slice by reference.
+func cloneCohost(c *property.Cohost) property.Cohost {
+	dup := *c
+	if len(c.Permissions) > 0 {
+		dup.Permissions = append([]property.CohostPermission(nil), c.Permissions...)
+	}
+	return dup
+}
+
+func (r *CohostRepository) Create(_ context.Context, c *property.Cohost) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, existing := range r.m {
+		if existing.PropertyID == c.PropertyID && existing.UserID == c.UserID {
+			return shared.ErrConflict
+		}
+	}
+	r.m[c.ID] = cloneCohost(c)
+	return nil
+}
+
+func (r *CohostRepository) Update(_ context.Context, c *property.Cohost) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[c.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[c.ID] = cloneCohost(c)
+	return nil
+}
+
+func (r *CohostRepository) Delete(_ context.Context, id uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[id]; !ok {
+		return shared.ErrNotFound
+	}
+	delete(r.m, id)
+	return nil
+}
+
+func (r *CohostRepository) FindByID(_ context.Context, id uuid.UUID) (*property.Cohost, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if c, ok := r.m[id]; ok {
+		dup := cloneCohost(&c)
+		return &dup, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *CohostRepository) FindByPropertyAndUser(_ context.Context, propertyID, userID uuid.UUID) (*property.Cohost, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, c := range r.m {
+		if c.PropertyID == propertyID && c.UserID == userID {
+			dup := cloneCohost(&c)
+			return &dup, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *CohostRepository) ListByProperty(_ context.Context, propertyID uuid.UUID) ([]*property.Cohost, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*property.Cohost, 0)
+	for _, c := range r.m {
+		if c.PropertyID == propertyID {
+			dup := cloneCohost(&c)
+			out = append(out, &dup)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
+func (r *CohostRepository) ListPropertiesForUser(_ context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	seen := make(map[uuid.UUID]struct{})
+	out := make([]uuid.UUID, 0)
+	for _, c := range r.m {
+		if c.UserID == userID {
+			if _, dup := seen[c.PropertyID]; !dup {
+				seen[c.PropertyID] = struct{}{}
+				out = append(out, c.PropertyID)
+			}
+		}
+	}
+	return out, nil
 }
