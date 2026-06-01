@@ -32,7 +32,17 @@ async function request(method, path, { body, formData, auth = false } = {}) {
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const message = (data && data.error) || res.statusText;
-    throw new Error(message);
+    // Attach the structured error envelope to the thrown Error so callers
+    // can route on the typed code (e.g. "kyc_step_up_required") without
+    // parsing the message string. Plain `e.message` continues to work for
+    // generic surfaces that don't care.
+    const err = new Error(message);
+    if (data) {
+      if (data.code) err.code = data.code;
+      if (data.details) err.details = data.details;
+    }
+    err.status = res.status;
+    throw err;
   }
   return data;
 }

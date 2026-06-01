@@ -50,6 +50,13 @@ type PushConfig struct {
 type IdentityConfig struct {
 	RequireKYCToBook bool // a guest must be verified to create a booking
 	RequireKYCToHost bool // a host must be verified to publish a listing
+	// HighValueThresholdsCents is the per-currency threshold above which a
+	// booking requires a verified identity even when RequireKYCToBook is
+	// off. Keyed by ISO-4217 code (e.g. "EUR"). A currency without an
+	// entry has no step-up (the booking proceeds without a KYC check on
+	// the high-value path). 0 in the value disables the gate for that
+	// currency explicitly.
+	HighValueThresholdsCents map[string]int64
 }
 
 // AlertingConfig holds settings for operating the alerting stack. When
@@ -291,8 +298,9 @@ func Load() (*Config, error) {
 			WebhookToken:    getEnv("ALERT_WEBHOOK_TOKEN", ""),
 		},
 		Identity: IdentityConfig{
-			RequireKYCToBook: getBool("REQUIRE_KYC_TO_BOOK", false),
-			RequireKYCToHost: getBool("REQUIRE_KYC_TO_HOST", false),
+			RequireKYCToBook:         getBool("REQUIRE_KYC_TO_BOOK", false),
+			RequireKYCToHost:         getBool("REQUIRE_KYC_TO_HOST", false),
+			HighValueThresholdsCents: parseThresholds(getEnv("HIGH_VALUE_THRESHOLDS", "EUR:100000,USD:100000,GBP:100000,AOA:100000000")),
 		},
 		Push: PushConfig{
 			FCMServiceAccountJSON: getEnv("FCM_SERVICE_ACCOUNT_JSON", ""),
@@ -375,4 +383,50 @@ func getSlice(key string, fallback []string) []string {
 		}
 	}
 	return fallback
+}
+
+// parseThresholds reads a comma-separated CCC:N list (e.g. "EUR:100000,USD:100000")
+// into a currency→cents map. Whitespace is trimmed; entries with a non-numeric
+// amount or a missing colon are skipped (the operator gets a missing currency
+// instead of a crash on a typo). An empty input yields an empty map.
+func parseThresholds(raw string) map[string]int64 {
+	out := make(map[string]int64)
+	if raw == "" {
+		return out
+	}
+	start := 0
+	for i := 0; i <= len(raw); i++ {
+		if i != len(raw) && raw[i] != ',' {
+			continue
+		}
+		item := raw[start:i]
+		start = i + 1
+		// trim spaces
+		for len(item) > 0 && item[0] == ' ' {
+			item = item[1:]
+		}
+		for len(item) > 0 && item[len(item)-1] == ' ' {
+			item = item[:len(item)-1]
+		}
+		if item == "" {
+			continue
+		}
+		colon := -1
+		for j := 0; j < len(item); j++ {
+			if item[j] == ':' {
+				colon = j
+				break
+			}
+		}
+		if colon <= 0 || colon == len(item)-1 {
+			continue
+		}
+		currency := item[:colon]
+		amount, err := strconv.ParseInt(item[colon+1:], 10, 64)
+		if err != nil || amount < 0 {
+			continue
+		}
+		out[currency] = amount
+	}
+	return out
 }

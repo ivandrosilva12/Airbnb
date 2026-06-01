@@ -36,7 +36,12 @@ type Service struct {
 	serviceFeeRate float64
 	identity       IdentityVerifier
 	requireKYC     bool
-	uow            port.UnitOfWork
+	// highValueThresholds, when populated, triggers a KYC step-up: a
+	// booking whose total reaches the per-currency threshold requires a
+	// verified guest even when requireKYC is off. A currency without an
+	// entry has no step-up. See IdentityConfig.HighValueThresholdsCents.
+	highValueThresholds map[string]int64
+	uow                 port.UnitOfWork
 }
 
 // NewService wires the booking application service. serviceFeeRate is the
@@ -47,6 +52,46 @@ type Service struct {
 // used when summing the night-by-night subtotal.
 func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, coupons coupon.Repository, priceRules pricerule.Repository, serviceFeeRate float64, identity IdentityVerifier, requireKYC bool, uow port.UnitOfWork) *Service {
 	return &Service{bookings: bookings, properties: properties, blocks: blocks, coupons: coupons, priceRules: priceRules, serviceFeeRate: serviceFeeRate, identity: identity, requireKYC: requireKYC, uow: uow}
+}
+
+// WithHighValueThresholds configures the per-currency step-up table. Returns
+// the receiver for chaining. A nil or empty map disables the high-value gate
+// (only the global RequireKYCToBook flag still applies).
+func (s *Service) WithHighValueThresholds(thresholds map[string]int64) *Service {
+	if len(thresholds) == 0 {
+		s.highValueThresholds = nil
+		return s
+	}
+	// Defensive copy so config mutation after wiring can't leak into the
+	// running service.
+	cp := make(map[string]int64, len(thresholds))
+	for k, v := range thresholds {
+		cp[k] = v
+	}
+	s.highValueThresholds = cp
+	return s
+}
+
+// enforceStepUp is a no-op unless the booking's total reaches the configured
+// per-currency high-value threshold AND the guest is not yet verified. The
+// returned error carries the threshold + currency so the transport layer can
+// surface a verify-and-retry prompt with the right context.
+func (s *Service) enforceStepUp(ctx context.Context, guestID uuid.UUID, totalCents int64, currency string) error {
+	if len(s.highValueThresholds) == 0 {
+		return nil
+	}
+	threshold, ok := s.highValueThresholds[currency]
+	if !ok || threshold <= 0 || totalCents < threshold {
+		return nil
+	}
+	verified, err := s.identity.IsVerified(ctx, guestID)
+	if err != nil {
+		return err
+	}
+	if verified {
+		return nil
+	}
+	return shared.NewKYCStepUpError(threshold, currency)
 }
 
 // emit runs the booking write and records the event(s) in one transaction, so
@@ -183,6 +228,17 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		SecurityDepositCents: prop.SecurityDeposit.AmountCents(),
 	})
 	if err != nil {
+		return nil, err
+	}
+	// High-value step-up: a configurable per-currency threshold demands a
+	// verified identity even when the platform-wide RequireKYCToBook flag is
+	// off. We check AFTER pricing because the total includes the cleaning
+	// fee, service fee and any tax — the threshold is the all-in amount
+	// the guest will actually be charged, not the nightly subtotal. The
+	// global RequireKYCToBook check above already returns ErrValidation for
+	// the unconditional case; if it passed (or wasn't set), we only need
+	// the step-up gate here for high-value bookings.
+	if err := s.enforceStepUp(ctx, in.GuestID, b.Pricing.Total.AmountCents(), b.Pricing.Total.Currency()); err != nil {
 		return nil, err
 	}
 	// Instant book: auto-confirm the reservation now instead of holding it for

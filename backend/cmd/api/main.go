@@ -147,7 +147,8 @@ func run() error {
 	// on it when the REQUIRE_KYC_* policy flags are enabled.
 	identitySvc := identityapp.NewService(identityRepo, uow)
 	propertySvc := propertyapp.NewService(propertyRepo, objectStore, identitySvc, cfg.Identity.RequireKYCToHost)
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, priceRuleRepo, cfg.Pricing.ServiceFeeRate, identitySvc, cfg.Identity.RequireKYCToBook, uow)
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, priceRuleRepo, cfg.Pricing.ServiceFeeRate, identitySvc, cfg.Identity.RequireKYCToBook, uow).
+		WithHighValueThresholds(cfg.Identity.HighValueThresholdsCents)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, userBlockRepo, objectStore, uow)
 	// cohostSvc is wired below (after blockSvc) and message svc gets it via WithCohosts later.

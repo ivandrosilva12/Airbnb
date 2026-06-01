@@ -142,7 +142,8 @@ func newHarness(t *testing.T) *harness {
 	identitySvc := identityapp.NewService(identityRepo, uow)
 	// KYC gating off in the e2e harness (the suite books/publishes without KYC).
 	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{}, identitySvc, false)
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, priceRuleRepo, 0.10, identitySvc, false, uow) // 10% service fee
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, priceRuleRepo, 0.10, identitySvc, false, uow). // 10% service fee
+												WithHighValueThresholds(map[string]int64{"EUR": 100000}) // step-up at 1000 EUR all-in for the test harness
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, userBlockRepo, fakeStorage{}, uow)
 	userBlockSvc := userblockapp.NewService(userBlockRepo)

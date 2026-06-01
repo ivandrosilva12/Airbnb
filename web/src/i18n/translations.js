@@ -53,6 +53,9 @@ export const translations = {
 
     'verify.title': 'Identity verification',
     'verify.hint': 'Verify your identity to earn a verified badge and build trust with hosts and guests.',
+    'kyc.stepUpTitle': 'Identity verification needed',
+    'kyc.stepUpHint': 'Bookings of {amount} {currency} or more require a verified identity. Verify once and you can complete this reservation right after.',
+    'kyc.stepUpCta': 'Verify my identity',
     'verify.statusLabel': 'Status',
     'verify.status.pending': 'Under review',
     'verify.status.approved': 'Verified',
@@ -605,6 +608,9 @@ export const translations = {
 
     'verify.title': 'Verificação de identidade',
     'verify.hint': 'Verifique a sua identidade para obter um selo de verificado e ganhar a confiança de anfitriões e hóspedes.',
+    'kyc.stepUpTitle': 'É preciso verificar a identidade',
+    'kyc.stepUpHint': 'Reservas de {amount} {currency} ou mais exigem identidade verificada. Faça a verificação uma vez e poderá concluir a reserva logo a seguir.',
+    'kyc.stepUpCta': 'Verificar a minha identidade',
     'verify.statusLabel': 'Estado',
     'verify.status.pending': 'Em análise',
     'verify.status.approved': 'Verificada',

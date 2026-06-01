@@ -20,7 +20,15 @@ export function createApi(getAccessToken) {
     if (res.status === 204) return null;
     const text = await res.text();
     const data = text ? JSON.parse(text) : null;
-    if (!res.ok) throw new Error((data && data.error) || res.statusText);
+    if (!res.ok) {
+      const err = new Error((data && data.error) || res.statusText);
+      if (data) {
+        if (data.code) err.code = data.code;
+        if (data.details) err.details = data.details;
+      }
+      err.status = res.status;
+      throw err;
+    }
     return data;
   }
 

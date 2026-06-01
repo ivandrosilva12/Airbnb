@@ -44,6 +44,11 @@ export default function PropertyDetail() {
   const [couponError, setCouponError] = useState(null);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
+  // stepUp holds the structured details when the backend rejects the booking
+  // because the total exceeds the high-value threshold and the guest is not
+  // yet verified. When set, the UI swaps the generic error for a "verify and
+  // come back" prompt with a direct link to /settings.
+  const [stepUp, setStepUp] = useState(null);
 
   useEffect(() => {
     api.getProperty(id).then(setProperty).catch((e) => setError(e.message));
@@ -56,6 +61,7 @@ export default function PropertyDetail() {
     e.preventDefault();
     setError(null);
     setMessage(null);
+    setStepUp(null);
     if (!authenticated) {
       login();
       return;
@@ -75,6 +81,13 @@ export default function PropertyDetail() {
       setMessage(t('detail.booked', { nights: booking.nights, total: booking.totalPrice.display, status: booking.status }));
       api.availability(id).then((a) => setBooked(a.booked || [])).catch(() => {});
     } catch (e) {
+      // High-value step-up: surface a verify-and-retry prompt instead of the
+      // raw error message, using the structured details the backend ships in
+      // the response envelope.
+      if (e.code === 'kyc_step_up_required') {
+        setStepUp(e.details || {});
+        return;
+      }
       setError(e.message);
     }
   }
@@ -273,6 +286,18 @@ export default function PropertyDetail() {
             </button>
           )}
           {message && <p className="success">{message}</p>}
+          {stepUp && (
+            <div className="kyc-stepup">
+              <strong>{t('kyc.stepUpTitle')}</strong>
+              <p>{t('kyc.stepUpHint', {
+                amount: ((stepUp.thresholdCents || 0) / 100).toFixed(0),
+                currency: stepUp.currency || '',
+              })}</p>
+              <button className="btn btn-primary" type="button" onClick={() => navigate('/settings')}>
+                {t('kyc.stepUpCta')}
+              </button>
+            </div>
+          )}
           {error && <p className="error">{error}</p>}
           {!isOwnListing && (
             <ReportControl
