@@ -23,6 +23,7 @@ import (
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/pricerule"
 	"github.com/airhost/backend/internal/domain/property"
+	"github.com/airhost/backend/internal/domain/pushtoken"
 	"github.com/airhost/backend/internal/domain/report"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/savedsearch"
@@ -47,6 +48,7 @@ var (
 	_ identity.Repository     = (*IdentityRepository)(nil)
 	_ report.Repository       = (*ReportRepository)(nil)
 	_ coupon.Repository       = (*CouponRepository)(nil)
+	_ pushtoken.Repository    = (*PushTokenRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -1829,4 +1831,72 @@ func (r *CouponRepository) List(_ context.Context, page shared.Page) (shared.Pag
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
 	return paginate(all, page), nil
+}
+
+// --- Push tokens -------------------------------------------------------------
+
+// PushTokenRepository is an in-memory pushtoken.Repository. Save upserts on
+// (platform, token) so re-registration of the same device only refreshes
+// LastSeen / re-owns the row.
+type PushTokenRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]pushtoken.Token
+}
+
+// NewPushTokenRepository builds an empty in-memory push-token repository.
+func NewPushTokenRepository() *PushTokenRepository {
+	return &PushTokenRepository{m: map[uuid.UUID]pushtoken.Token{}}
+}
+
+func (r *PushTokenRepository) Save(_ context.Context, t *pushtoken.Token) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, existing := range r.m {
+		if existing.Platform == t.Platform && existing.Token == t.Token {
+			existing.UserID = t.UserID
+			existing.LastSeen = t.LastSeen
+			r.m[id] = existing
+			t.ID = existing.ID
+			return nil
+		}
+	}
+	r.m[t.ID] = *t
+	return nil
+}
+
+func (r *PushTokenRepository) ListByUser(_ context.Context, userID uuid.UUID) ([]*pushtoken.Token, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []*pushtoken.Token
+	for _, t := range r.m {
+		if t.UserID == userID {
+			cp := t
+			out = append(out, &cp)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].LastSeen.After(out[j].LastSeen) })
+	return out, nil
+}
+
+func (r *PushTokenRepository) DeleteByToken(_ context.Context, platform pushtoken.Platform, token string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, t := range r.m {
+		if t.Platform == platform && t.Token == token {
+			delete(r.m, id)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (r *PushTokenRepository) DeleteByUser(_ context.Context, userID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, t := range r.m {
+		if t.UserID == userID {
+			delete(r.m, id)
+		}
+	}
+	return nil
 }

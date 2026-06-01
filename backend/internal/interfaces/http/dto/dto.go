@@ -25,6 +25,7 @@ import (
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/pricerule"
 	"github.com/airhost/backend/internal/domain/property"
+	"github.com/airhost/backend/internal/domain/pushtoken"
 	"github.com/airhost/backend/internal/domain/report"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -38,6 +39,13 @@ type EmailPreferencesView struct {
 	Messages bool `json:"messages"`
 }
 
+// PushPreferencesView renders a user's native push opt-ins. Account category
+// is not exposed because it cannot be opted out of (security notifications).
+type PushPreferencesView struct {
+	Bookings bool `json:"bookings"`
+	Messages bool `json:"messages"`
+}
+
 // UserView is the public representation of a user.
 type UserView struct {
 	ID               uuid.UUID            `json:"id"`
@@ -46,6 +54,7 @@ type UserView struct {
 	Role             string               `json:"role"`
 	AvatarURL        string               `json:"avatarUrl"`
 	EmailPreferences EmailPreferencesView `json:"emailPreferences"`
+	PushPreferences  PushPreferencesView  `json:"pushPreferences"`
 	CreatedAt        time.Time            `json:"createdAt"`
 }
 
@@ -61,7 +70,31 @@ func FromUser(u *user.User) UserView {
 			Bookings: u.EmailPrefs.Bookings,
 			Messages: u.EmailPrefs.Messages,
 		},
+		PushPreferences: PushPreferencesView{
+			Bookings: u.PushPrefs.Bookings,
+			Messages: u.PushPrefs.Messages,
+		},
 		CreatedAt: u.CreatedAt,
+	}
+}
+
+// PushTokenView renders a registered device token.
+type PushTokenView struct {
+	ID        uuid.UUID `json:"id"`
+	Platform  string    `json:"platform"`
+	Token     string    `json:"token"`
+	LastSeen  time.Time `json:"lastSeen"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// FromPushToken maps a push-token aggregate to its view.
+func FromPushToken(t *pushtoken.Token) PushTokenView {
+	return PushTokenView{
+		ID:        t.ID,
+		Platform:  string(t.Platform),
+		Token:     t.Token,
+		LastSeen:  t.LastSeen,
+		CreatedAt: t.CreatedAt,
 	}
 }
 

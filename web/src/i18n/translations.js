@@ -35,6 +35,10 @@ export const translations = {
     'settings.emailHint': 'In-app notifications are always on; these only control email.',
     'settings.emailBookings': 'Booking updates (requests, confirmations, cancellations)',
     'settings.emailMessages': 'New messages',
+    'settings.pushTitle': 'Push notifications',
+    'settings.pushHint': 'Native push to your mobile devices. Account & security pushes are always delivered.',
+    'settings.pushBookings': 'Booking updates',
+    'settings.pushMessages': 'New messages',
     'settings.saved': 'Saved.',
 
     'privacy.title': 'Privacy & your data',
@@ -521,6 +525,10 @@ export const translations = {
     'settings.emailHint': 'As notificações na app estão sempre ativas; isto controla apenas o email.',
     'settings.emailBookings': 'Atualizações de reservas (pedidos, confirmações, cancelamentos)',
     'settings.emailMessages': 'Novas mensagens',
+    'settings.pushTitle': 'Notificações push',
+    'settings.pushHint': 'Push nativo para os teus dispositivos móveis. As notificações de conta e segurança são sempre entregues.',
+    'settings.pushBookings': 'Atualizações de reservas',
+    'settings.pushMessages': 'Novas mensagens',
     'settings.saved': 'Guardado.',
 
     'privacy.title': 'Privacidade e os seus dados',

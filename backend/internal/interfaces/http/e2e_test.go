@@ -27,8 +27,10 @@ import (
 	offerapp "github.com/airhost/backend/internal/application/offer"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
 	payoutapp "github.com/airhost/backend/internal/application/payout"
+	"github.com/airhost/backend/internal/application/port"
 	priceruleapp "github.com/airhost/backend/internal/application/pricerule"
 	propertyapp "github.com/airhost/backend/internal/application/property"
+	pushtokenapp "github.com/airhost/backend/internal/application/pushtoken"
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reportapp "github.com/airhost/backend/internal/application/report"
 	reviewapp "github.com/airhost/backend/internal/application/review"
@@ -37,6 +39,7 @@ import (
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
+	"github.com/airhost/backend/internal/domain/pushtoken"
 	domainuser "github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/infrastructure/email"
 	"github.com/airhost/backend/internal/infrastructure/observability"
@@ -65,14 +68,38 @@ func (fakeStorage) PublicURL(key string) string { return "http://storage.test/" 
 // harness wires the real router against in-memory repositories and a stub auth
 // middleware that resolves "Bearer <userID>" to a seeded local user.
 type harness struct {
-	t            *testing.T
-	router       *gin.Engine
-	userRepo     *memory.UserRepository
-	paymentRepo  *memory.PaymentRepository
-	propertyRepo *memory.PropertyRepository
-	bookingRepo  *memory.BookingRepository
-	mailer       *email.RecordingMailer
-	silencer     *memSilencer
+	t               *testing.T
+	router          *gin.Engine
+	userRepo        *memory.UserRepository
+	paymentRepo     *memory.PaymentRepository
+	propertyRepo    *memory.PropertyRepository
+	bookingRepo     *memory.BookingRepository
+	mailer          *email.RecordingMailer
+	silencer        *memSilencer
+	pusher          *recordingPushSender
+	notificationSvc *notificationapp.Service
+}
+
+// recordingPushSender captures every Send so tests can assert that the
+// notification subscriber mirrored events as native pushes.
+type recordingPushSender struct {
+	calls []recordedPush
+}
+
+type recordedPush struct {
+	Devices []pushtoken.Token
+	Payload port.PushPayload
+}
+
+func (s *recordingPushSender) Send(_ context.Context, devices []pushtoken.Token, payload port.PushPayload) []port.PushSendResult {
+	cp := make([]pushtoken.Token, len(devices))
+	copy(cp, devices)
+	s.calls = append(s.calls, recordedPush{Devices: cp, Payload: payload})
+	out := make([]port.PushSendResult, 0, len(devices))
+	for _, d := range devices {
+		out = append(out, port.PushSendResult{Token: d})
+	}
+	return out
 }
 
 // webhookSecret is the GPay Angola webhook secret the harness registers so e2e
@@ -99,6 +126,7 @@ func newHarness(t *testing.T) *harness {
 	couponRepo := memory.NewCouponRepository()
 	userBlockRepo := memory.NewUserBlockRepository()
 	offerRepo := memory.NewOfferRepository()
+	pushTokenRepo := memory.NewPushTokenRepository()
 
 	dispatcher := event.NewDispatcher()
 	outbox := event.NewMemoryOutbox()
@@ -116,7 +144,9 @@ func newHarness(t *testing.T) *harness {
 	offerSvc := offerapp.NewService(offerRepo, propertyRepo, bookingSvc)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
-	notificationSvc := notificationapp.NewService(notificationRepo)
+	pusher := &recordingPushSender{}
+	pushTokenSvc := pushtokenapp.NewService(pushTokenRepo, userRepo, pusher)
+	notificationSvc := notificationapp.NewService(notificationRepo).WithPush(pushTokenSvc.AsNotifier())
 	savedSearchSvc := savedsearchapp.NewService(memory.NewSavedSearchRepository(), searchSvc, notificationSvc)
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway(), bookingRepo, propertyRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
@@ -193,10 +223,15 @@ func newHarness(t *testing.T) *harness {
 			Offer:          handler.NewOfferHandler(offerSvc),
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
+			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
 		},
 	})
 
-	return &harness{t: t, router: router, userRepo: userRepo, paymentRepo: paymentRepo, propertyRepo: propertyRepo, bookingRepo: bookingRepo, mailer: mailer, silencer: silencer}
+	return &harness{
+		t: t, router: router, userRepo: userRepo, paymentRepo: paymentRepo,
+		propertyRepo: propertyRepo, bookingRepo: bookingRepo, mailer: mailer,
+		silencer: silencer, pusher: pusher, notificationSvc: notificationSvc,
+	}
 }
 
 func (h *harness) seedUser(role domainuser.Role, email string) *domainuser.User {

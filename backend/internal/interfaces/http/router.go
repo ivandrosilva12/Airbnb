@@ -37,6 +37,7 @@ type Handlers struct {
 	Offer          *handler.OfferHandler
 	SavedSearch    *handler.SavedSearchHandler
 	PriceRule      *handler.PriceRuleHandler
+	PushToken      *handler.PushTokenHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -204,6 +205,12 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.POST("/notifications/read-all", h.Notification.MarkAllRead)
 		auth.POST("/notifications/:id/read", h.Notification.MarkRead)
 		auth.POST("/notifications/:id/unread", h.Notification.MarkUnread)
+
+		// Push-token (FCM/APNs/Web Push) registration. Clients call register on
+		// app launch and after the OS rotates the token; unregister on logout.
+		auth.GET("/me/push-tokens", h.PushToken.List)
+		auth.POST("/me/push-tokens", h.PushToken.Register)
+		auth.POST("/me/push-tokens/unregister", h.PushToken.Unregister)
 
 		// Payments (guest-facing reads).
 		auth.GET("/payments/me", h.Payment.ListMine)

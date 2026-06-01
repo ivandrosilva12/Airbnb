@@ -59,6 +59,13 @@ export function createApi(getAccessToken) {
     updatePreferences: (prefs) => request('PATCH', '/me/preferences', { body: prefs, auth: true }),
     deleteAccount: () => request('DELETE', '/me', { auth: true }),
 
+    // Push notification device registration
+    listPushTokens: () => request('GET', '/me/push-tokens', { auth: true }),
+    registerPushToken: (platform, token) =>
+      request('POST', '/me/push-tokens', { body: { platform, token }, auth: true }),
+    unregisterPushToken: (platform, token) =>
+      request('POST', '/me/push-tokens/unregister', { body: { platform, token }, auth: true }),
+
     // Identity verification (KYC)
     getVerification: () => request('GET', '/me/verification', { auth: true }),
     submitVerification: (body) => request('POST', '/me/verification', { body, auth: true }),

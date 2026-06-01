@@ -98,6 +98,13 @@ export const api = {
   updatePreferences: (prefs) => request('PATCH', '/me/preferences', { body: prefs, auth: true }),
   becomeHost: () => request('POST', '/me/become-host', { auth: true }),
 
+  // Push notification device registration (Web Push / mobile native).
+  listPushTokens: () => request('GET', '/me/push-tokens', { auth: true }),
+  registerPushToken: (platform, token) =>
+    request('POST', '/me/push-tokens', { body: { platform, token }, auth: true }),
+  unregisterPushToken: (platform, token) =>
+    request('POST', '/me/push-tokens/unregister', { body: { platform, token }, auth: true }),
+
   // GDPR self-service
   exportMyData: () => downloadFile('/me/export', 'airhost-data-export.json'),
   deleteAccount: () => request('DELETE', '/me', { auth: true }),

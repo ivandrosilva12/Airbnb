@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	userapp "github.com/airhost/backend/internal/application/user"
+	domainuser "github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/middleware"
 	"github.com/airhost/backend/internal/interfaces/http/response"
@@ -54,34 +55,72 @@ func (h *UserHandler) UpdateMe(c *gin.Context) {
 	response.OK(c, dto.FromUser(u))
 }
 
-type emailPreferencesRequest struct {
+type preferenceToggles struct {
 	Bookings *bool `json:"bookings"`
 	Messages *bool `json:"messages"`
 }
 
-// UpdatePreferences sets the authenticated user's transactional email opt-ins.
-// Omitted fields keep their current value.
+// preferencesRequest carries optional email and push opt-in toggles. Top-level
+// "bookings"/"messages" remain accepted for backwards compatibility with
+// existing clients (they mutate the email side only); newer clients should send
+// nested "email" / "push" objects.
+type preferencesRequest struct {
+	Bookings *bool              `json:"bookings"`
+	Messages *bool              `json:"messages"`
+	Email    *preferenceToggles `json:"email"`
+	Push     *preferenceToggles `json:"push"`
+}
+
+// UpdatePreferences sets the authenticated user's notification opt-ins. Email
+// and push are tracked independently; omitted fields keep their current value.
 func (h *UserHandler) UpdatePreferences(c *gin.Context) {
 	u, ok := middleware.CurrentUser(c)
 	if !ok {
 		response.FailMessage(c, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	var req emailPreferencesRequest
+	var req preferencesRequest
 	if !bindJSON(c, &req) {
 		return
 	}
-	prefs := u.EmailPrefs
+	// Apply email toggles (top-level + nested).
+	emailPrefs := u.EmailPrefs
 	if req.Bookings != nil {
-		prefs.Bookings = *req.Bookings
+		emailPrefs.Bookings = *req.Bookings
 	}
 	if req.Messages != nil {
-		prefs.Messages = *req.Messages
+		emailPrefs.Messages = *req.Messages
 	}
-	updated, err := h.svc.UpdateEmailPreferences(c.Request.Context(), u.ID, prefs)
+	if req.Email != nil {
+		if req.Email.Bookings != nil {
+			emailPrefs.Bookings = *req.Email.Bookings
+		}
+		if req.Email.Messages != nil {
+			emailPrefs.Messages = *req.Email.Messages
+		}
+	}
+	updated, err := h.svc.UpdateEmailPreferences(c.Request.Context(), u.ID, emailPrefs)
 	if err != nil {
 		response.Fail(c, err)
 		return
+	}
+	// Apply push toggles (only the nested "push" path accepts them).
+	if req.Push != nil {
+		pushPrefs := updated.PushPrefs
+		if req.Push.Bookings != nil {
+			pushPrefs.Bookings = *req.Push.Bookings
+		}
+		if req.Push.Messages != nil {
+			pushPrefs.Messages = *req.Push.Messages
+		}
+		updated, err = h.svc.UpdatePushPreferences(c.Request.Context(), u.ID, domainuser.PushPreferences{
+			Bookings: pushPrefs.Bookings,
+			Messages: pushPrefs.Messages,
+		})
+		if err != nil {
+			response.Fail(c, err)
+			return
+		}
 	}
 	response.OK(c, dto.FromUser(updated))
 }

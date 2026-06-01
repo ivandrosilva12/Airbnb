@@ -23,6 +23,25 @@ type Config struct {
 	Security SecurityConfig
 	Alerting AlertingConfig
 	Identity IdentityConfig
+	Push     PushConfig
+}
+
+// PushConfig configures the native push notifications channel. When no
+// credentials are supplied the API falls back to a log-only sender so
+// development environments work without provider accounts. Secrets are read as
+// raw values (file paths optional) so they can be injected via Docker/K8s
+// secrets without committing them.
+type PushConfig struct {
+	// FCMServiceAccountJSON is the raw service account JSON contents used to
+	// mint OAuth2 tokens for FCM HTTP v1. Empty disables FCM.
+	FCMServiceAccountJSON string
+
+	// APNs (.p8 token-based auth)
+	APNsTeamID        string
+	APNsKeyID         string
+	APNsPrivateKeyPEM string // .p8 file contents (PEM)
+	APNsBundleID      string
+	APNsUseSandbox    bool
 }
 
 // IdentityConfig holds the KYC gating policy. When a flag is on, the matching
@@ -274,6 +293,14 @@ func Load() (*Config, error) {
 		Identity: IdentityConfig{
 			RequireKYCToBook: getBool("REQUIRE_KYC_TO_BOOK", false),
 			RequireKYCToHost: getBool("REQUIRE_KYC_TO_HOST", false),
+		},
+		Push: PushConfig{
+			FCMServiceAccountJSON: getEnv("FCM_SERVICE_ACCOUNT_JSON", ""),
+			APNsTeamID:            getEnv("APNS_TEAM_ID", ""),
+			APNsKeyID:             getEnv("APNS_KEY_ID", ""),
+			APNsPrivateKeyPEM:     getEnv("APNS_PRIVATE_KEY", ""),
+			APNsBundleID:          getEnv("APNS_BUNDLE_ID", ""),
+			APNsUseSandbox:        getBool("APNS_USE_SANDBOX", false),
 		},
 	}
 

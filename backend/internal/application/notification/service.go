@@ -4,20 +4,50 @@ package notificationapp
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
 )
 
+// PushCategory buckets a push so per-user opt-outs can be applied. The values
+// must match pushtokenapp.Category but are duplicated here so this package does
+// not depend on the push application package (avoiding a cycle when push wires
+// notifications back through the user repo).
+type PushCategory string
+
+const (
+	PushCatBookings PushCategory = "bookings"
+	PushCatMessages PushCategory = "messages"
+	PushCatAccount  PushCategory = "account"
+)
+
+// PushNotifier is the outbound port the notification subscriber uses to fan a
+// just-created notification out to the recipient's mobile/web devices. The
+// implementation (pushtokenapp.Service) looks up the user's tokens and routes
+// per platform; nil disables push delivery (used in tests or when the slice is
+// not wired).
+type PushNotifier interface {
+	Push(ctx context.Context, userID uuid.UUID, cat string, title, body string, data map[string]string) error
+}
+
 // Service orchestrates notification use cases.
 type Service struct {
 	repo notification.Repository
+	push PushNotifier // optional
 }
 
 // NewService wires the notification application service.
 func NewService(repo notification.Repository) *Service {
 	return &Service{repo: repo}
+}
+
+// WithPush attaches a PushNotifier so newly-created notifications are also
+// mirrored as native pushes. Returns the same service for chained wiring.
+func (s *Service) WithPush(p PushNotifier) *Service {
+	s.push = p
+	return s
 }
 
 // List returns a recipient's notifications.
@@ -49,14 +79,31 @@ func (s *Service) MarkAllRead(ctx context.Context, userID uuid.UUID) error {
 // entry used by the saved-search alert job (other notifications are produced by
 // the event subscriber).
 func (s *Service) Notify(ctx context.Context, userID uuid.UUID, title, body string, relatedID uuid.UUID) error {
-	return s.create(ctx, userID, notification.TypeSavedSearchAlert, title, body, relatedID)
+	return s.create(ctx, userID, notification.TypeSavedSearchAlert, title, body, relatedID, PushCatAccount)
 }
 
-// create is the internal helper used by the event subscriber.
-func (s *Service) create(ctx context.Context, userID uuid.UUID, t notification.Type, title, body string, relatedID uuid.UUID) error {
+// create is the internal helper used by the event subscriber. cat picks the
+// push opt-out bucket so a user who muted bookings still receives messages and
+// vice-versa.
+func (s *Service) create(ctx context.Context, userID uuid.UUID, t notification.Type, title, body string, relatedID uuid.UUID, cat PushCategory) error {
 	n, err := notification.New(userID, t, title, body, relatedID)
 	if err != nil {
 		return err
 	}
-	return s.repo.Create(ctx, n)
+	if err := s.repo.Create(ctx, n); err != nil {
+		return err
+	}
+	if s.push != nil {
+		data := map[string]string{
+			"notificationId": n.ID.String(),
+			"type":           string(t),
+		}
+		if relatedID != uuid.Nil {
+			data["relatedId"] = relatedID.String()
+		}
+		if err := s.push.Push(ctx, userID, string(cat), title, body, data); err != nil {
+			slog.Warn("notification: push delivery failed", "user", userID, "type", t, "error", err)
+		}
+	}
+	return nil
 }

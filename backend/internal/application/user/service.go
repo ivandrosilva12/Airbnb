@@ -121,6 +121,19 @@ func (s *Service) UpdateEmailPreferences(ctx context.Context, id uuid.UUID, pref
 	return u, nil
 }
 
+// UpdatePushPreferences sets which push categories the user's devices receive.
+func (s *Service) UpdatePushPreferences(ctx context.Context, id uuid.UUID, prefs user.PushPreferences) (*user.User, error) {
+	u, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	u.SetPushPreferences(prefs)
+	if err := s.repo.Update(ctx, u); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
 // BecomeHost promotes the user to host.
 func (s *Service) BecomeHost(ctx context.Context, id uuid.UUID) (*user.User, error) {
 	u, err := s.repo.FindByID(ctx, id)

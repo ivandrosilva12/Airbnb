@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from './src/auth/AuthContext';
 import { RealtimeProvider } from './src/api/RealtimeContext';
+import { useRegisterPushToken } from './src/notifications/pushBootstrap';
 import ExploreScreen from './src/screens/ExploreScreen';
 import PropertyScreen from './src/screens/PropertyScreen';
 import TripsScreen from './src/screens/TripsScreen';
@@ -21,10 +22,20 @@ import { HeaderAuthButton } from './src/screens/HeaderAuthButton';
 
 const Stack = createNativeStackNavigator();
 
+// PushBootstrap is a hooks-only component that registers the device with the
+// backend on login and unregisters it on logout. Mounted inside AuthProvider
+// (so it can read auth state) and RealtimeProvider (no dependency, just for
+// consistency with the existing wiring).
+function PushBootstrap() {
+  useRegisterPushToken();
+  return null;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <RealtimeProvider>
+      <PushBootstrap />
       <StatusBar style="dark" />
       <NavigationContainer>
         <Stack.Navigator

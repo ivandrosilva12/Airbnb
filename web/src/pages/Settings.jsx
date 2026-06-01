@@ -5,7 +5,8 @@ import { useT } from '../i18n/I18nContext';
 
 export default function Settings() {
   const { t } = useT();
-  const [prefs, setPrefs] = useState(null);
+  const [emailPrefs, setEmailPrefs] = useState(null);
+  const [pushPrefs, setPushPrefs] = useState(null);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -13,19 +14,31 @@ export default function Settings() {
   useEffect(() => {
     api
       .me()
-      .then((u) => setPrefs(u.emailPreferences))
+      .then((u) => {
+        setEmailPrefs(u.emailPreferences);
+        setPushPrefs(u.pushPreferences || { bookings: true, messages: true });
+      })
       .catch((e) => setError(e.message));
   }, []);
 
-  async function toggle(key) {
-    const next = { ...prefs, [key]: !prefs[key] };
-    setPrefs(next);
+  // toggle sends only the changed channel/key so the user can have email and
+  // push opt-outs that diverge per category.
+  async function toggle(channel, key) {
+    const prev = channel === 'push' ? pushPrefs : emailPrefs;
+    const nextValue = !prev[key];
+    if (channel === 'push') {
+      setPushPrefs({ ...prev, [key]: nextValue });
+    } else {
+      setEmailPrefs({ ...prev, [key]: nextValue });
+    }
     setSaving(true);
     setSaved(false);
     setError(null);
     try {
-      const u = await api.updatePreferences({ [key]: next[key] });
-      setPrefs(u.emailPreferences);
+      const body = { [channel]: { [key]: nextValue } };
+      const u = await api.updatePreferences(body);
+      setEmailPrefs(u.emailPreferences);
+      setPushPrefs(u.pushPreferences || { bookings: true, messages: true });
       setSaved(true);
     } catch (e) {
       setError(e.message);
@@ -41,17 +54,34 @@ export default function Settings() {
       <h2>{t('settings.emailTitle')}</h2>
       <p className="muted">{t('settings.emailHint')}</p>
       {error && <p className="error">{error}</p>}
-      {!prefs ? (
+      {!emailPrefs ? (
         <p>{t('common.loading')}</p>
       ) : (
         <div className="settings-list">
           <label className="settings-row">
-            <input type="checkbox" checked={prefs.bookings} disabled={saving} onChange={() => toggle('bookings')} />
+            <input type="checkbox" checked={emailPrefs.bookings} disabled={saving} onChange={() => toggle('email', 'bookings')} />
             <span>{t('settings.emailBookings')}</span>
           </label>
           <label className="settings-row">
-            <input type="checkbox" checked={prefs.messages} disabled={saving} onChange={() => toggle('messages')} />
+            <input type="checkbox" checked={emailPrefs.messages} disabled={saving} onChange={() => toggle('email', 'messages')} />
             <span>{t('settings.emailMessages')}</span>
+          </label>
+        </div>
+      )}
+
+      <h2>{t('settings.pushTitle')}</h2>
+      <p className="muted">{t('settings.pushHint')}</p>
+      {!pushPrefs ? (
+        <p>{t('common.loading')}</p>
+      ) : (
+        <div className="settings-list">
+          <label className="settings-row">
+            <input type="checkbox" checked={pushPrefs.bookings} disabled={saving} onChange={() => toggle('push', 'bookings')} />
+            <span>{t('settings.pushBookings')}</span>
+          </label>
+          <label className="settings-row">
+            <input type="checkbox" checked={pushPrefs.messages} disabled={saving} onChange={() => toggle('push', 'messages')} />
+            <span>{t('settings.pushMessages')}</span>
           </label>
           {saved && <p className="muted">{t('settings.saved')}</p>}
         </div>

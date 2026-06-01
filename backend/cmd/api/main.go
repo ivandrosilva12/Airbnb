@@ -33,6 +33,7 @@ import (
 	priceruleapp "github.com/airhost/backend/internal/application/pricerule"
 	privacyapp "github.com/airhost/backend/internal/application/privacy"
 	propertyapp "github.com/airhost/backend/internal/application/property"
+	pushtokenapp "github.com/airhost/backend/internal/application/pushtoken"
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reportapp "github.com/airhost/backend/internal/application/report"
 	reviewapp "github.com/airhost/backend/internal/application/review"
@@ -48,6 +49,7 @@ import (
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/postgres"
+	infrapush "github.com/airhost/backend/internal/infrastructure/push"
 	"github.com/airhost/backend/internal/infrastructure/realtime"
 	"github.com/airhost/backend/internal/infrastructure/scheduler"
 	"github.com/airhost/backend/internal/infrastructure/storage"
@@ -122,6 +124,7 @@ func run() error {
 	reportRepo := postgres.NewReportRepository(pool)
 	couponRepo := postgres.NewCouponRepository(pool)
 	webhookEventRepo := postgres.NewWebhookEventRepository(pool)
+	pushTokenRepo := postgres.NewPushTokenRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers,
@@ -145,7 +148,14 @@ func run() error {
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, userBlockRepo, objectStore, uow)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
 	favoriteSvc := favoriteapp.NewService(favoriteRepo, propertyRepo)
-	notificationSvc := notificationapp.NewService(notificationRepo)
+	// Native push: build a sender from configured providers (FCM/APNs) — the
+	// factory falls back to a log-only sender when nothing is configured, so the
+	// platform always has *some* sender behind the port. The notification
+	// service mirrors every newly-created notification through the push channel,
+	// honouring per-category opt-outs on the user aggregate.
+	pushSender := infrapush.NewSender(cfg.Push)
+	pushTokenSvc := pushtokenapp.NewService(pushTokenRepo, userRepo, pushSender)
+	notificationSvc := notificationapp.NewService(notificationRepo).WithPush(pushTokenSvc.AsNotifier())
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewGateway(cfg.Payment), bookingRepo, propertyRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
@@ -218,6 +228,7 @@ func run() error {
 			Offer:          handler.NewOfferHandler(offerSvc),
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
+			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
 		},
 	})
 

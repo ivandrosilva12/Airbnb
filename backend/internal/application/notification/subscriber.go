@@ -21,17 +21,17 @@ func (s *Service) EventHandler() event.Handler {
 			if ev.Instant {
 				title, body = "New booking", fmt.Sprintf("A guest just booked %q (instant book).", ev.PropertyTitle)
 			}
-			err = s.create(ctx, ev.HostID, notification.TypeBookingRequested, title, body, ev.BookingID)
+			err = s.create(ctx, ev.HostID, notification.TypeBookingRequested, title, body, ev.BookingID, PushCatBookings)
 
 		case event.BookingConfirmed:
 			err = s.create(ctx, ev.GuestID, notification.TypeBookingConfirmed,
 				"Booking confirmed",
-				fmt.Sprintf("Your booking for %q was confirmed.", ev.PropertyTitle), ev.BookingID)
+				fmt.Sprintf("Your booking for %q was confirmed.", ev.PropertyTitle), ev.BookingID, PushCatBookings)
 
 		case event.BookingModified:
 			err = s.create(ctx, ev.HostID, notification.TypeBookingModified,
 				"Booking changed",
-				fmt.Sprintf("A guest changed their booking dates or party size for %q.", ev.PropertyTitle), ev.BookingID)
+				fmt.Sprintf("A guest changed their booking dates or party size for %q.", ev.PropertyTitle), ev.BookingID, PushCatBookings)
 
 		case event.BookingCancelled:
 			recipient := ev.GuestID
@@ -40,7 +40,7 @@ func (s *Service) EventHandler() event.Handler {
 			}
 			err = s.create(ctx, recipient, notification.TypeBookingCancelled,
 				"Booking cancelled",
-				fmt.Sprintf("A booking for %q was cancelled.", ev.PropertyTitle), ev.BookingID)
+				fmt.Sprintf("A booking for %q was cancelled.", ev.PropertyTitle), ev.BookingID, PushCatBookings)
 
 		case event.BookingCompleted:
 			// Prompt the guest to review the property, and the host to review the
@@ -48,22 +48,22 @@ func (s *Service) EventHandler() event.Handler {
 			// prompt still runs.
 			if e1 := s.create(ctx, ev.GuestID, notification.TypeReviewRequested,
 				"How was your stay?",
-				fmt.Sprintf("Leave a review for %q.", ev.PropertyTitle), ev.BookingID); e1 != nil {
+				fmt.Sprintf("Leave a review for %q.", ev.PropertyTitle), ev.BookingID, PushCatBookings); e1 != nil {
 				slog.Error("failed to create notification", "event", e.EventName(), "error", e1)
 			}
 			err = s.create(ctx, ev.HostID, notification.TypeReviewRequested,
 				"Review your guest",
-				fmt.Sprintf("Leave a review for your guest at %q.", ev.PropertyTitle), ev.BookingID)
+				fmt.Sprintf("Leave a review for your guest at %q.", ev.PropertyTitle), ev.BookingID, PushCatBookings)
 
 		case event.MessageSent:
 			err = s.create(ctx, ev.RecipientID, notification.TypeMessageReceived,
 				"New message",
-				"You have a new message.", ev.ConversationID)
+				"You have a new message.", ev.ConversationID, PushCatMessages)
 
 		case event.IdentityVerified:
 			err = s.create(ctx, ev.UserID, notification.TypeIdentityVerified,
 				"Identity verified",
-				"Your identity has been verified. You now have a verified badge.", ev.VerificationID)
+				"Your identity has been verified. You now have a verified badge.", ev.VerificationID, PushCatAccount)
 		}
 		if err != nil {
 			slog.Error("failed to create notification", "event", e.EventName(), "error", err)

@@ -76,6 +76,19 @@ func DefaultEmailPreferences() EmailPreferences {
 	return EmailPreferences{Bookings: true, Messages: true}
 }
 
+// PushPreferences controls which push categories a user's devices receive. In-app
+// notifications are always delivered; these toggles only gate push delivery.
+// Account/security pushes are not gated (mirrors the email policy).
+type PushPreferences struct {
+	Bookings bool // booking lifecycle pushes
+	Messages bool // new-message pushes
+}
+
+// DefaultPushPreferences opts a user in to all push categories.
+func DefaultPushPreferences() PushPreferences {
+	return PushPreferences{Bookings: true, Messages: true}
+}
+
 // User is the aggregate root for an application identity.
 type User struct {
 	ID          uuid.UUID
@@ -86,6 +99,7 @@ type User struct {
 	AvatarURL   string
 	IsActive    bool
 	EmailPrefs  EmailPreferences
+	PushPrefs   PushPreferences
 	// PayoutAccountID is the host's Stripe Connect connected-account id (acct_…),
 	// set when they begin payout onboarding. PayoutsEnabled mirrors the account's
 	// payouts_enabled flag — true once onboarding is complete and the host can
@@ -124,6 +138,7 @@ func NewUser(keycloakSub, email, fullName string, role Role) (*User, error) {
 		Role:        role,
 		IsActive:    true,
 		EmailPrefs:  DefaultEmailPreferences(),
+		PushPrefs:   DefaultPushPreferences(),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}, nil
@@ -132,6 +147,12 @@ func NewUser(keycloakSub, email, fullName string, role Role) (*User, error) {
 // SetEmailPreferences updates which transactional emails the user receives.
 func (u *User) SetEmailPreferences(prefs EmailPreferences) {
 	u.EmailPrefs = prefs
+	u.touch()
+}
+
+// SetPushPreferences updates which push categories the user receives.
+func (u *User) SetPushPreferences(prefs PushPreferences) {
+	u.PushPrefs = prefs
 	u.touch()
 }
 
