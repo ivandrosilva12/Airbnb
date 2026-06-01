@@ -100,6 +100,51 @@ func (s *Service) ReconcileGatewayEvent(ctx context.Context, evt port.GatewayEve
 	return true, nil
 }
 
+// RefundForBooking applies a partial refund against the payment of the given
+// booking, returning amountCents to the guest. The dispute that triggered the
+// refund is recorded in the payment_adjustments ledger; re-applying the same
+// dispute outcome is a storage-level no-op (HasAdjustmentFor guards in the
+// aggregate, ON CONFLICT DO NOTHING in the repo).
+//
+// This is the dispute side of partial refunds — the booking-cancellation flow
+// uses Payment.Refund (one-shot) instead. Cumulative refunds across both
+// paths still share the same "sum ≤ captured" cap because RefundPartial
+// validates against the running RefundedCents.
+func (s *Service) RefundForBooking(ctx context.Context, bookingID uuid.UUID, amountCents int64, reason string, disputeID uuid.UUID) error {
+	p, err := s.repo.FindByBookingID(ctx, bookingID)
+	if err != nil {
+		return err
+	}
+	if p.HasAdjustmentFor(payment.AdjustmentRefund, "dispute", disputeID) {
+		return nil // already applied — keep this idempotent
+	}
+	if err := s.gateway.Refund(ctx, p.GatewayRef, amountCents); err != nil {
+		return err
+	}
+	if _, err := p.RefundPartial(amountCents, reason, "dispute", disputeID); err != nil {
+		return err
+	}
+	return s.repo.Update(ctx, p)
+}
+
+// DamageClaimForBooking records the moderator-awarded damage compensation
+// against the booking's payment. Pure audit — no gateway call is made because
+// charging a guest for damage requires a security-deposit hold, which is a
+// future slice.
+func (s *Service) DamageClaimForBooking(ctx context.Context, bookingID uuid.UUID, amountCents int64, reason string, disputeID uuid.UUID) error {
+	p, err := s.repo.FindByBookingID(ctx, bookingID)
+	if err != nil {
+		return err
+	}
+	if p.HasAdjustmentFor(payment.AdjustmentDamageClaim, "dispute", disputeID) {
+		return nil
+	}
+	if _, err := p.RecordDamageClaim(amountCents, reason, "dispute", disputeID); err != nil {
+		return err
+	}
+	return s.repo.Update(ctx, p)
+}
+
 // findByGatewayRef resolves a payment from a provider-native reference, allowing
 // for the routing gateway's "<provider>:<ref>" tag on the stored value.
 func (s *Service) findByGatewayRef(ctx context.Context, provider, ref string) (*payment.Payment, error) {

@@ -162,7 +162,9 @@ func (h *DisputeHandler) AdminListOpen(c *gin.Context) {
 }
 
 type adminDecisionRequest struct {
-	Resolution string `json:"resolution" binding:"required"`
+	Resolution        string `json:"resolution" binding:"required"`
+	RefundAmountCents int64  `json:"refundAmountCents"`
+	DamageAmountCents int64  `json:"damageAmountCents"`
 }
 
 // AdminResolve closes a dispute siding with the opener.
@@ -184,14 +186,21 @@ func (h *DisputeHandler) adminDecide(c *gin.Context, sideWithOpener bool) {
 	if !bindJSON(c, &req) {
 		return
 	}
+	in := disputeapp.ResolveInput{
+		AdminID:           uid,
+		DisputeID:         id,
+		Resolution:        req.Resolution,
+		RefundAmountCents: req.RefundAmountCents,
+		DamageAmountCents: req.DamageAmountCents,
+	}
 	var (
 		d   *domaindispute.Dispute
 		err error
 	)
 	if sideWithOpener {
-		d, err = h.svc.AdminResolve(c.Request.Context(), uid, id, req.Resolution)
+		d, err = h.svc.AdminResolve(c.Request.Context(), in)
 	} else {
-		d, err = h.svc.AdminReject(c.Request.Context(), uid, id, req.Resolution)
+		d, err = h.svc.AdminReject(c.Request.Context(), in)
 	}
 	if err != nil {
 		response.Fail(c, err)

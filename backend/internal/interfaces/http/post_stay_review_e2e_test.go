@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	domainuser "github.com/airhost/backend/internal/domain/user"
@@ -42,6 +43,27 @@ func (h *harness) seedCompletedStay(guestID, hostID uuid.UUID, title string) *bo
 	_ = b.Complete()
 	if err := h.bookingRepo.Create(ctx, b); err != nil {
 		h.t.Fatalf("store booking: %v", err)
+	}
+	// Seed a matching captured Payment so the post-stay flow can refund through
+	// it. We drive the FakeGateway directly so refunds during the test resolve
+	// the gateway-issued reference correctly. Tests that only care about the
+	// booking lifecycle ignore the payment.
+	pay := payment.New(b.ID, guestID, price)
+	ref, err := h.paymentGateway.Authorize(ctx, price, b.ID.String())
+	if err != nil {
+		h.t.Fatalf("authorize seed payment: %v", err)
+	}
+	if err := pay.Authorize(ref); err != nil {
+		h.t.Fatalf("apply authorize: %v", err)
+	}
+	if err := h.paymentGateway.Capture(ctx, ref); err != nil {
+		h.t.Fatalf("capture seed payment at gateway: %v", err)
+	}
+	if err := pay.Capture(); err != nil {
+		h.t.Fatalf("apply capture: %v", err)
+	}
+	if err := h.paymentRepo.Create(ctx, pay); err != nil {
+		h.t.Fatalf("store seed payment: %v", err)
 	}
 	return b
 }

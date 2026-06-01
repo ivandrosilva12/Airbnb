@@ -67,6 +67,11 @@ func (a *RevenueAccumulator) Dominant() Revenue {
 }
 
 // Repository is the persistence port for the Payment aggregate.
+//
+// Adjustments (partial refunds, damage claims) are owned by the aggregate and
+// persisted alongside it: Create and Update must save the Payment row plus
+// any new entries in its Adjustments slice in a single transaction; reads
+// must hydrate the slice from the same store.
 type Repository interface {
 	Create(ctx context.Context, p *Payment) error
 	Update(ctx context.Context, p *Payment) error

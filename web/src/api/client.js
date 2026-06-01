@@ -123,8 +123,15 @@ export const api = {
   addDisputeEvidence: (id, body) => request('POST', `/disputes/${id}/evidence`, { body, auth: true }),
   hostRespondDispute: (id, response) => request('POST', `/disputes/${id}/host-response`, { body: { response }, auth: true }),
   adminListOpenDisputes: () => request('GET', '/admin/disputes', { auth: true }),
-  adminResolveDispute: (id, resolution) => request('POST', `/admin/disputes/${id}/resolve`, { body: { resolution }, auth: true }),
-  adminRejectDispute: (id, resolution) => request('POST', `/admin/disputes/${id}/reject`, { body: { resolution }, auth: true }),
+  // adminResolveDispute accepts either a plain resolution string (legacy) or
+  // a body object { resolution, refundAmountCents, damageAmountCents } so the
+  // moderator can attach a partial refund or a damage claim to the decision.
+  adminResolveDispute: (id, body) =>
+    request('POST', `/admin/disputes/${id}/resolve`,
+      { body: typeof body === 'string' ? { resolution: body } : body, auth: true }),
+  adminRejectDispute: (id, body) =>
+    request('POST', `/admin/disputes/${id}/reject`,
+      { body: typeof body === 'string' ? { resolution: body } : body, auth: true }),
 
   // Admin moderation
   adminListVerifications: () => request('GET', '/admin/verifications', { auth: true }),

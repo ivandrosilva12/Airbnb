@@ -1027,7 +1027,7 @@ func NewPaymentRepository() *PaymentRepository {
 func (r *PaymentRepository) Create(_ context.Context, p *payment.Payment) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.m[p.ID] = *p
+	r.m[p.ID] = clonePayment(p)
 	return nil
 }
 
@@ -1037,15 +1037,25 @@ func (r *PaymentRepository) Update(_ context.Context, p *payment.Payment) error 
 	if _, ok := r.m[p.ID]; !ok {
 		return shared.ErrNotFound
 	}
-	r.m[p.ID] = *p
+	r.m[p.ID] = clonePayment(p)
 	return nil
+}
+
+// clonePayment deep-copies a Payment so the in-memory store doesn't share the
+// Adjustments backing array with whatever the caller mutates next.
+func clonePayment(p *payment.Payment) payment.Payment {
+	out := *p
+	if len(p.Adjustments) > 0 {
+		out.Adjustments = append([]payment.Adjustment(nil), p.Adjustments...)
+	}
+	return out
 }
 
 func (r *PaymentRepository) FindByID(_ context.Context, id uuid.UUID) (*payment.Payment, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if p, ok := r.m[id]; ok {
-		c := p
+		c := clonePayment(&p)
 		return &c, nil
 	}
 	return nil, shared.ErrNotFound
@@ -1056,7 +1066,7 @@ func (r *PaymentRepository) FindByBookingID(_ context.Context, bookingID uuid.UU
 	defer r.mu.RUnlock()
 	for _, p := range r.m {
 		if p.BookingID == bookingID {
-			c := p
+			c := clonePayment(&p)
 			return &c, nil
 		}
 	}
@@ -1068,7 +1078,7 @@ func (r *PaymentRepository) FindByGatewayRef(_ context.Context, gatewayRef strin
 	defer r.mu.RUnlock()
 	for _, p := range r.m {
 		if p.GatewayRef == gatewayRef {
-			c := p
+			c := clonePayment(&p)
 			return &c, nil
 		}
 	}
@@ -1098,7 +1108,7 @@ func (r *PaymentRepository) ListByGuest(_ context.Context, guestID uuid.UUID, pa
 	var all []*payment.Payment
 	for _, p := range r.m {
 		if p.GuestID == guestID {
-			c := p
+			c := clonePayment(&p)
 			all = append(all, &c)
 		}
 	}

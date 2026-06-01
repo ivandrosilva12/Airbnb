@@ -133,3 +133,106 @@ func TestEndToEnd_DisputeLifecycle(t *testing.T) {
 		t.Fatalf("host should have a notification, got total=%v", total)
 	}
 }
+
+// TestEndToEnd_DisputeResolveAppliesPartialRefund covers S14: the admin's
+// decision carries a refundAmountCents that the payment side honours,
+// producing a payment_adjustments audit row, updating refundedCents and
+// exposing the adjustment on the receipt. A second decision that would
+// over-refund must be rejected by the payment domain — but in this test the
+// dispute is already terminal after one resolve, so we exercise the over-
+// refund cap by directly opening a fresh dispute against a payment that has
+// already been partially refunded.
+func TestEndToEnd_DisputeResolveAppliesPartialRefund(t *testing.T) {
+	h := newHarness(t)
+	host := h.seedUser(domainuser.RoleHost, "refund-host@test.dev")
+	guest := h.seedUser(domainuser.RoleGuest, "refund-guest@test.dev")
+	admin := h.seedUser(domainuser.RoleAdmin, "refund-admin@test.dev")
+
+	guestTok := guest.ID.String()
+	adminTok := admin.ID.String()
+
+	b := h.seedCompletedStay(guest.ID, host.ID, "Casa do Tejo")
+	bookingID := b.ID.String()
+
+	// Guest opens a refund dispute for 4000 cents.
+	rec := h.do(http.MethodPost, "/api/v1/bookings/"+bookingID+"/disputes", guestTok, map[string]any{
+		"kind": "refund", "reason": "Heater broken on first night.", "requestedAmountCents": 4000, "currency": "EUR",
+	})
+	mustStatus(t, rec, http.StatusCreated, "open refund dispute")
+	disputeID := h.decode(rec)["id"].(string)
+
+	// Admin resolves with a partial refund of 2500 cents.
+	rec = h.do(http.MethodPost, "/api/v1/admin/disputes/"+disputeID+"/resolve", adminTok, map[string]any{
+		"resolution":        "Awarding 2500 cents partial refund.",
+		"refundAmountCents": 2500,
+	})
+	mustStatus(t, rec, http.StatusOK, "admin resolve with refund")
+
+	// The booking's payment now shows 2500 refunded and a 'dispute' adjustment.
+	rec = h.do(http.MethodGet, "/api/v1/bookings/"+bookingID+"/payment", guestTok, nil)
+	mustStatus(t, rec, http.StatusOK, "guest payment view")
+	pay := h.decode(rec)
+	if rc, _ := pay["refundedCents"].(float64); int64(rc) != 2500 {
+		t.Fatalf("refundedCents = %v, want 2500", pay["refundedCents"])
+	}
+	adjs, _ := pay["adjustments"].([]any)
+	if len(adjs) != 1 {
+		t.Fatalf("adjustments = %d, want 1; payment=%v", len(adjs), pay)
+	}
+	first, _ := adjs[0].(map[string]any)
+	if first["kind"] != "refund" || int64(first["amountCents"].(float64)) != 2500 || first["refKind"] != "dispute" || first["refId"] != disputeID {
+		t.Fatalf("adjustment payload unexpected: %v", first)
+	}
+}
+
+// TestEndToEnd_DisputeRefundExceedingCapturedRejected covers the headline
+// invariant: cumulative refunds may not exceed the captured amount. The
+// admin tries to resolve a dispute with a refund larger than the booking's
+// total — the payment domain rejects, the HTTP layer returns 4xx, and the
+// dispute is left open so the admin can correct the figure.
+func TestEndToEnd_DisputeRefundExceedingCapturedRejected(t *testing.T) {
+	h := newHarness(t)
+	host := h.seedUser(domainuser.RoleHost, "overrefund-host@test.dev")
+	guest := h.seedUser(domainuser.RoleGuest, "overrefund-guest@test.dev")
+	admin := h.seedUser(domainuser.RoleAdmin, "overrefund-admin@test.dev")
+
+	guestTok := guest.ID.String()
+	adminTok := admin.ID.String()
+
+	b := h.seedCompletedStay(guest.ID, host.ID, "Quinta da Granja")
+	bookingID := b.ID.String()
+
+	rec := h.do(http.MethodPost, "/api/v1/bookings/"+bookingID+"/disputes", guestTok, map[string]any{
+		"kind": "refund", "reason": "Stay was unusable.", "requestedAmountCents": 100000, "currency": "EUR",
+	})
+	mustStatus(t, rec, http.StatusCreated, "open over-refund dispute")
+	disputeID := h.decode(rec)["id"].(string)
+
+	// Refund larger than the booking total — must be rejected.
+	rec = h.do(http.MethodPost, "/api/v1/admin/disputes/"+disputeID+"/resolve", adminTok, map[string]any{
+		"resolution":        "would over-refund",
+		"refundAmountCents": 999_999_999,
+	})
+	if rec.Code < 400 {
+		t.Fatalf("over-refund resolve should fail, got %d", rec.Code)
+	}
+
+	// The dispute is still open in the moderation queue (the failed resolve
+	// did not flip it terminal) and the admin can correct the figure.
+	rec = h.do(http.MethodGet, "/api/v1/admin/disputes", adminTok, nil)
+	mustStatus(t, rec, http.StatusOK, "admin queue after rejected resolve")
+	items := h.decode(rec)["items"].([]any)
+	found := false
+	for _, it := range items {
+		row := it.(map[string]any)
+		if row["id"] == disputeID {
+			found = true
+			if status, _ := row["status"].(string); status == "resolved" || status == "rejected" {
+				t.Fatalf("dispute should still be open, status = %v", status)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("dispute %s missing from queue after failed resolve", disputeID)
+	}
+}

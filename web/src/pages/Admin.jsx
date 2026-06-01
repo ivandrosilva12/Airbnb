@@ -27,7 +27,10 @@ function DisputeQueue() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [decisions, setDecisions] = useState({}); // disputeId -> text
+  // Per-dispute draft state: { resolution, refund (string), damage (string) }.
+  // refund/damage stay strings so the input can be cleared without flicking
+  // to NaN; the numeric conversion happens at submit time.
+  const [drafts, setDrafts] = useState({});
 
   async function load() {
     setLoading(true);
@@ -43,16 +46,35 @@ function DisputeQueue() {
   }
   useEffect(() => { load(); }, []);
 
-  async function decide(disputeId, fn) {
-    const resolution = (decisions[disputeId] || '').trim();
+  function updateDraft(disputeId, patch) {
+    setDrafts((d) => ({ ...d, [disputeId]: { ...(d[disputeId] || {}), ...patch } }));
+  }
+
+  // toCents turns a "12.34"-style euro/dollar input into integer cents. Empty
+  // / non-numeric inputs collapse to 0 (interpreted as "no monetary effect").
+  function toCents(raw) {
+    if (!raw) return 0;
+    const n = Number.parseFloat(raw);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.round(n * 100);
+  }
+
+  async function decide(disputeId, kind, fn) {
+    const draft = drafts[disputeId] || {};
+    const resolution = (draft.resolution || '').trim();
     if (!resolution) {
       setError(t('admin.dispute.needResolution'));
       return;
     }
+    const body = {
+      resolution,
+      refundAmountCents: kind === 'resolve' ? toCents(draft.refund) : 0,
+      damageAmountCents: kind === 'resolve' ? toCents(draft.damage) : 0,
+    };
     setError(null);
     try {
-      await fn(disputeId, resolution);
-      setDecisions((d) => ({ ...d, [disputeId]: '' }));
+      await fn(disputeId, body);
+      setDrafts((d) => ({ ...d, [disputeId]: {} }));
       await load();
     } catch (e) {
       setError(e.message);
@@ -97,12 +119,34 @@ function DisputeQueue() {
               </div>
               <textarea
                 placeholder={t('admin.dispute.decisionPlaceholder')}
-                value={decisions[d.id] || ''}
-                onChange={(e) => setDecisions((m) => ({ ...m, [d.id]: e.target.value }))}
+                value={(drafts[d.id] && drafts[d.id].resolution) || ''}
+                onChange={(e) => updateDraft(d.id, { resolution: e.target.value })}
               />
+              <div className="admin-money-row">
+                <label>
+                  {t('admin.dispute.refundAmount')}
+                  <input
+                    type="number" min="0" step="0.01"
+                    placeholder="0.00"
+                    value={(drafts[d.id] && drafts[d.id].refund) || ''}
+                    onChange={(e) => updateDraft(d.id, { refund: e.target.value })}
+                  />
+                </label>
+                <label>
+                  {t('admin.dispute.damageAmount')}
+                  <input
+                    type="number" min="0" step="0.01"
+                    placeholder="0.00"
+                    value={(drafts[d.id] && drafts[d.id].damage) || ''}
+                    onChange={(e) => updateDraft(d.id, { damage: e.target.value })}
+                  />
+                </label>
+                <span className="muted">{d.currency || ''}</span>
+              </div>
+              <p className="muted-text">{t('admin.dispute.moneyHint')}</p>
               <div className="admin-actions">
-                <button className="btn btn-primary btn-sm" onClick={() => decide(d.id, api.adminResolveDispute)}>{t('admin.dispute.resolve')}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => decide(d.id, api.adminRejectDispute)}>{t('admin.dispute.reject')}</button>
+                <button className="btn btn-primary btn-sm" onClick={() => decide(d.id, 'resolve', api.adminResolveDispute)}>{t('admin.dispute.resolve')}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => decide(d.id, 'reject', api.adminRejectDispute)}>{t('admin.dispute.reject')}</button>
               </div>
             </li>
           ))}

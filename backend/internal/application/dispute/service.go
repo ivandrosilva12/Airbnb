@@ -3,9 +3,9 @@
 // decides the outcome. Domain events DisputeOpened and DisputeResolved are
 // published so the notification / email / push pipelines pick them up.
 //
-// Money movement triggered by a resolved dispute (partial refund, damage
-// debit) is intentionally not handled here — S14 will plug it in once this
-// lifecycle is stable.
+// When a moderator resolves a case, the money side (partial refund to the
+// guest, damage claim to the host) is delegated to a PaymentAdjuster port so
+// the dispute service does not depend on the payment bounded context directly.
 package disputeapp
 
 import (
@@ -32,15 +32,28 @@ type Service struct {
 	bookings   booking.Repository
 	properties property.Repository
 	pub        event.Publisher
+	adjuster   PaymentAdjuster
 }
 
 // NewService wires the dispute application service. When pub is nil events are
-// silently dropped (useful in some tests).
+// silently dropped (useful in some tests). The PaymentAdjuster is wired with
+// WithPaymentAdjuster — by default a no-op adapter is used so the dispute
+// lifecycle still works without payment side-effects.
 func NewService(repo dispute.Repository, bookings booking.Repository, properties property.Repository, pub event.Publisher) *Service {
 	if pub == nil {
 		pub = event.Nop()
 	}
-	return &Service{repo: repo, bookings: bookings, properties: properties, pub: pub}
+	return &Service{repo: repo, bookings: bookings, properties: properties, pub: pub, adjuster: nopAdjuster{}}
+}
+
+// WithPaymentAdjuster swaps in a real payment adapter so admin resolutions can
+// move money. Returns the same service for chained construction.
+func (s *Service) WithPaymentAdjuster(a PaymentAdjuster) *Service {
+	if a == nil {
+		a = nopAdjuster{}
+	}
+	s.adjuster = a
+	return s
 }
 
 // OpenInput carries the inputs for filing a new dispute.
@@ -219,18 +232,38 @@ func (s *Service) GetByID(ctx context.Context, actorID, id uuid.UUID) (*dispute.
 	return d, nil
 }
 
-// AdminResolve closes the dispute siding with the opener.
-func (s *Service) AdminResolve(ctx context.Context, adminID, disputeID uuid.UUID, resolution string) (*dispute.Dispute, error) {
-	return s.adminDecide(ctx, adminID, disputeID, resolution, true)
+// ResolveInput carries the moderator's decision: a public resolution text and
+// optional monetary effects. RefundAmountCents returns money to the guest;
+// DamageAmountCents records compensation owed to the host. Both default to
+// zero (a "talk-only" resolution); when non-zero, the booking's payment is
+// adjusted before the dispute is closed, so a payment-side validation error
+// (e.g. refund > captured) propagates back to the admin and the dispute
+// stays open.
+type ResolveInput struct {
+	AdminID            uuid.UUID
+	DisputeID          uuid.UUID
+	Resolution         string
+	RefundAmountCents  int64
+	DamageAmountCents  int64
 }
 
-// AdminReject closes the dispute siding against the opener.
-func (s *Service) AdminReject(ctx context.Context, adminID, disputeID uuid.UUID, resolution string) (*dispute.Dispute, error) {
-	return s.adminDecide(ctx, adminID, disputeID, resolution, false)
+// AdminResolve closes the dispute siding with the opener. When the input
+// carries a positive RefundAmountCents the booking's payment is partially
+// refunded against the captured amount; DamageAmountCents records a damage
+// claim entry. The payment-side calls happen before the dispute is saved so a
+// failure (e.g. refund > captured) leaves the dispute open.
+func (s *Service) AdminResolve(ctx context.Context, in ResolveInput) (*dispute.Dispute, error) {
+	return s.adminDecide(ctx, in, true)
 }
 
-func (s *Service) adminDecide(ctx context.Context, adminID, disputeID uuid.UUID, resolution string, sideWithOpener bool) (*dispute.Dispute, error) {
-	d, err := s.repo.FindByID(ctx, disputeID)
+// AdminReject closes the dispute siding against the opener (no compensation /
+// no further action). The amount fields on the input are ignored.
+func (s *Service) AdminReject(ctx context.Context, in ResolveInput) (*dispute.Dispute, error) {
+	return s.adminDecide(ctx, in, false)
+}
+
+func (s *Service) adminDecide(ctx context.Context, in ResolveInput, sideWithOpener bool) (*dispute.Dispute, error) {
+	d, err := s.repo.FindByID(ctx, in.DisputeID)
 	if err != nil {
 		return nil, err
 	}
@@ -242,12 +275,27 @@ func (s *Service) adminDecide(ctx context.Context, adminID, disputeID uuid.UUID,
 	if err != nil {
 		return nil, err
 	}
+	// Apply monetary effects up-front. If the payment side rejects (e.g. the
+	// refund would exceed the captured amount), the dispute stays open and the
+	// admin can adjust the figures.
 	if sideWithOpener {
-		if err := d.AdminResolve(adminID, resolution); err != nil {
+		if in.RefundAmountCents > 0 {
+			reason := "dispute " + string(d.Kind) + ": " + in.Resolution
+			if err := s.adjuster.RefundForBooking(ctx, b.ID, in.RefundAmountCents, reason, d.ID); err != nil {
+				return nil, err
+			}
+		}
+		if in.DamageAmountCents > 0 {
+			reason := "dispute " + string(d.Kind) + ": " + in.Resolution
+			if err := s.adjuster.DamageClaimForBooking(ctx, b.ID, in.DamageAmountCents, reason, d.ID); err != nil {
+				return nil, err
+			}
+		}
+		if err := d.AdminResolve(in.AdminID, in.Resolution); err != nil {
 			return nil, err
 		}
 	} else {
-		if err := d.AdminReject(adminID, resolution); err != nil {
+		if err := d.AdminReject(in.AdminID, in.Resolution); err != nil {
 			return nil, err
 		}
 	}

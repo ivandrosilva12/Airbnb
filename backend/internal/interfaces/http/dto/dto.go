@@ -594,25 +594,57 @@ type NotificationListView struct {
 
 // PaymentView is the public representation of a payment.
 type PaymentView struct {
-	ID            uuid.UUID `json:"id"`
-	BookingID     uuid.UUID `json:"bookingId"`
-	Amount        MoneyView `json:"amount"`
-	Status        string    `json:"status"`
-	RefundedCents int64     `json:"refundedCents"`
-	FailureReason string    `json:"failureReason,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID               uuid.UUID            `json:"id"`
+	BookingID        uuid.UUID            `json:"bookingId"`
+	Amount           MoneyView            `json:"amount"`
+	Status           string               `json:"status"`
+	RefundedCents    int64                `json:"refundedCents"`
+	DamageClaimCents int64                `json:"damageClaimCents"`
+	FailureReason    string               `json:"failureReason,omitempty"`
+	Adjustments      []PaymentAdjustment  `json:"adjustments,omitempty"`
+	CreatedAt        time.Time            `json:"createdAt"`
+}
+
+// PaymentAdjustment is a single audit-ledger entry on a payment (partial
+// refund or damage claim) attributed to a source aggregate.
+type PaymentAdjustment struct {
+	ID          uuid.UUID `json:"id"`
+	Kind        string    `json:"kind"`
+	AmountCents int64     `json:"amountCents"`
+	Reason      string    `json:"reason,omitempty"`
+	RefKind     string    `json:"refKind,omitempty"`
+	RefID       string    `json:"refId,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 // FromPayment maps a payment aggregate to its view.
 func FromPayment(p *payment.Payment) PaymentView {
+	adjs := make([]PaymentAdjustment, 0, len(p.Adjustments))
+	for _, a := range p.Adjustments {
+		refID := ""
+		if a.RefID != (uuid.UUID{}) {
+			refID = a.RefID.String()
+		}
+		adjs = append(adjs, PaymentAdjustment{
+			ID:          a.ID,
+			Kind:        string(a.Kind),
+			AmountCents: a.AmountCents,
+			Reason:      a.Reason,
+			RefKind:     a.RefKind,
+			RefID:       refID,
+			CreatedAt:   a.CreatedAt,
+		})
+	}
 	return PaymentView{
-		ID:            p.ID,
-		BookingID:     p.BookingID,
-		Amount:        fromMoney(p.Amount),
-		Status:        string(p.Status),
-		RefundedCents: p.RefundedCents,
-		FailureReason: p.FailureReason,
-		CreatedAt:     p.CreatedAt,
+		ID:               p.ID,
+		BookingID:        p.BookingID,
+		Amount:           fromMoney(p.Amount),
+		Status:           string(p.Status),
+		RefundedCents:    p.RefundedCents,
+		DamageClaimCents: p.DamageClaimCents,
+		FailureReason:    p.FailureReason,
+		Adjustments:      adjs,
+		CreatedAt:        p.CreatedAt,
 	}
 }
 

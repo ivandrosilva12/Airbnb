@@ -170,7 +170,8 @@ func run() error {
 	userBlockSvc := userblockapp.NewService(userBlockRepo)
 	offerSvc := offerapp.NewService(offerRepo, propertyRepo, bookingSvc)
 	savedSearchSvc := savedsearchapp.NewService(savedSearchRepo, searchSvc, notificationSvc)
-	disputeSvc := disputeapp.NewService(disputeRepo, bookingRepo, propertyRepo, dispatcher)
+	disputeSvc := disputeapp.NewService(disputeRepo, bookingRepo, propertyRepo, dispatcher).
+		WithPaymentAdjuster(paymentSvc)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
 	alertStateSvc := alertstateapp.NewService()
 	realtimeHub := realtime.NewHub()
