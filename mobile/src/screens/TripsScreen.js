@@ -22,17 +22,21 @@ export default function TripsScreen() {
   const [modifying, setModifying] = useState(null);
   const [modDraft, setModDraft] = useState({ checkIn: '', checkOut: '', guests: '' });
   const [offers, setOffers] = useState([]);
+  const [disputing, setDisputing] = useState(null);
+  const [disputeDraft, setDisputeDraft] = useState({ kind: 'refund', reason: '', amount: '' });
+  const [disputes, setDisputes] = useState({}); // bookingId -> dispute view
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [bookingsRes, paymentsRes, pendingRes, offersRes] = await Promise.all([
+      const [bookingsRes, paymentsRes, pendingRes, offersRes, disputesRes] = await Promise.all([
         api.myBookings(),
         api.listPayments(),
         api.pendingReviews(),
         api.myOffers().catch(() => ({ items: [] })),
+        api.listMyDisputes().catch(() => []),
       ]);
       setItems(bookingsRes.items || []);
       const byBooking = {};
@@ -42,6 +46,9 @@ export default function TripsScreen() {
       for (const p of pendingRes.items || []) pend[p.bookingId] = true;
       setPending(pend);
       setOffers((offersRes.items || []).filter((o) => o.status === 'pending'));
+      const dByB = {};
+      for (const d of disputesRes || []) dByB[d.bookingId] = d;
+      setDisputes(dByB);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -73,6 +80,34 @@ export default function TripsScreen() {
     setError(null);
     setDraft({ rating: 5, cats: {} });
     setReviewing(bookingId);
+  }
+
+  function openDispute(bookingId) {
+    setError(null);
+    setDisputeDraft({ kind: 'refund', reason: '', amount: '' });
+    setDisputing(bookingId);
+  }
+
+  async function submitDispute(booking) {
+    if (!disputeDraft.reason.trim()) {
+      setError('A reason is required.');
+      return;
+    }
+    const body = {
+      kind: disputeDraft.kind,
+      reason: disputeDraft.reason.trim(),
+    };
+    if (disputeDraft.kind !== 'other') {
+      body.requestedAmountCents = Math.round(Number(disputeDraft.amount || 0) * 100);
+      body.currency = booking.totalPrice?.currency || 'EUR';
+    }
+    try {
+      await api.openDispute(booking.id, body);
+      setDisputing(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
   }
 
   async function submitReview(bookingId) {
@@ -279,6 +314,56 @@ export default function TripsScreen() {
                   </Pressable>
                 )
               ) : null}
+
+              {/* Resolution Center: open a case on completed/cancelled stays
+                  that don't already have an active dispute. */}
+              {(item.status === 'completed' || item.status === 'cancelled') &&
+                !disputes[item.id] &&
+                (disputing === item.id ? (
+                  <View style={styles.reviewForm}>
+                    <Text style={styles.reviewFormLabel}>Open a case</Text>
+                    <View style={styles.kindRow}>
+                      {['refund', 'damage', 'other'].map((k) => (
+                        <Pressable key={k} onPress={() => setDisputeDraft((d) => ({ ...d, kind: k }))}>
+                          <Text style={k === disputeDraft.kind ? styles.kindPicked : styles.kindOption}>{k}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    {disputeDraft.kind !== 'other' && (
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Amount"
+                        keyboardType="decimal-pad"
+                        value={disputeDraft.amount}
+                        onChangeText={(v) => setDisputeDraft((d) => ({ ...d, amount: v }))}
+                      />
+                    )}
+                    <TextInput
+                      style={[styles.input, { minHeight: 60 }]}
+                      multiline
+                      placeholder="What happened?"
+                      value={disputeDraft.reason}
+                      onChangeText={(v) => setDisputeDraft((d) => ({ ...d, reason: v }))}
+                    />
+                    <View style={styles.reviewFormActions}>
+                      <Pressable style={styles.btnSm} onPress={() => submitDispute(item)}>
+                        <Text style={styles.btnText}>Submit</Text>
+                      </Pressable>
+                      <Pressable onPress={() => setDisputing(null)}>
+                        <Text style={styles.cancel}>Cancel</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
+                  <Pressable onPress={() => openDispute(item.id)}>
+                    <Text style={styles.reviewCta}>Open a case</Text>
+                  </Pressable>
+                ))}
+              {disputes[item.id] && (
+                <Text style={styles.disputeBadge}>
+                  Case: {disputes[item.id].status}
+                </Text>
+              )}
             </View>
           );
         }}
@@ -342,4 +427,9 @@ const styles = StyleSheet.create({
   error: { color: '#c0392b' },
   btn: { backgroundColor: '#ff385c', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 12 },
   btnText: { color: '#fff', fontWeight: '700' },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, marginTop: 6 },
+  kindRow: { flexDirection: 'row', gap: 14, marginTop: 6 },
+  kindOption: { color: '#717171', textTransform: 'capitalize' },
+  kindPicked: { color: '#ff385c', fontWeight: '700', textTransform: 'capitalize' },
+  disputeBadge: { color: '#a05a00', fontWeight: '700', marginTop: 8 },
 });

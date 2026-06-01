@@ -38,6 +38,7 @@ type Handlers struct {
 	SavedSearch    *handler.SavedSearchHandler
 	PriceRule      *handler.PriceRuleHandler
 	PushToken      *handler.PushTokenHandler
+	Dispute        *handler.DisputeHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -212,6 +213,14 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.POST("/me/push-tokens", h.PushToken.Register)
 		auth.POST("/me/push-tokens/unregister", h.PushToken.Unregister)
 
+		// Resolution Center — guests/hosts open and participate in post-stay
+		// cases; admins decide them (separate route group below).
+		auth.POST("/bookings/:id/disputes", h.Dispute.Open)
+		auth.GET("/me/disputes", h.Dispute.ListMine)
+		auth.GET("/disputes/:id", h.Dispute.Get)
+		auth.POST("/disputes/:id/evidence", h.Dispute.AddEvidence)
+		auth.POST("/disputes/:id/host-response", h.Dispute.HostRespond)
+
 		// Payments (guest-facing reads).
 		auth.GET("/payments/me", h.Payment.ListMine)
 		auth.GET("/bookings/:id/payment", h.Payment.GetForBooking)
@@ -275,6 +284,11 @@ func NewRouter(d Deps) *gin.Engine {
 			admin.GET("/reports", h.Report.ListOpen)
 			admin.POST("/reports/:id/resolve", h.Report.Resolve)
 			admin.POST("/reports/:id/dismiss", h.Report.Dismiss)
+
+			// Resolution Center moderation queue.
+			admin.GET("/disputes", h.Dispute.AdminListOpen)
+			admin.POST("/disputes/:id/resolve", h.Dispute.AdminResolve)
+			admin.POST("/disputes/:id/reject", h.Dispute.AdminReject)
 
 			// Promo codes
 			admin.GET("/coupons", h.Coupon.List)

@@ -13,9 +13,102 @@ export default function Admin() {
       <ActiveAlertsPanel />
       <VerificationQueue />
       <ReportQueue />
+      <DisputeQueue />
       <CouponsPanel />
       <SilencesPanel />
     </div>
+  );
+}
+
+// DisputeQueue lists open Resolution Center cases and lets an admin record a
+// public decision (resolve / reject) per case.
+function DisputeQueue() {
+  const { t } = useT();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [decisions, setDecisions] = useState({}); // disputeId -> text
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.adminListOpenDisputes();
+      setItems(res.items || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function decide(disputeId, fn) {
+    const resolution = (decisions[disputeId] || '').trim();
+    if (!resolution) {
+      setError(t('admin.dispute.needResolution'));
+      return;
+    }
+    setError(null);
+    try {
+      await fn(disputeId, resolution);
+      setDecisions((d) => ({ ...d, [disputeId]: '' }));
+      await load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  return (
+    <section className="admin-panel">
+      <h2>{t('admin.dispute.title')}</h2>
+      <p className="muted">{t('admin.dispute.hint')}</p>
+      {error && <p className="error">{error}</p>}
+      {loading ? (
+        <p>{t('common.loading')}</p>
+      ) : items.length === 0 ? (
+        <p className="muted">{t('admin.dispute.empty')}</p>
+      ) : (
+        <ul className="admin-list">
+          {items.map((d) => (
+            <li key={d.id} className="admin-item">
+              <div className="admin-item-head">
+                <strong>{t(`dispute.kind.${d.kind}`)}</strong>
+                <span className={`badge badge-dispute-${d.status}`}>{t(`dispute.status.${d.status}`)}</span>
+                {d.requestedAmountCents > 0 && (
+                  <span className="muted">
+                    {(d.requestedAmountCents / 100).toFixed(2)} {d.currency}
+                  </span>
+                )}
+              </div>
+              <div className="admin-item-body">
+                <p>{d.reason}</p>
+                {d.hostResponse && <p className="muted-text">{t('admin.dispute.hostResponse')}: {d.hostResponse}</p>}
+                {d.evidence && d.evidence.length > 0 && (
+                  <ul className="evidence-list">
+                    {d.evidence.map((e) => (
+                      <li key={e.id}>
+                        {e.note}
+                        {e.url && <> — <a href={e.url} target="_blank" rel="noopener noreferrer">{t('admin.dispute.evidenceLink')}</a></>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <textarea
+                placeholder={t('admin.dispute.decisionPlaceholder')}
+                value={decisions[d.id] || ''}
+                onChange={(e) => setDecisions((m) => ({ ...m, [d.id]: e.target.value }))}
+              />
+              <div className="admin-actions">
+                <button className="btn btn-primary btn-sm" onClick={() => decide(d.id, api.adminResolveDispute)}>{t('admin.dispute.resolve')}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => decide(d.id, api.adminRejectDispute)}>{t('admin.dispute.reject')}</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

@@ -18,6 +18,7 @@ import (
 	blockapp "github.com/airhost/backend/internal/application/block"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	couponapp "github.com/airhost/backend/internal/application/coupon"
+	disputeapp "github.com/airhost/backend/internal/application/dispute"
 	emailapp "github.com/airhost/backend/internal/application/email"
 	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
@@ -127,6 +128,7 @@ func newHarness(t *testing.T) *harness {
 	userBlockRepo := memory.NewUserBlockRepository()
 	offerRepo := memory.NewOfferRepository()
 	pushTokenRepo := memory.NewPushTokenRepository()
+	disputeRepo := memory.NewDisputeRepository()
 
 	dispatcher := event.NewDispatcher()
 	outbox := event.NewMemoryOutbox()
@@ -148,6 +150,7 @@ func newHarness(t *testing.T) *harness {
 	pushTokenSvc := pushtokenapp.NewService(pushTokenRepo, userRepo, pusher)
 	notificationSvc := notificationapp.NewService(notificationRepo).WithPush(pushTokenSvc.AsNotifier())
 	savedSearchSvc := savedsearchapp.NewService(memory.NewSavedSearchRepository(), searchSvc, notificationSvc)
+	disputeSvc := disputeapp.NewService(disputeRepo, bookingRepo, propertyRepo, dispatcher)
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway(), bookingRepo, propertyRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
@@ -224,6 +227,7 @@ func newHarness(t *testing.T) *harness {
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
 			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
+			Dispute:        handler.NewDisputeHandler(disputeSvc),
 		},
 	})
 

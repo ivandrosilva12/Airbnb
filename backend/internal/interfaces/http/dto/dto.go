@@ -16,6 +16,7 @@ import (
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/coupon"
+	"github.com/airhost/backend/internal/domain/dispute"
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
@@ -75,6 +76,61 @@ func FromUser(u *user.User) UserView {
 			Messages: u.PushPrefs.Messages,
 		},
 		CreatedAt: u.CreatedAt,
+	}
+}
+
+// DisputeEvidenceView renders one piece of evidence attached to a dispute.
+type DisputeEvidenceView struct {
+	ID      uuid.UUID `json:"id"`
+	URL     string    `json:"url,omitempty"`
+	Note    string    `json:"note,omitempty"`
+	AddedBy uuid.UUID `json:"addedBy"`
+	AddedAt time.Time `json:"addedAt"`
+}
+
+// DisputeView renders a Resolution Center case.
+type DisputeView struct {
+	ID                   uuid.UUID             `json:"id"`
+	BookingID            uuid.UUID             `json:"bookingId"`
+	OpenerID             uuid.UUID             `json:"openerId"`
+	Kind                 string                `json:"kind"`
+	Reason               string                `json:"reason"`
+	RequestedAmountCents int64                 `json:"requestedAmountCents"`
+	Currency             string                `json:"currency"`
+	Status               string                `json:"status"`
+	HostResponse         string                `json:"hostResponse,omitempty"`
+	Resolution           string                `json:"resolution,omitempty"`
+	AdminID              uuid.UUID             `json:"adminId,omitempty"`
+	OpenedAt             time.Time             `json:"openedAt"`
+	DecidedAt            *time.Time            `json:"decidedAt,omitempty"`
+	UpdatedAt            time.Time             `json:"updatedAt"`
+	Evidence             []DisputeEvidenceView `json:"evidence"`
+}
+
+// FromDispute maps a dispute aggregate to its view.
+func FromDispute(d *dispute.Dispute) DisputeView {
+	evs := make([]DisputeEvidenceView, 0, len(d.Evidence))
+	for _, e := range d.Evidence {
+		evs = append(evs, DisputeEvidenceView{
+			ID: e.ID, URL: e.URL, Note: e.Note, AddedBy: e.AddedBy, AddedAt: e.AddedAt,
+		})
+	}
+	return DisputeView{
+		ID:                   d.ID,
+		BookingID:            d.BookingID,
+		OpenerID:             d.OpenerID,
+		Kind:                 string(d.Kind),
+		Reason:               d.Reason,
+		RequestedAmountCents: d.RequestedAmountCents,
+		Currency:             d.Currency,
+		Status:               string(d.Status),
+		HostResponse:         d.HostResponse,
+		Resolution:           d.Resolution,
+		AdminID:              d.AdminID,
+		OpenedAt:             d.OpenedAt,
+		DecidedAt:            d.DecidedAt,
+		UpdatedAt:            d.UpdatedAt,
+		Evidence:             evs,
 	}
 }
 

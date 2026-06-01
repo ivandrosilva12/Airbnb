@@ -23,6 +23,8 @@ const (
 	TypeIdentityVerified Type = "identity_verified"
 	TypeReviewRequested  Type = "review_requested"
 	TypeSavedSearchAlert Type = "saved_search_alert"
+	TypeDisputeOpened    Type = "dispute_opened"
+	TypeDisputeResolved  Type = "dispute_resolved"
 )
 
 // Notification is the aggregate root for a single in-app notification.

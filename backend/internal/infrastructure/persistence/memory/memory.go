@@ -14,6 +14,7 @@ import (
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/coupon"
+	"github.com/airhost/backend/internal/domain/dispute"
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
@@ -49,6 +50,7 @@ var (
 	_ report.Repository       = (*ReportRepository)(nil)
 	_ coupon.Repository       = (*CouponRepository)(nil)
 	_ pushtoken.Repository    = (*PushTokenRepository)(nil)
+	_ dispute.Repository      = (*DisputeRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -1899,4 +1901,104 @@ func (r *PushTokenRepository) DeleteByUser(_ context.Context, userID uuid.UUID) 
 		}
 	}
 	return nil
+}
+
+// --- Disputes ----------------------------------------------------------------
+
+// DisputeRepository is an in-memory dispute.Repository.
+type DisputeRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]dispute.Dispute
+}
+
+// NewDisputeRepository builds an empty in-memory dispute repository.
+func NewDisputeRepository() *DisputeRepository {
+	return &DisputeRepository{m: map[uuid.UUID]dispute.Dispute{}}
+}
+
+func (r *DisputeRepository) Save(_ context.Context, d *dispute.Dispute) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Enforce "one active dispute per booking" only when inserting a new active
+	// row; updates to existing rows pass through.
+	if _, ok := r.m[d.ID]; !ok {
+		if !d.Status.IsTerminal() {
+			for _, existing := range r.m {
+				if existing.BookingID == d.BookingID && !existing.Status.IsTerminal() {
+					return shared.ErrConflict
+				}
+			}
+		}
+	}
+	r.m[d.ID] = *d
+	return nil
+}
+
+func (r *DisputeRepository) FindByID(_ context.Context, id uuid.UUID) (*dispute.Dispute, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if d, ok := r.m[id]; ok {
+		cp := d
+		return &cp, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *DisputeRepository) FindActiveByBooking(_ context.Context, bookingID uuid.UUID) (*dispute.Dispute, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, d := range r.m {
+		if d.BookingID == bookingID && !d.Status.IsTerminal() {
+			cp := d
+			return &cp, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *DisputeRepository) ListByOpener(_ context.Context, openerID uuid.UUID, page shared.Page) (shared.PageResult[*dispute.Dispute], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*dispute.Dispute
+	for _, d := range r.m {
+		if d.OpenerID == openerID {
+			cp := d
+			all = append(all, &cp)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].OpenedAt.After(all[j].OpenedAt) })
+	return paginate(all, page), nil
+}
+
+func (r *DisputeRepository) ListByBookings(_ context.Context, bookingIDs []uuid.UUID, page shared.Page) (shared.PageResult[*dispute.Dispute], error) {
+	idx := map[uuid.UUID]struct{}{}
+	for _, id := range bookingIDs {
+		idx[id] = struct{}{}
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*dispute.Dispute
+	for _, d := range r.m {
+		if _, ok := idx[d.BookingID]; ok {
+			cp := d
+			all = append(all, &cp)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].OpenedAt.After(all[j].OpenedAt) })
+	return paginate(all, page), nil
+}
+
+func (r *DisputeRepository) ListOpen(_ context.Context, page shared.Page) (shared.PageResult[*dispute.Dispute], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*dispute.Dispute
+	for _, d := range r.m {
+		if !d.Status.IsTerminal() {
+			cp := d
+			all = append(all, &cp)
+		}
+	}
+	// Oldest first — the moderation queue is FIFO.
+	sort.Slice(all, func(i, j int) bool { return all[i].OpenedAt.Before(all[j].OpenedAt) })
+	return paginate(all, page), nil
 }

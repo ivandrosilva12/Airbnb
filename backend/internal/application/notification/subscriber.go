@@ -64,6 +64,26 @@ func (s *Service) EventHandler() event.Handler {
 			err = s.create(ctx, ev.UserID, notification.TypeIdentityVerified,
 				"Identity verified",
 				"Your identity has been verified. You now have a verified badge.", ev.VerificationID, PushCatAccount)
+
+		case event.DisputeOpened:
+			// The non-opener party is notified so they can respond. We always notify
+			// the opposite side; admins see the case in the moderation queue.
+			recipient := ev.HostID
+			if ev.OpenerID == ev.HostID {
+				recipient = ev.GuestID
+			}
+			err = s.create(ctx, recipient, notification.TypeDisputeOpened,
+				"Resolution Center case opened",
+				fmt.Sprintf("A case was opened on %q. Open it to add your side.", ev.PropertyTitle), ev.DisputeID, PushCatAccount)
+
+		case event.DisputeResolved:
+			// Both parties are informed of the outcome.
+			title := "Resolution Center decision"
+			body := fmt.Sprintf("A moderator %s the case on %q.", ev.Outcome, ev.PropertyTitle)
+			if e1 := s.create(ctx, ev.GuestID, notification.TypeDisputeResolved, title, body, ev.DisputeID, PushCatAccount); e1 != nil {
+				slog.Error("failed to create notification", "event", e.EventName(), "error", e1)
+			}
+			err = s.create(ctx, ev.HostID, notification.TypeDisputeResolved, title, body, ev.DisputeID, PushCatAccount)
 		}
 		if err != nil {
 			slog.Error("failed to create notification", "event", e.EventName(), "error", err)

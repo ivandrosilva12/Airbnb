@@ -100,6 +100,10 @@ export function createApi(getAccessToken) {
     // Report a listing for moderation
     reportListing: (propertyId, body) => request('POST', `/properties/${propertyId}/reports`, { body, auth: true }),
 
+    // Resolution Center
+    openDispute: (bookingId, body) => request('POST', `/bookings/${bookingId}/disputes`, { body, auth: true }),
+    listMyDisputes: () => request('GET', '/me/disputes', { auth: true }),
+
     // Host
     hostMetrics: () => request('GET', '/host/metrics', { auth: true }),
     hostEarnings: () => request('GET', '/host/earnings', { auth: true }),

@@ -116,6 +116,16 @@ export const api = {
   // Listing reports
   reportListing: (propertyId, body) => request('POST', `/properties/${propertyId}/reports`, { body, auth: true }),
 
+  // Resolution Center
+  openDispute: (bookingId, body) => request('POST', `/bookings/${bookingId}/disputes`, { body, auth: true }),
+  listMyDisputes: () => request('GET', '/me/disputes', { auth: true }),
+  getDispute: (id) => request('GET', `/disputes/${id}`, { auth: true }),
+  addDisputeEvidence: (id, body) => request('POST', `/disputes/${id}/evidence`, { body, auth: true }),
+  hostRespondDispute: (id, response) => request('POST', `/disputes/${id}/host-response`, { body: { response }, auth: true }),
+  adminListOpenDisputes: () => request('GET', '/admin/disputes', { auth: true }),
+  adminResolveDispute: (id, resolution) => request('POST', `/admin/disputes/${id}/resolve`, { body: { resolution }, auth: true }),
+  adminRejectDispute: (id, resolution) => request('POST', `/admin/disputes/${id}/reject`, { body: { resolution }, auth: true }),
+
   // Admin moderation
   adminListVerifications: () => request('GET', '/admin/verifications', { auth: true }),
   adminApproveVerification: (id) => request('POST', `/admin/verifications/${id}/approve`, { auth: true }),

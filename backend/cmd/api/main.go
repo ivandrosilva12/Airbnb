@@ -21,6 +21,7 @@ import (
 	blockapp "github.com/airhost/backend/internal/application/block"
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	couponapp "github.com/airhost/backend/internal/application/coupon"
+	disputeapp "github.com/airhost/backend/internal/application/dispute"
 	emailapp "github.com/airhost/backend/internal/application/email"
 	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
@@ -125,6 +126,7 @@ func run() error {
 	couponRepo := postgres.NewCouponRepository(pool)
 	webhookEventRepo := postgres.NewWebhookEventRepository(pool)
 	pushTokenRepo := postgres.NewPushTokenRepository(pool)
+	disputeRepo := postgres.NewDisputeRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers,
@@ -168,6 +170,7 @@ func run() error {
 	userBlockSvc := userblockapp.NewService(userBlockRepo)
 	offerSvc := offerapp.NewService(offerRepo, propertyRepo, bookingSvc)
 	savedSearchSvc := savedsearchapp.NewService(savedSearchRepo, searchSvc, notificationSvc)
+	disputeSvc := disputeapp.NewService(disputeRepo, bookingRepo, propertyRepo, dispatcher)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
 	alertStateSvc := alertstateapp.NewService()
 	realtimeHub := realtime.NewHub()
@@ -229,6 +232,7 @@ func run() error {
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
 			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
+			Dispute:        handler.NewDisputeHandler(disputeSvc),
 		},
 	})
 

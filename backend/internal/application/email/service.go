@@ -73,6 +73,19 @@ func (s *Service) EventHandler() event.Handler {
 		case event.IdentityVerified:
 			s.send(ctx, ev.UserID, catAccount, "Identity verified",
 				"Your identity has been verified. Your account now shows a verified badge.")
+
+		case event.DisputeOpened:
+			recipient := ev.HostID
+			if ev.OpenerID == ev.HostID {
+				recipient = ev.GuestID
+			}
+			s.send(ctx, recipient, catAccount, "Resolution Center case opened",
+				fmt.Sprintf("A case was opened for the stay at %q. Sign in to add your side of the story.", ev.PropertyTitle))
+
+		case event.DisputeResolved:
+			body := fmt.Sprintf("A moderator %s the case on %q.\n\nDecision: %s", ev.Outcome, ev.PropertyTitle, ev.Resolution)
+			s.send(ctx, ev.GuestID, catAccount, "Resolution Center decision", body)
+			s.send(ctx, ev.HostID, catAccount, "Resolution Center decision", body)
 		}
 	}
 }

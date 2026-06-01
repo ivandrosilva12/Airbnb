@@ -58,6 +58,58 @@ function ReviewForm({ bookingId, onDone, onError }) {
   );
 }
 
+// DisputeForm lets a guest file a Resolution Center case on a completed or
+// cancelled booking. Refund/damage kinds require an amount; "other" is a
+// qualitative complaint without a money figure.
+function DisputeForm({ booking, onDone, onError }) {
+  const { t } = useT();
+  const [kind, setKind] = useState('refund');
+  const [reason, setReason] = useState('');
+  const [amount, setAmount] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const body = { kind, reason };
+      if (kind !== 'other') {
+        body.requestedAmountCents = Math.round(Number(amount || 0) * 100);
+        body.currency = booking.totalPrice?.currency || 'EUR';
+      }
+      await api.openDispute(booking.id, body);
+      onDone();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="inline-modify" onSubmit={submit}>
+      <label>{t('dispute.kind')}
+        <select value={kind} onChange={(e) => setKind(e.target.value)}>
+          <option value="refund">{t('dispute.kind.refund')}</option>
+          <option value="damage">{t('dispute.kind.damage')}</option>
+          <option value="other">{t('dispute.kind.other')}</option>
+        </select>
+      </label>
+      {kind !== 'other' && (
+        <label>{t('dispute.amount')}
+          <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        </label>
+      )}
+      <label>{t('dispute.reason')}
+        <textarea required value={reason} maxLength={2000} onChange={(e) => setReason(e.target.value)} />
+      </label>
+      <button className="btn btn-primary btn-sm" type="submit" disabled={submitting}>
+        {submitting ? '…' : t('dispute.openCase')}
+      </button>
+    </form>
+  );
+}
+
 // ModifyForm lets a guest change the dates and/or party size of a still-pending
 // booking. The backend re-validates availability and re-prices the stay.
 function ModifyForm({ booking, onDone, onError }) {
@@ -103,16 +155,19 @@ export default function MyTrips() {
   const [reviewed, setReviewed] = useState({});
   const [modifying, setModifying] = useState(null);
   const [offers, setOffers] = useState([]);
+  const [disputing, setDisputing] = useState(null);
+  const [disputes, setDisputes] = useState({}); // bookingId -> dispute view
 
   async function load() {
     setLoading(true);
     try {
-      const [bookingsRes, paymentsRes, guestReviews, pendingRes, offersRes] = await Promise.all([
+      const [bookingsRes, paymentsRes, guestReviews, pendingRes, offersRes, disputesRes] = await Promise.all([
         api.myBookings(),
         api.listPayments(),
         api.myGuestReviews(),
         api.myPendingReviews(),
         api.myOffers().catch(() => ({ items: [] })),
+        api.listMyDisputes().catch(() => []),
       ]);
       setBookings(bookingsRes.items || []);
       const byBooking = {};
@@ -121,6 +176,10 @@ export default function MyTrips() {
       setGuestRating(guestReviews?.summary || null);
       setPending(pendingRes?.items || []);
       setOffers((offersRes?.items || []).filter((o) => o.status === 'pending'));
+      // listMyDisputes returns an array; we index by booking id for the trips table.
+      const byBookingDispute = {};
+      for (const d of disputesRes || []) byBookingDispute[d.bookingId] = d;
+      setDisputes(byBookingDispute);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -274,6 +333,23 @@ export default function MyTrips() {
                     <ReviewForm
                       bookingId={b.id}
                       onDone={() => { setReviewing(null); setReviewed((r) => ({ ...r, [b.id]: true })); }}
+                      onError={setError}
+                    />
+                  )}
+                  {/* Resolution Center: open a case on completed or cancelled stays
+                      that don't already have an active dispute. */}
+                  {(b.status === 'completed' || b.status === 'cancelled') && !disputes[b.id] && disputing !== b.id && (
+                    <button className="btn btn-ghost" onClick={() => { setError(null); setDisputing(b.id); }}>{t('dispute.openCase')}</button>
+                  )}
+                  {disputes[b.id] && (
+                    <span className={`badge badge-dispute-${disputes[b.id].status}`}>
+                      {t(`dispute.status.${disputes[b.id].status}`)}
+                    </span>
+                  )}
+                  {disputing === b.id && (
+                    <DisputeForm
+                      booking={b}
+                      onDone={() => { setDisputing(null); load(); }}
                       onError={setError}
                     />
                   )}

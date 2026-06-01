@@ -12,6 +12,8 @@ func init() {
 	Register(BookingModified{}.EventName(), jsonDecoder[BookingModified]())
 	Register(MessageSent{}.EventName(), jsonDecoder[MessageSent]())
 	Register(IdentityVerified{}.EventName(), jsonDecoder[IdentityVerified]())
+	Register(DisputeOpened{}.EventName(), jsonDecoder[DisputeOpened]())
+	Register(DisputeResolved{}.EventName(), jsonDecoder[DisputeResolved]())
 }
 
 // BookingRequested is published when a guest creates a booking. The host should
@@ -101,3 +103,34 @@ type IdentityVerified struct {
 }
 
 func (IdentityVerified) EventName() string { return "identity.verified" }
+
+// DisputeOpened is published when a guest or host opens a Resolution Center
+// case for a booking. The other party (the "respondent") is notified so they
+// can respond, and admins see the new case in the moderation queue.
+type DisputeOpened struct {
+	DisputeID     uuid.UUID
+	BookingID     uuid.UUID
+	PropertyID    uuid.UUID
+	PropertyTitle string
+	HostID        uuid.UUID
+	GuestID       uuid.UUID
+	OpenerID      uuid.UUID
+	Kind          string
+}
+
+func (DisputeOpened) EventName() string { return "dispute.opened" }
+
+// DisputeResolved is published when a moderator decides a case (either siding
+// with the opener or rejecting it). Both parties are notified of the outcome.
+type DisputeResolved struct {
+	DisputeID     uuid.UUID
+	BookingID     uuid.UUID
+	PropertyID    uuid.UUID
+	PropertyTitle string
+	HostID        uuid.UUID
+	GuestID       uuid.UUID
+	Outcome       string // "resolved" or "rejected"
+	Resolution    string // public decision text
+}
+
+func (DisputeResolved) EventName() string { return "dispute.resolved" }
