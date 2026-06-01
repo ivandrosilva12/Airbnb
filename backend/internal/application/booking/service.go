@@ -14,6 +14,7 @@ import (
 	"github.com/airhost/backend/internal/domain/block"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/coupon"
+	"github.com/airhost/backend/internal/domain/pricerule"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
@@ -31,6 +32,7 @@ type Service struct {
 	properties     property.Repository
 	blocks         block.Repository
 	coupons        coupon.Repository
+	priceRules     pricerule.Repository
 	serviceFeeRate float64
 	identity       IdentityVerifier
 	requireKYC     bool
@@ -41,9 +43,10 @@ type Service struct {
 // platform fee applied to each booking (e.g. 0.12 for 12%). When requireKYC is
 // true, a guest must have a verified identity (per the IdentityVerifier) before
 // booking. The UnitOfWork makes the booking write and its domain event commit
-// atomically.
-func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, coupons coupon.Repository, serviceFeeRate float64, identity IdentityVerifier, requireKYC bool, uow port.UnitOfWork) *Service {
-	return &Service{bookings: bookings, properties: properties, blocks: blocks, coupons: coupons, serviceFeeRate: serviceFeeRate, identity: identity, requireKYC: requireKYC, uow: uow}
+// atomically. priceRules provides the listing's seasonal/per-date overrides
+// used when summing the night-by-night subtotal.
+func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, coupons coupon.Repository, priceRules pricerule.Repository, serviceFeeRate float64, identity IdentityVerifier, requireKYC bool, uow port.UnitOfWork) *Service {
+	return &Service{bookings: bookings, properties: properties, blocks: blocks, coupons: coupons, priceRules: priceRules, serviceFeeRate: serviceFeeRate, identity: identity, requireKYC: requireKYC, uow: uow}
 }
 
 // emit runs the booking write and records the event(s) in one transaction, so
@@ -103,16 +106,6 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		return nil, shared.NewValidationError("number of guests exceeds property capacity")
 	}
 
-	// The effective nightly price is the listing's, unless a host special offer
-	// overrides it.
-	pricePerNight := prop.PricePerNight
-	if in.OverridePricePerNightCents > 0 {
-		pricePerNight, err = shared.NewMoney(in.OverridePricePerNightCents, prop.PricePerNight.Currency())
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	dates, err := booking.NewDateRange(in.CheckIn, in.CheckOut)
 	if err != nil {
 		return nil, err
@@ -134,6 +127,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		return nil, shared.NewValidationError("selected dates are blocked by the host")
 	}
 
+	// Sum the accommodation subtotal night-by-night: seasonal rule (if any) →
+	// weekend (Fri/Sat) override → listing base price. A host special offer
+	// (S9) overrides every night uniformly when present.
+	subtotal, err := s.nightlySubtotal(ctx, prop, dates, in.OverridePricePerNightCents)
+	if err != nil {
+		return nil, err
+	}
+
 	// Resolve an optional promo code into an absolute discount before pricing.
 	// An invalid/expired/inapplicable code fails the booking so the guest learns
 	// why rather than being silently charged full price.
@@ -144,8 +145,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		if err != nil {
 			return nil, err
 		}
-		grossSubtotal := prop.PricePerNight.AmountCents() * int64(dates.Nights())
-		couponCents, err = cp.DiscountFor(grossSubtotal, prop.PricePerNight.Currency(), dates.Nights())
+		couponCents, err = cp.DiscountFor(subtotal.AmountCents(), subtotal.Currency(), dates.Nights())
 		if err != nil {
 			return nil, err
 		}
@@ -174,7 +174,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	}
 	extraGuestFeeCents := int64(extraGuests) * prop.ExtraGuestFee.AmountCents() * int64(nights)
 
-	b, err := booking.NewBooking(in.PropertyID, in.GuestID, dates, in.Guests, pricePerNight, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
+	b, err := booking.NewBookingFromSubtotal(in.PropertyID, in.GuestID, dates, in.Guests, subtotal, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
 		WeeklyPct:            prop.PricingPolicy.WeeklyDiscountPct,
 		MonthlyPct:           prop.PricingPolicy.MonthlyDiscountPct,
 		TaxPct:               prop.PricingPolicy.TaxRatePct,
@@ -304,7 +304,14 @@ func (s *Service) Modify(ctx context.Context, in ModifyInput) (*booking.Booking,
 	}
 	extraGuestFeeCents := int64(extraGuests) * prop.ExtraGuestFee.AmountCents() * int64(nights)
 
-	if err := b.Reschedule(dates, in.Guests, prop.PricePerNight, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
+	// Re-price at the listing's current rates, honouring seasonal/weekend rules.
+	// A guest-initiated modification does not carry the original special-offer
+	// override (the host's pre-approval was for the original dates).
+	subtotal, err := s.nightlySubtotal(ctx, prop, dates, 0)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.RescheduleFromSubtotal(dates, in.Guests, subtotal, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
 		WeeklyPct:            prop.PricingPolicy.WeeklyDiscountPct,
 		MonthlyPct:           prop.PricingPolicy.MonthlyDiscountPct,
 		TaxPct:               prop.PricingPolicy.TaxRatePct,
@@ -367,12 +374,60 @@ func (s *Service) PreviewCoupon(ctx context.Context, propertyID uuid.UUID, code 
 	if err != nil {
 		return CouponPreview{}, err
 	}
-	grossSubtotal := prop.PricePerNight.AmountCents() * int64(dates.Nights())
-	cents, err := cp.DiscountFor(grossSubtotal, prop.PricePerNight.Currency(), dates.Nights())
+	subtotal, err := s.nightlySubtotal(ctx, prop, dates, 0)
 	if err != nil {
 		return CouponPreview{}, err
 	}
-	return CouponPreview{Code: cp.Code, DiscountCents: cents, Currency: prop.PricePerNight.Currency()}, nil
+	cents, err := cp.DiscountFor(subtotal.AmountCents(), subtotal.Currency(), dates.Nights())
+	if err != nil {
+		return CouponPreview{}, err
+	}
+	return CouponPreview{Code: cp.Code, DiscountCents: cents, Currency: subtotal.Currency()}, nil
+}
+
+// nightlySubtotal sums the per-night accommodation cost over the stay applying
+// the priority chain: special-offer override (uniform) → seasonal rule on the
+// day → weekend override (Fri/Sat, when set) → listing base nightly price. The
+// returned Money uses the listing's currency.
+func (s *Service) nightlySubtotal(ctx context.Context, prop *property.Property, dates booking.DateRange, overridePerNightCents int64) (shared.Money, error) {
+	currency := prop.PricePerNight.Currency()
+	nights := int64(dates.Nights())
+
+	// A host special offer flattens the per-night price uniformly across the
+	// stay — seasonal/weekend rules are not layered on top.
+	if overridePerNightCents > 0 {
+		return shared.NewMoney(overridePerNightCents*nights, currency)
+	}
+
+	rules, err := s.priceRules.ListOverlapping(ctx, prop.ID, dates.CheckIn, dates.CheckOut)
+	if err != nil {
+		return shared.Money{}, err
+	}
+	basePerNight := prop.PricePerNight.AmountCents()
+	weekendPerNight := prop.PricingPolicy.WeekendPriceCents
+
+	var totalCents int64
+	for day := dates.CheckIn; day.Before(dates.CheckOut); day = day.AddDate(0, 0, 1) {
+		totalCents += priceForDay(day, rules, basePerNight, weekendPerNight)
+	}
+	return shared.NewMoney(totalCents, currency)
+}
+
+// priceForDay picks the effective nightly price for a single day:
+// matching seasonal rule first, then weekend override on Fri/Sat, then base.
+func priceForDay(day time.Time, rules []*pricerule.Rule, baseCents, weekendCents int64) int64 {
+	for _, r := range rules {
+		if r.AppliesOn(day) {
+			return r.PriceCents
+		}
+	}
+	if weekendCents > 0 {
+		switch day.Weekday() {
+		case time.Friday, time.Saturday:
+			return weekendCents
+		}
+	}
+	return baseCents
 }
 
 // GetByID fetches a reservation, ensuring the actor is a participant.

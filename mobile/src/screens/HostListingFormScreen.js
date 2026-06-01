@@ -12,6 +12,7 @@ const emptyForm = {
   maxGuests: '2', bedrooms: '1', beds: '1', bathrooms: '1', cancellationPolicy: 'moderate',
   instantBook: false,
   minNights: '1', maxNights: '', guestsIncluded: '', extraGuestFee: '', securityDeposit: '',
+  weekendPrice: '',
 };
 
 // HostListingFormScreen creates a new listing or edits an existing one, then
@@ -50,6 +51,7 @@ export default function HostListingFormScreen({ route, navigation }) {
           guestsIncluded: p.guestsIncluded ? String(p.guestsIncluded) : '',
           extraGuestFee: ((p.extraGuestFee?.amountCents || 0) / 100).toString(),
           securityDeposit: ((p.securityDeposit?.amountCents || 0) / 100).toString(),
+          weekendPrice: ((p.weekendPriceCents || 0) / 100).toString(),
         });
         setPhotos(p.photos || []);
         setStatus(p.status);
@@ -73,6 +75,7 @@ export default function HostListingFormScreen({ route, navigation }) {
     try {
       const priceCents = Math.round(Number(form.price) * 100);
       const cleaningFeeCents = Math.round(Number(form.cleaningFee || 0) * 100);
+      const weekendPriceCents = Math.round(Number(form.weekendPrice || 0) * 100);
       const stayRules = {
         minNights: Number(form.minNights) || 1,
         maxNights: Number(form.maxNights) || 0,
@@ -85,7 +88,7 @@ export default function HostListingFormScreen({ route, navigation }) {
           title: form.title.trim(), description: form.description, priceCents,
           cleaningFeeCents, currency: form.currency.toUpperCase(), maxGuests: Number(form.maxGuests) || 1,
           cancellationPolicy: form.cancellationPolicy, weeklyDiscountPct: 0, monthlyDiscountPct: 0,
-          taxRatePct: 0, instantBook: form.instantBook, ...stayRules,
+          taxRatePct: 0, weekendPriceCents, instantBook: form.instantBook, ...stayRules,
         });
         setStatus(p.status);
         setMessage('Listing updated.');
@@ -98,7 +101,7 @@ export default function HostListingFormScreen({ route, navigation }) {
           maxGuests: Number(form.maxGuests) || 1, bedrooms: Number(form.bedrooms) || 0,
           beds: Number(form.beds) || 0, bathrooms: Number(form.bathrooms) || 0, amenities: [],
           cancellationPolicy: form.cancellationPolicy, weeklyDiscountPct: 0, monthlyDiscountPct: 0,
-          taxRatePct: 0, instantBook: form.instantBook, ...stayRules,
+          taxRatePct: 0, weekendPriceCents, instantBook: form.instantBook, ...stayRules,
         });
         setPropId(p.id);
         setStatus(p.status);
@@ -222,6 +225,7 @@ export default function HostListingFormScreen({ route, navigation }) {
         <Field flex label={`Extra-guest fee/night (${form.currency})`} value={form.extraGuestFee} onChangeText={(v) => set('extraGuestFee', v)} keyboardType="decimal-pad" />
         <Field flex label={`Security deposit (${form.currency})`} value={form.securityDeposit} onChangeText={(v) => set('securityDeposit', v)} keyboardType="decimal-pad" />
       </Row>
+      <Field label={`Weekend price Fri/Sat (${form.currency}) — 0 to disable`} value={form.weekendPrice} onChangeText={(v) => set('weekendPrice', v)} keyboardType="decimal-pad" />
 
       <Pressable style={styles.toggleRow} onPress={() => set('instantBook', !form.instantBook)}>
         <Text style={styles.toggleBox}>{form.instantBook ? '☑' : '☐'}</Text>

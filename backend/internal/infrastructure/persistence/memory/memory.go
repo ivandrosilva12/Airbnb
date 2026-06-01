@@ -21,6 +21,7 @@ import (
 	"github.com/airhost/backend/internal/domain/offer"
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/payout"
+	"github.com/airhost/backend/internal/domain/pricerule"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/report"
 	"github.com/airhost/backend/internal/domain/review"
@@ -1654,6 +1655,71 @@ func (r *SavedSearchRepository) MarkNotified(_ context.Context, id uuid.UUID, at
 		r.m[id] = s
 	}
 	return nil
+}
+
+// --- Price rules -------------------------------------------------------------
+
+// PriceRuleRepository is an in-memory pricerule.Repository.
+type PriceRuleRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]pricerule.Rule
+}
+
+// NewPriceRuleRepository builds an empty in-memory price-rule repository.
+func NewPriceRuleRepository() *PriceRuleRepository {
+	return &PriceRuleRepository{m: map[uuid.UUID]pricerule.Rule{}}
+}
+
+var _ pricerule.Repository = (*PriceRuleRepository)(nil)
+
+func (r *PriceRuleRepository) Create(_ context.Context, rule *pricerule.Rule) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.m[rule.ID] = *rule
+	return nil
+}
+
+func (r *PriceRuleRepository) Delete(_ context.Context, propertyID, id uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rule, ok := r.m[id]
+	if !ok || rule.PropertyID != propertyID {
+		return shared.ErrNotFound
+	}
+	delete(r.m, id)
+	return nil
+}
+
+func (r *PriceRuleRepository) ListByProperty(_ context.Context, propertyID uuid.UUID) ([]*pricerule.Rule, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []*pricerule.Rule
+	for _, rule := range r.m {
+		if rule.PropertyID == propertyID {
+			c := rule
+			out = append(out, &c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartDate.Before(out[j].StartDate) })
+	return out, nil
+}
+
+func (r *PriceRuleRepository) ListOverlapping(_ context.Context, propertyID uuid.UUID, start, end time.Time) ([]*pricerule.Rule, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []*pricerule.Rule
+	for _, rule := range r.m {
+		if rule.PropertyID != propertyID {
+			continue
+		}
+		// Half-open overlap.
+		if rule.StartDate.Before(end) && start.Before(rule.EndDate) {
+			c := rule
+			out = append(out, &c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartDate.Before(out[j].StartDate) })
+	return out, nil
 }
 
 // --- helpers -----------------------------------------------------------------

@@ -23,6 +23,7 @@ import (
 	"github.com/airhost/backend/internal/domain/offer"
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/payout"
+	"github.com/airhost/backend/internal/domain/pricerule"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/report"
 	"github.com/airhost/backend/internal/domain/review"
@@ -113,6 +114,7 @@ type PropertyView struct {
 	WeeklyDiscountPct  float64     `json:"weeklyDiscountPct"`
 	MonthlyDiscountPct float64     `json:"monthlyDiscountPct"`
 	TaxRatePct         float64     `json:"taxRatePct"`
+	WeekendPriceCents  int64       `json:"weekendPriceCents"`
 	InstantBook        bool        `json:"instantBook"`
 	MinNights          int         `json:"minNights"`
 	MaxNights          int         `json:"maxNights"`
@@ -158,6 +160,7 @@ func FromProperty(p *property.Property) PropertyView {
 		WeeklyDiscountPct:  p.PricingPolicy.WeeklyDiscountPct,
 		MonthlyDiscountPct: p.PricingPolicy.MonthlyDiscountPct,
 		TaxRatePct:         p.PricingPolicy.TaxRatePct,
+		WeekendPriceCents:  p.PricingPolicy.WeekendPriceCents,
 		InstantBook:        p.InstantBook,
 		MinNights:          p.MinNights,
 		MaxNights:          p.MaxNights,
@@ -905,6 +908,33 @@ func FromAlertState(s alertstateapp.State) AlertStateView {
 		StartsAt:    s.StartsAt,
 		EndsAt:      s.EndsAt,
 		UpdatedAt:   s.UpdatedAt,
+	}
+}
+
+// PriceRuleView is the public representation of a seasonal/per-date price
+// override on a listing.
+type PriceRuleView struct {
+	ID         uuid.UUID `json:"id"`
+	PropertyID uuid.UUID `json:"propertyId"`
+	StartDate  string    `json:"startDate"`
+	EndDate    string    `json:"endDate"`
+	PriceCents int64     `json:"priceCents"`
+	Currency   string    `json:"currency"`
+	Label      string    `json:"label"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+// FromPriceRule maps a price-rule aggregate to its view.
+func FromPriceRule(r *pricerule.Rule) PriceRuleView {
+	return PriceRuleView{
+		ID:         r.ID,
+		PropertyID: r.PropertyID,
+		StartDate:  r.StartDate.Format("2006-01-02"),
+		EndDate:    r.EndDate.Format("2006-01-02"),
+		PriceCents: r.PriceCents,
+		Currency:   r.Currency,
+		Label:      r.Label,
+		CreatedAt:  r.CreatedAt,
 	}
 }
 

@@ -58,6 +58,7 @@ type CreateInput struct {
 	WeeklyDiscountPct    float64
 	MonthlyDiscountPct   float64
 	TaxRatePct           float64
+	WeekendPriceCents    int64
 	InstantBook          bool
 	MinNights            int
 	MaxNights            int
@@ -118,6 +119,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*property.Propert
 		WeeklyDiscountPct:  in.WeeklyDiscountPct,
 		MonthlyDiscountPct: in.MonthlyDiscountPct,
 		TaxRatePct:         in.TaxRatePct,
+		WeekendPriceCents:  in.WeekendPriceCents,
 	})
 	p.SetInstantBook(in.InstantBook)
 	if err := applyStayRules(p, in.Currency, in.MinNights, in.MaxNights, in.GuestsIncluded, in.ExtraGuestFeeCents, in.SecurityDepositCents); err != nil {
@@ -156,6 +158,7 @@ type UpdateInput struct {
 	WeeklyDiscountPct    float64
 	MonthlyDiscountPct   float64
 	TaxRatePct           float64
+	WeekendPriceCents    int64
 	InstantBook          bool
 	MinNights            int
 	MaxNights            int
@@ -188,6 +191,7 @@ func (s *Service) Update(ctx context.Context, actorID, propertyID uuid.UUID, in 
 		WeeklyDiscountPct:  in.WeeklyDiscountPct,
 		MonthlyDiscountPct: in.MonthlyDiscountPct,
 		TaxRatePct:         in.TaxRatePct,
+		WeekendPriceCents:  in.WeekendPriceCents,
 	})
 	p.SetInstantBook(in.InstantBook)
 	if err := applyStayRules(p, in.Currency, in.MinNights, in.MaxNights, in.GuestsIncluded, in.ExtraGuestFeeCents, in.SecurityDepositCents); err != nil {

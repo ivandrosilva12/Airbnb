@@ -64,6 +64,7 @@ type createPropertyRequest struct {
 	WeeklyDiscountPct    float64  `json:"weeklyDiscountPct"`
 	MonthlyDiscountPct   float64  `json:"monthlyDiscountPct"`
 	TaxRatePct           float64  `json:"taxRatePct"`
+	WeekendPriceCents    int64    `json:"weekendPriceCents"`
 	InstantBook          bool     `json:"instantBook"`
 	MinNights            int      `json:"minNights"`
 	MaxNights            int      `json:"maxNights"`
@@ -105,6 +106,7 @@ func (h *PropertyHandler) Create(c *gin.Context) {
 		WeeklyDiscountPct:    req.WeeklyDiscountPct,
 		MonthlyDiscountPct:   req.MonthlyDiscountPct,
 		TaxRatePct:           req.TaxRatePct,
+		WeekendPriceCents:    req.WeekendPriceCents,
 		InstantBook:          req.InstantBook,
 		MinNights:            req.MinNights,
 		MaxNights:            req.MaxNights,
@@ -206,6 +208,7 @@ type updatePropertyRequest struct {
 	WeeklyDiscountPct    float64 `json:"weeklyDiscountPct"`
 	MonthlyDiscountPct   float64 `json:"monthlyDiscountPct"`
 	TaxRatePct           float64 `json:"taxRatePct"`
+	WeekendPriceCents    int64   `json:"weekendPriceCents"`
 	InstantBook          bool    `json:"instantBook"`
 	MinNights            int     `json:"minNights"`
 	MaxNights            int     `json:"maxNights"`
@@ -239,6 +242,7 @@ func (h *PropertyHandler) Update(c *gin.Context) {
 		WeeklyDiscountPct:    req.WeeklyDiscountPct,
 		MonthlyDiscountPct:   req.MonthlyDiscountPct,
 		TaxRatePct:           req.TaxRatePct,
+		WeekendPriceCents:    req.WeekendPriceCents,
 		InstantBook:          req.InstantBook,
 		MinNights:            req.MinNights,
 		MaxNights:            req.MaxNights,

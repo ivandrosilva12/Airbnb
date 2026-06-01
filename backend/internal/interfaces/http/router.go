@@ -36,6 +36,7 @@ type Handlers struct {
 	UserBlock      *handler.UserBlockHandler
 	Offer          *handler.OfferHandler
 	SavedSearch    *handler.SavedSearchHandler
+	PriceRule      *handler.PriceRuleHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -244,6 +245,11 @@ func NewRouter(d Deps) *gin.Engine {
 			host.POST("/properties/:id/blocks", h.Block.Create)
 			host.POST("/properties/:id/calendar/import", h.Block.ImportCalendar)
 			host.DELETE("/blocks/:id", h.Block.Delete)
+
+			// Seasonal / per-date pricing overrides.
+			host.GET("/properties/:id/price-rules", h.PriceRule.ListForProperty)
+			host.POST("/properties/:id/price-rules", h.PriceRule.Create)
+			host.DELETE("/properties/:id/price-rules/:ruleId", h.PriceRule.Delete)
 		}
 
 		// Admin-only moderation.

@@ -96,6 +96,10 @@ type PricingPolicy struct {
 	WeeklyDiscountPct  float64 // applied to the subtotal for stays of >= 7 nights
 	MonthlyDiscountPct float64 // applied to the subtotal for stays of >= 28 nights
 	TaxRatePct         float64 // occupancy tax on the (discounted) accommodation base
+	// WeekendPriceCents replaces the base nightly price on Friday and Saturday
+	// nights when set (> 0). Listing-specific date rules (the pricerule context)
+	// take precedence on days they cover.
+	WeekendPriceCents int64
 }
 
 func clampFraction(f float64) float64 {
@@ -108,12 +112,18 @@ func clampFraction(f float64) float64 {
 	return f
 }
 
-// Normalised returns the policy with each field clamped to [0,1].
+// Normalised returns the policy with fractions clamped to [0,1] and a negative
+// weekend price treated as 0 (off).
 func (p PricingPolicy) Normalised() PricingPolicy {
+	weekend := p.WeekendPriceCents
+	if weekend < 0 {
+		weekend = 0
+	}
 	return PricingPolicy{
 		WeeklyDiscountPct:  clampFraction(p.WeeklyDiscountPct),
 		MonthlyDiscountPct: clampFraction(p.MonthlyDiscountPct),
 		TaxRatePct:         clampFraction(p.TaxRatePct),
+		WeekendPriceCents:  weekend,
 	}
 }
 

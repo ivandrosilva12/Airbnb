@@ -27,6 +27,7 @@ import (
 	offerapp "github.com/airhost/backend/internal/application/offer"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
 	payoutapp "github.com/airhost/backend/internal/application/payout"
+	priceruleapp "github.com/airhost/backend/internal/application/pricerule"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reportapp "github.com/airhost/backend/internal/application/report"
@@ -92,6 +93,7 @@ func newHarness(t *testing.T) *harness {
 	paymentRepo := memory.NewPaymentRepository()
 	payoutRepo := memory.NewPayoutRepository()
 	blockRepo := memory.NewBlockRepository()
+	priceRuleRepo := memory.NewPriceRuleRepository()
 	identityRepo := memory.NewIdentityRepository()
 	reportRepo := memory.NewReportRepository()
 	couponRepo := memory.NewCouponRepository()
@@ -107,7 +109,7 @@ func newHarness(t *testing.T) *harness {
 	identitySvc := identityapp.NewService(identityRepo, uow)
 	// KYC gating off in the e2e harness (the suite books/publishes without KYC).
 	propertySvc := propertyapp.NewService(propertyRepo, fakeStorage{}, identitySvc, false)
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, 0.10, identitySvc, false, uow) // 10% service fee
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, priceRuleRepo, 0.10, identitySvc, false, uow) // 10% service fee
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, userBlockRepo, fakeStorage{}, uow)
 	userBlockSvc := userblockapp.NewService(userBlockRepo)
@@ -119,6 +121,7 @@ func newHarness(t *testing.T) *harness {
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewFakeGateway(), bookingRepo, propertyRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
+	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo)
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewFakeDisburser(), paymentgw.NewFakeConnectGateway())
@@ -189,6 +192,7 @@ func newHarness(t *testing.T) *harness {
 			UserBlock:      handler.NewUserBlockHandler(userBlockSvc),
 			Offer:          handler.NewOfferHandler(offerSvc),
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
+			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
 		},
 	})
 

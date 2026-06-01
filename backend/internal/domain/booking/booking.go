@@ -90,7 +90,33 @@ func NewBooking(
 	if err != nil {
 		return nil, err
 	}
+	return newBookingWithPricing(propertyID, guestID, dates, guests, pricing), nil
+}
 
+// NewBookingFromSubtotal creates a pending Booking using a pre-computed
+// accommodation subtotal — used when per-night prices vary across the stay
+// (seasonal rules, weekend overrides). The caller is responsible for summing
+// the per-night prices; the domain still derives discounts, fees, tax and the
+// total from that subtotal.
+func NewBookingFromSubtotal(
+	propertyID, guestID uuid.UUID,
+	dates DateRange,
+	guests int,
+	subtotal, cleaningFee shared.Money,
+	serviceFeeRate float64,
+	discounts Discounts,
+) (*Booking, error) {
+	if guests < 1 {
+		return nil, shared.NewValidationError("at least one guest is required")
+	}
+	pricing, err := ComputePricingFromSubtotal(subtotal, cleaningFee, dates.Nights(), serviceFeeRate, discounts)
+	if err != nil {
+		return nil, err
+	}
+	return newBookingWithPricing(propertyID, guestID, dates, guests, pricing), nil
+}
+
+func newBookingWithPricing(propertyID, guestID uuid.UUID, dates DateRange, guests int, pricing Pricing) *Booking {
 	now := time.Now().UTC()
 	return &Booking{
 		ID:         uuid.New(),
@@ -102,7 +128,7 @@ func NewBooking(
 		Status:     StatusPending,
 		CreatedAt:  now,
 		UpdatedAt:  now,
-	}, nil
+	}
 }
 
 // Reschedule changes the dates and/or guest count of a still-pending booking and
@@ -120,21 +146,53 @@ func (b *Booking) Reschedule(
 	serviceFeeRate float64,
 	discounts Discounts,
 ) error {
+	if err := b.guardReschedule(guests); err != nil {
+		return err
+	}
+	pricing, err := ComputePricing(pricePerNight, cleaningFee, dates.Nights(), serviceFeeRate, discounts)
+	if err != nil {
+		return err
+	}
+	b.applyReschedule(dates, guests, pricing)
+	return nil
+}
+
+// RescheduleFromSubtotal is the variable-per-night counterpart to Reschedule:
+// it accepts a pre-summed accommodation subtotal so seasonal/weekend pricing
+// rules can be honoured.
+func (b *Booking) RescheduleFromSubtotal(
+	dates DateRange,
+	guests int,
+	subtotal, cleaningFee shared.Money,
+	serviceFeeRate float64,
+	discounts Discounts,
+) error {
+	if err := b.guardReschedule(guests); err != nil {
+		return err
+	}
+	pricing, err := ComputePricingFromSubtotal(subtotal, cleaningFee, dates.Nights(), serviceFeeRate, discounts)
+	if err != nil {
+		return err
+	}
+	b.applyReschedule(dates, guests, pricing)
+	return nil
+}
+
+func (b *Booking) guardReschedule(guests int) error {
 	if b.Status != StatusPending {
 		return shared.NewValidationError("only a pending booking can be modified")
 	}
 	if guests < 1 {
 		return shared.NewValidationError("at least one guest is required")
 	}
-	pricing, err := ComputePricing(pricePerNight, cleaningFee, dates.Nights(), serviceFeeRate, discounts)
-	if err != nil {
-		return err
-	}
+	return nil
+}
+
+func (b *Booking) applyReschedule(dates DateRange, guests int, pricing Pricing) {
 	b.Dates = dates
 	b.Guests = guests
 	b.Pricing = pricing
 	b.touch()
-	return nil
 }
 
 // Confirm transitions a pending booking to confirmed.

@@ -9,6 +9,7 @@ import (
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/coupon"
+	"github.com/airhost/backend/internal/domain/pricerule"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
@@ -20,6 +21,7 @@ type fixture struct {
 	bookings   *memory.BookingRepository
 	properties *memory.PropertyRepository
 	coupons    *memory.CouponRepository
+	priceRules *memory.PriceRuleRepository
 	hostID     uuid.UUID
 	guestID    uuid.UUID
 	prop       *property.Property
@@ -30,10 +32,11 @@ func newFixture(t *testing.T) *fixture {
 	bookings := memory.NewBookingRepository()
 	properties := memory.NewPropertyRepository()
 	coupons := memory.NewCouponRepository()
+	priceRules := memory.NewPriceRuleRepository()
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
 	uow := memory.NewUnitOfWork(bookings, nil, nil, outbox, relay)
-	svc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), coupons, 0, stubVerifier{}, false, uow)
+	svc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), coupons, priceRules, 0, stubVerifier{}, false, uow)
 
 	hostID := uuid.New()
 	price, _ := shared.NewMoney(10000, "EUR") // 100.00/night
@@ -51,7 +54,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatalf("store property: %v", err)
 	}
 
-	return &fixture{svc: svc, bookings: bookings, properties: properties, coupons: coupons, hostID: hostID, guestID: uuid.New(), prop: prop}
+	return &fixture{svc: svc, bookings: bookings, properties: properties, coupons: coupons, priceRules: priceRules, hostID: hostID, guestID: uuid.New(), prop: prop}
 }
 
 func days(n int) time.Time { return time.Now().UTC().AddDate(0, 0, n) }
@@ -71,7 +74,7 @@ func TestCreate_KYCGatingBlocksUnverifiedGuest(t *testing.T) {
 	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
 	uow := memory.NewUnitOfWork(f.bookings, nil, nil, outbox, relay)
 	verifier := stubVerifier{verified: map[uuid.UUID]bool{}}
-	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, 0, verifier, true, uow)
+	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, verifier, true, uow)
 
 	// An unverified guest is refused.
 	if _, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1}); err == nil {
@@ -372,5 +375,86 @@ func TestAvailability_ReturnsBookedRanges(t *testing.T) {
 	}
 	if len(ranges) != 1 {
 		t.Fatalf("expected 1 booked range, got %d", len(ranges))
+	}
+}
+
+// nextMonday returns the next Monday at midnight UTC, so a stay starting on
+// that date covers a known weekly pattern: Mon-Tue-Wed-Thu-Fri-Sat-Sun.
+func nextMonday() time.Time {
+	t := time.Now().UTC().Truncate(24 * time.Hour)
+	for t.Weekday() != time.Monday {
+		t = t.AddDate(0, 0, 1)
+	}
+	return t
+}
+
+func TestCreate_SeasonalAndWeekendPricing(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	// Listing nightly = 100.00. Weekend price = 150.00 (Fri/Sat). Plus a
+	// seasonal rule that overrides the Wednesday night to 200.00.
+	f.prop.SetPricingPolicy(property.PricingPolicy{WeekendPriceCents: 15000})
+	if err := f.properties.Update(ctx, f.prop); err != nil {
+		t.Fatalf("update property: %v", err)
+	}
+	mon := nextMonday()
+	wed := mon.AddDate(0, 0, 2)
+	rule, err := pricerule.New(f.prop.ID, wed, wed.AddDate(0, 0, 1), 20000, "EUR", "Conference")
+	if err != nil {
+		t.Fatalf("new rule: %v", err)
+	}
+	if err := f.priceRules.Create(ctx, rule); err != nil {
+		t.Fatalf("store rule: %v", err)
+	}
+
+	// 7-night stay: Mon, Tue, Wed*, Thu, Fri†, Sat†, Sun
+	// * Wed = seasonal override (200.00); † Fri/Sat = weekend (150.00 each).
+	// Subtotal = 100 + 100 + 200 + 100 + 150 + 150 + 100 = 900.00 (90000c).
+	// The listing's default weekly discount applies at 7 nights, but the fixture
+	// did not configure one, so it stays at zero.
+	b, err := f.svc.Create(ctx, bookingapp.CreateInput{
+		GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: mon, CheckOut: mon.AddDate(0, 0, 7), Guests: 1,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if got := b.Pricing.Subtotal.AmountCents(); got != 90000 {
+		t.Errorf("subtotal = %d, want 90000 (100+100+200+100+150+150+100)", got)
+	}
+	if got := b.TotalPrice().AmountCents(); got != 90000 {
+		t.Errorf("total = %d, want 90000 (no discounts/fees in fixture)", got)
+	}
+}
+
+func TestCreate_SpecialOfferOverridesRules(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	// Configure a weekend override; a seasonal rule too, just to prove neither
+	// kicks in when a per-night special offer is supplied.
+	f.prop.SetPricingPolicy(property.PricingPolicy{WeekendPriceCents: 15000})
+	if err := f.properties.Update(ctx, f.prop); err != nil {
+		t.Fatalf("update property: %v", err)
+	}
+	mon := nextMonday()
+	rule, err := pricerule.New(f.prop.ID, mon, mon.AddDate(0, 0, 7), 30000, "EUR", "Bogus")
+	if err != nil {
+		t.Fatalf("new rule: %v", err)
+	}
+	if err := f.priceRules.Create(ctx, rule); err != nil {
+		t.Fatalf("store rule: %v", err)
+	}
+
+	// A 3-night offer at 80.00/night must price out at exactly 240.00.
+	b, err := f.svc.Create(ctx, bookingapp.CreateInput{
+		GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: mon, CheckOut: mon.AddDate(0, 0, 3), Guests: 1,
+		OverridePricePerNightCents: 8000,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if got := b.Pricing.Subtotal.AmountCents(); got != 24000 {
+		t.Errorf("subtotal = %d, want 24000 (special offer overrides rules and weekend)", got)
 	}
 }

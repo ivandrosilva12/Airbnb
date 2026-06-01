@@ -26,6 +26,7 @@ const initial = {
   weeklyDiscount: '',
   monthlyDiscount: '',
   taxRate: '',
+  weekendPrice: '',
   instantBook: false,
   minNights: 1,
   maxNights: '',
@@ -83,6 +84,7 @@ export default function CreateListing() {
         weeklyDiscountPct: Number(form.weeklyDiscount || 0) / 100,
         monthlyDiscountPct: Number(form.monthlyDiscount || 0) / 100,
         taxRatePct: Number(form.taxRate || 0) / 100,
+        weekendPriceCents: Math.round(Number(form.weekendPrice || 0) * 100),
         instantBook: form.instantBook,
         minNights: Number(form.minNights) || 1,
         maxNights: Number(form.maxNights) || 0,
@@ -140,6 +142,7 @@ export default function CreateListing() {
         <label>{t('create.fWeeklyDiscount')}<input type="number" min="0" max="100" step="1" value={form.weeklyDiscount} onChange={set('weeklyDiscount')} /></label>
         <label>{t('create.fMonthlyDiscount')}<input type="number" min="0" max="100" step="1" value={form.monthlyDiscount} onChange={set('monthlyDiscount')} /></label>
         <label>{t('create.fTaxRate')}<input type="number" min="0" max="100" step="0.1" value={form.taxRate} onChange={set('taxRate')} /></label>
+        <label>{t('create.fWeekendPrice')}<input type="number" min="0" step="0.01" value={form.weekendPrice} onChange={set('weekendPrice')} /></label>
         <label>{t('create.fMinNights')}<input type="number" min="1" value={form.minNights} onChange={set('minNights')} /></label>
         <label>{t('create.fMaxNights')}<input type="number" min="0" value={form.maxNights} onChange={set('maxNights')} /></label>
         <label>{t('create.fGuestsIncluded')}<input type="number" min="1" value={form.guestsIncluded} onChange={set('guestsIncluded')} /></label>

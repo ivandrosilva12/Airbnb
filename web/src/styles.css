@@ -352,6 +352,17 @@ main:focus { outline: none; }
 .report-actions { display: flex; gap: 8px; }
 .report-done { color: #1a7f47; }
 
+/* Seasonal pricing panel (host edit screen). */
+.price-rules-panel { margin: 20px 0; padding: 16px; border: 1px solid var(--border, #eee); border-radius: var(--radius, 10px); background: #fafafa; }
+.price-rules-panel h2 { margin: 0 0 6px; font-size: 1.1rem; }
+.price-rules-panel .muted { color: var(--muted, #717171); font-size: .9rem; margin: 0 0 12px; }
+.price-rules-form { margin-bottom: 16px; }
+.price-rules-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.price-rules-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #fff; border: 1px solid var(--border, #eee); border-radius: 8px; flex-wrap: wrap; }
+.price-rules-list li em { color: var(--muted, #717171); font-style: normal; }
+.price-rules-list li strong { color: var(--brand, #ff385c); }
+.price-rules-list li > :last-child { margin-left: auto; }
+
 @media (max-width: 800px) {
   .detail-grid { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }

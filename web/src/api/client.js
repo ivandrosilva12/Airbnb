@@ -190,6 +190,11 @@ export const api = {
   importCalendar: (propertyId, ical) => request('POST', `/properties/${propertyId}/calendar/import`, { body: { ical }, auth: true }),
   calendarFeedUrl: (propertyId) => `${BASE_URL}/properties/${propertyId}/calendar.ics`,
 
+  // Per-date price overrides (seasonal pricing).
+  listPriceRules: (propertyId) => request('GET', `/properties/${propertyId}/price-rules`, { auth: true }),
+  createPriceRule: (propertyId, body) => request('POST', `/properties/${propertyId}/price-rules`, { body, auth: true }),
+  deletePriceRule: (propertyId, ruleId) => request('DELETE', `/properties/${propertyId}/price-rules/${ruleId}`, { auth: true }),
+
   // Availability (public)
   availability: (id, params = {}) => {
     const qs = new URLSearchParams(params).toString();

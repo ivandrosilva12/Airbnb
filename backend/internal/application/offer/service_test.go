@@ -29,7 +29,7 @@ func setup(t *testing.T) (*offerapp.Service, *memory.BookingRepository, *propert
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
 	uow := memory.NewUnitOfWork(bookings, nil, nil, outbox, relay)
-	bookingSvc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), memory.NewCouponRepository(), 0, stubVerifier{}, false, uow)
+	bookingSvc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), memory.NewCouponRepository(), memory.NewPriceRuleRepository(), 0, stubVerifier{}, false, uow)
 	svc := offerapp.NewService(offers, properties, bookingSvc)
 
 	hostID := uuid.New()

@@ -117,6 +117,12 @@ export function createApi(getAccessToken) {
     createBlock: (propertyId, body) => request('POST', `/properties/${propertyId}/blocks`, { body, auth: true }),
     deleteBlock: (blockId) => request('DELETE', `/blocks/${blockId}`, { auth: true }),
     importCalendar: (propertyId, ical) => request('POST', `/properties/${propertyId}/calendar/import`, { body: { ical }, auth: true }),
+
+    // Per-date price overrides (seasonal pricing).
+    listPriceRules: (propertyId) => request('GET', `/properties/${propertyId}/price-rules`, { auth: true }),
+    createPriceRule: (propertyId, body) => request('POST', `/properties/${propertyId}/price-rules`, { body, auth: true }),
+    deletePriceRule: (propertyId, ruleId) => request('DELETE', `/properties/${propertyId}/price-rules/${ruleId}`, { auth: true }),
+
     confirmBooking: (id) => request('POST', `/bookings/${id}/confirm`, { auth: true }),
     completeBooking: (id) => request('POST', `/bookings/${id}/complete`, { auth: true }),
 

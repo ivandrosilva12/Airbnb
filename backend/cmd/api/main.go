@@ -30,6 +30,7 @@ import (
 	offerapp "github.com/airhost/backend/internal/application/offer"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
 	payoutapp "github.com/airhost/backend/internal/application/payout"
+	priceruleapp "github.com/airhost/backend/internal/application/pricerule"
 	privacyapp "github.com/airhost/backend/internal/application/privacy"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
@@ -116,6 +117,7 @@ func run() error {
 	paymentRepo := postgres.NewPaymentRepository(pool)
 	payoutRepo := postgres.NewPayoutRepository(pool)
 	blockRepo := postgres.NewBlockRepository(pool)
+	priceRuleRepo := postgres.NewPriceRuleRepository(pool)
 	identityRepo := postgres.NewIdentityRepository(pool)
 	reportRepo := postgres.NewReportRepository(pool)
 	couponRepo := postgres.NewCouponRepository(pool)
@@ -138,7 +140,7 @@ func run() error {
 	// on it when the REQUIRE_KYC_* policy flags are enabled.
 	identitySvc := identityapp.NewService(identityRepo, uow)
 	propertySvc := propertyapp.NewService(propertyRepo, objectStore, identitySvc, cfg.Identity.RequireKYCToHost)
-	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, cfg.Pricing.ServiceFeeRate, identitySvc, cfg.Identity.RequireKYCToBook, uow)
+	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, priceRuleRepo, cfg.Pricing.ServiceFeeRate, identitySvc, cfg.Identity.RequireKYCToBook, uow)
 	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, userBlockRepo, objectStore, uow)
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
@@ -147,6 +149,7 @@ func run() error {
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewGateway(cfg.Payment), bookingRepo, propertyRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
+	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment))
 	privacySvc := privacyapp.NewService(userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo)
@@ -214,6 +217,7 @@ func run() error {
 			UserBlock:      handler.NewUserBlockHandler(userBlockSvc),
 			Offer:          handler.NewOfferHandler(offerSvc),
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
+			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
 		},
 	})
 
