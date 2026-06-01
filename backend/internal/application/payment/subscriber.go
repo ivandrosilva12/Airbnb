@@ -35,8 +35,14 @@ func (s *Service) EventHandler() event.Handler {
 	return func(ctx context.Context, e event.Event) {
 		switch ev := e.(type) {
 		case event.BookingRequested:
+			if ev.Split {
+				return // split bookings settle through splitpayment, not the gateway
+			}
 			s.authorize(ctx, ev)
 		case event.BookingConfirmed:
+			if ev.Split {
+				return // see BookingRequested above; no capture or deposit hold either
+			}
 			s.transition(ctx, ev.BookingID, "capture", func(p *payment.Payment) error {
 				if err := s.gateway.Capture(ctx, p.GatewayRef); err != nil {
 					return err
@@ -47,6 +53,11 @@ func (s *Service) EventHandler() event.Handler {
 		case event.BookingModified:
 			s.reauthorize(ctx, ev)
 		case event.BookingCancelled:
+			if ev.Split {
+				// Split bookings don't hold a Payment row; the splitpayment
+				// context handles refunds (out of scope for this slice).
+				return
+			}
 			fraction := ev.RefundFraction
 			s.transition(ctx, ev.BookingID, "refund", func(p *payment.Payment) error {
 				switch p.Status {

@@ -244,6 +244,14 @@ export const api = {
   // reply_messages. Distinct from /conversations (those are my own threads).
   myCohostMailbox: () => request('GET', '/me/cohost-mailbox', { auth: true }),
 
+  // Split payment between travellers.
+  mySplits: () => request('GET', '/me/splits', { auth: true }),
+  getSplit: (id) => request('GET', `/splits/${id}`, { auth: true }),
+  getBookingSplit: (bookingId) => request('GET', `/bookings/${bookingId}/split`, { auth: true }),
+  authorizeShare: (splitId, shareId) =>
+    request('POST', `/splits/${splitId}/shares/${shareId}/authorize`, { auth: true }),
+  cancelSplit: (splitId) => request('POST', `/splits/${splitId}/cancel`, { auth: true }),
+
   // Availability (public)
   availability: (id, params = {}) => {
     const qs = new URLSearchParams(params).toString();

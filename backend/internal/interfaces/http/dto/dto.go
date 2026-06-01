@@ -30,6 +30,7 @@ import (
 	"github.com/airhost/backend/internal/domain/report"
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/google/uuid"
 )
@@ -1196,5 +1197,56 @@ func FromSilence(s port.Silence) SilenceView {
 		CreatedBy: s.CreatedBy,
 		Comment:   s.Comment,
 		Status:    s.Status,
+	}
+}
+
+// SplitShareView is the wire shape for one traveller's portion of a split.
+type SplitShareView struct {
+	ID          uuid.UUID  `json:"id"`
+	PayerEmail  string     `json:"payerEmail"`
+	PayerUserID *uuid.UUID `json:"payerUserId,omitempty"`
+	AmountCents int64      `json:"amountCents"`
+	Status      string     `json:"status"`
+	PaidAt      *time.Time `json:"paidAt,omitempty"`
+}
+
+// SplitPaymentView is the wire shape for a split-payment plan.
+type SplitPaymentView struct {
+	ID          uuid.UUID        `json:"id"`
+	BookingID   uuid.UUID        `json:"bookingId"`
+	OrganizerID uuid.UUID        `json:"organizerId"`
+	Currency    string           `json:"currency"`
+	TotalCents  int64            `json:"totalCents"`
+	Status      string           `json:"status"`
+	Shares      []SplitShareView `json:"shares"`
+	CreatedAt   time.Time        `json:"createdAt"`
+	CompletedAt *time.Time       `json:"completedAt,omitempty"`
+	CancelledAt *time.Time       `json:"cancelledAt,omitempty"`
+}
+
+// FromSplitPayment maps the aggregate to its wire shape.
+func FromSplitPayment(sp *splitpayment.SplitPayment) SplitPaymentView {
+	shares := make([]SplitShareView, 0, len(sp.Shares))
+	for _, s := range sp.Shares {
+		shares = append(shares, SplitShareView{
+			ID:          s.ID,
+			PayerEmail:  s.PayerEmail,
+			PayerUserID: s.PayerUserID,
+			AmountCents: s.AmountCents,
+			Status:      string(s.Status),
+			PaidAt:      s.PaidAt,
+		})
+	}
+	return SplitPaymentView{
+		ID:          sp.ID,
+		BookingID:   sp.BookingID,
+		OrganizerID: sp.OrganizerID,
+		Currency:    sp.Currency,
+		TotalCents:  sp.TotalCents,
+		Status:      string(sp.Status),
+		Shares:      shares,
+		CreatedAt:   sp.CreatedAt,
+		CompletedAt: sp.CompletedAt,
+		CancelledAt: sp.CancelledAt,
 	}
 }

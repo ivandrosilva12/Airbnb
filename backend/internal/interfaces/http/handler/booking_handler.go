@@ -30,6 +30,16 @@ type createBookingRequest struct {
 	CheckOut   string `json:"checkOut" binding:"required"`
 	Guests     int    `json:"guests" binding:"required"`
 	CouponCode string `json:"couponCode"`
+	// SplitShares, when present and non-empty, enables split payment. The
+	// organizer (caller) must be one of the share emails and the share
+	// amounts must sum exactly to the booking total. Restricted to
+	// instant-book listings.
+	SplitShares []splitShareRequest `json:"splitShares"`
+}
+
+type splitShareRequest struct {
+	Email       string `json:"email" binding:"required"`
+	AmountCents int64  `json:"amountCents" binding:"required"`
 }
 
 // Create makes a reservation for the authenticated guest.
@@ -56,13 +66,18 @@ func (h *BookingHandler) Create(c *gin.Context) {
 		response.FailMessage(c, http.StatusBadRequest, "checkOut must be YYYY-MM-DD")
 		return
 	}
+	shares := make([]bookingapp.SplitShareInput, 0, len(req.SplitShares))
+	for _, s := range req.SplitShares {
+		shares = append(shares, bookingapp.SplitShareInput{Email: s.Email, AmountCents: s.AmountCents})
+	}
 	b, err := h.svc.Create(c.Request.Context(), bookingapp.CreateInput{
-		GuestID:    guestID,
-		PropertyID: propertyID,
-		CheckIn:    checkIn,
-		CheckOut:   checkOut,
-		Guests:     req.Guests,
-		CouponCode: req.CouponCode,
+		GuestID:     guestID,
+		PropertyID:  propertyID,
+		CheckIn:     checkIn,
+		CheckOut:    checkOut,
+		Guests:      req.Guests,
+		CouponCode:  req.CouponCode,
+		SplitShares: shares,
 	})
 	if err != nil {
 		response.Fail(c, err)

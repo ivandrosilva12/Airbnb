@@ -29,6 +29,7 @@ import (
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/savedsearch"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/domain/userblock"
 	"github.com/google/uuid"
@@ -52,7 +53,8 @@ var (
 	_ coupon.Repository       = (*CouponRepository)(nil)
 	_ pushtoken.Repository    = (*PushTokenRepository)(nil)
 	_ dispute.Repository      = (*DisputeRepository)(nil)
-	_ property.CohostRepository = (*CohostRepository)(nil)
+	_ property.CohostRepository    = (*CohostRepository)(nil)
+	_ splitpayment.Repository      = (*SplitPaymentRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -2208,5 +2210,96 @@ func (r *CohostRepository) ListPropertiesForUser(_ context.Context, userID uuid.
 			}
 		}
 	}
+	return out, nil
+}
+
+// --- Split payments ----------------------------------------------------------
+
+// SplitPaymentRepository is an in-memory splitpayment.Repository.
+type SplitPaymentRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]splitpayment.SplitPayment
+}
+
+// NewSplitPaymentRepository builds an empty in-memory split-payment repository.
+func NewSplitPaymentRepository() *SplitPaymentRepository {
+	return &SplitPaymentRepository{m: map[uuid.UUID]splitpayment.SplitPayment{}}
+}
+
+// cloneSplitPayment deep-copies so callers cannot mutate the stored shares
+// slice by reference.
+func cloneSplitPayment(sp *splitpayment.SplitPayment) splitpayment.SplitPayment {
+	dup := *sp
+	if len(sp.Shares) > 0 {
+		dup.Shares = append([]splitpayment.Share(nil), sp.Shares...)
+	}
+	return dup
+}
+
+func (r *SplitPaymentRepository) Create(_ context.Context, sp *splitpayment.SplitPayment) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, existing := range r.m {
+		if existing.BookingID == sp.BookingID {
+			return shared.ErrConflict
+		}
+	}
+	r.m[sp.ID] = cloneSplitPayment(sp)
+	return nil
+}
+
+func (r *SplitPaymentRepository) Update(_ context.Context, sp *splitpayment.SplitPayment) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[sp.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[sp.ID] = cloneSplitPayment(sp)
+	return nil
+}
+
+func (r *SplitPaymentRepository) FindByID(_ context.Context, id uuid.UUID) (*splitpayment.SplitPayment, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if sp, ok := r.m[id]; ok {
+		dup := cloneSplitPayment(&sp)
+		return &dup, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *SplitPaymentRepository) FindByBookingID(_ context.Context, bookingID uuid.UUID) (*splitpayment.SplitPayment, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, sp := range r.m {
+		if sp.BookingID == bookingID {
+			dup := cloneSplitPayment(&sp)
+			return &dup, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *SplitPaymentRepository) ListForUser(_ context.Context, userID uuid.UUID, email string) ([]*splitpayment.SplitPayment, error) {
+	emailLower := strings.ToLower(strings.TrimSpace(email))
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*splitpayment.SplitPayment, 0)
+	for _, sp := range r.m {
+		matches := sp.OrganizerID == userID
+		if !matches && emailLower != "" {
+			for _, sh := range sp.Shares {
+				if sh.PayerEmail == emailLower {
+					matches = true
+					break
+				}
+			}
+		}
+		if matches {
+			dup := cloneSplitPayment(&sp)
+			out = append(out, &dup)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return out, nil
 }

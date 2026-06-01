@@ -37,10 +37,12 @@ import (
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	savedsearchapp "github.com/airhost/backend/internal/application/savedsearch"
 	searchapp "github.com/airhost/backend/internal/application/search"
+	splitpaymentapp "github.com/airhost/backend/internal/application/splitpayment"
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
 	"github.com/airhost/backend/internal/domain/pushtoken"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 	domainuser "github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/infrastructure/email"
 	"github.com/airhost/backend/internal/infrastructure/observability"
@@ -165,6 +167,10 @@ func newHarness(t *testing.T) *harness {
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc)
 	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo).WithCohosts(cohostSvc)
 	messageSvc.WithCohosts(cohostSvc)
+	splitPaymentRepo := memory.NewSplitPaymentRepository()
+	splitPaymentSvc := splitpaymentapp.NewService(splitPaymentRepo, userRepo, relay)
+	bookingSvc.WithSplitter(testSplitterAdapter{svc: splitPaymentSvc}, testUserEmailResolver{users: userRepo})
+	dispatcher.Subscribe(bookingSvc.EventHandler())
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewFakeDisburser(), paymentgw.NewFakeConnectGateway())
@@ -239,6 +245,7 @@ func newHarness(t *testing.T) *harness {
 			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
 			Dispute:        handler.NewDisputeHandler(disputeSvc),
 			Cohost:         handler.NewCohostHandler(cohostSvc, userRepo),
+			SplitPayment:   handler.NewSplitPaymentHandler(splitPaymentSvc),
 		},
 	})
 
@@ -773,4 +780,40 @@ func uploadPhoto(t *testing.T, h *harness, token, propID string) {
 	t.Helper()
 	rec := uploadPhotoBytes(t, h, token, propID, "cover.png", pngBytes)
 	mustStatus(t, rec, http.StatusOK, "upload photo")
+}
+
+// testSplitterAdapter bridges bookingapp.Splitter onto splitpaymentapp.Service
+// in the test harness (mirrors splitterAdapter in cmd/api/main.go).
+type testSplitterAdapter struct {
+	svc *splitpaymentapp.Service
+}
+
+func (a testSplitterAdapter) Create(ctx context.Context, in bookingapp.SplitterCreateInput) error {
+	shares := make([]splitpayment.ShareInput, 0, len(in.Shares))
+	for _, s := range in.Shares {
+		shares = append(shares, splitpayment.ShareInput{Email: s.Email, AmountCents: s.AmountCents})
+	}
+	_, err := a.svc.Create(ctx, splitpaymentapp.CreateInput{
+		BookingID:      in.BookingID,
+		OrganizerID:    in.OrganizerID,
+		OrganizerEmail: in.OrganizerEmail,
+		Currency:       in.Currency,
+		TotalCents:     in.TotalCents,
+		Shares:         shares,
+	})
+	return err
+}
+
+// testUserEmailResolver satisfies bookingapp.OrganizerResolver via the
+// in-memory user repository.
+type testUserEmailResolver struct {
+	users *memory.UserRepository
+}
+
+func (r testUserEmailResolver) EmailByID(ctx context.Context, id uuid.UUID) (string, error) {
+	u, err := r.users.FindByID(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return u.Email, nil
 }

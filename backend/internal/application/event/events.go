@@ -14,6 +14,7 @@ func init() {
 	Register(IdentityVerified{}.EventName(), jsonDecoder[IdentityVerified]())
 	Register(DisputeOpened{}.EventName(), jsonDecoder[DisputeOpened]())
 	Register(DisputeResolved{}.EventName(), jsonDecoder[DisputeResolved]())
+	Register(SplitPaymentCompleted{}.EventName(), jsonDecoder[SplitPaymentCompleted]())
 }
 
 // BookingRequested is published when a guest creates a booking. The host should
@@ -29,6 +30,11 @@ type BookingRequested struct {
 	TotalCents    int64
 	Currency      string
 	Instant       bool
+	// Split is true when the booking is being paid by a split-payment
+	// plan (S20a). The payment subscriber ignores split bookings — money
+	// flows through the splitpayment context instead, and the booking
+	// confirms when every share is authorised.
+	Split bool
 }
 
 func (BookingRequested) EventName() string { return "booking.requested" }
@@ -40,6 +46,9 @@ type BookingConfirmed struct {
 	PropertyID    uuid.UUID
 	PropertyTitle string
 	GuestID       uuid.UUID
+	// Split mirrors BookingRequested.Split: the payment subscriber skips
+	// capture and deposit hold when it sees a split confirmation.
+	Split bool
 }
 
 func (BookingConfirmed) EventName() string { return "booking.confirmed" }
@@ -55,6 +64,10 @@ type BookingCancelled struct {
 	GuestID        uuid.UUID
 	CancelledBy    uuid.UUID
 	RefundFraction float64 // 0..1, applied to captured payments
+	// Split mirrors BookingRequested.Split: the payment subscriber skips
+	// refund logic for split bookings; refunds (if any) flow through the
+	// splitpayment context.
+	Split bool
 }
 
 func (BookingCancelled) EventName() string { return "booking.cancelled" }
@@ -134,3 +147,14 @@ type DisputeResolved struct {
 }
 
 func (DisputeResolved) EventName() string { return "dispute.resolved" }
+
+// SplitPaymentCompleted is published when every share of a split-payment
+// plan has been authorised. A booking subscriber confirms the corresponding
+// booking, which is otherwise stuck in pending while waiting for the team
+// to finish paying.
+type SplitPaymentCompleted struct {
+	SplitPaymentID uuid.UUID
+	BookingID      uuid.UUID
+}
+
+func (SplitPaymentCompleted) EventName() string { return "splitpayment.completed" }

@@ -40,6 +40,7 @@ type Handlers struct {
 	PushToken      *handler.PushTokenHandler
 	Dispute        *handler.DisputeHandler
 	Cohost         *handler.CohostHandler
+	SplitPayment   *handler.SplitPaymentHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -222,6 +223,13 @@ func NewRouter(d Deps) *gin.Engine {
 		// whether the caller has the host role (a co-host is a regular user
 		// the primary host invited; they don't need to be a host themselves).
 		auth.GET("/me/cohost-listings", h.Cohost.ListMine)
+
+		// Split payment: per-payer authorize + organizer cancel + reads.
+		auth.GET("/me/splits", h.SplitPayment.ListMine)
+		auth.GET("/splits/:id", h.SplitPayment.Get)
+		auth.POST("/splits/:id/shares/:shareId/authorize", h.SplitPayment.AuthorizeShare)
+		auth.POST("/splits/:id/cancel", h.SplitPayment.Cancel)
+		auth.GET("/bookings/:id/split", h.SplitPayment.GetForBooking)
 
 		// Calendar blocks and seasonal price rules: the per-listing gate
 		// (primary host OR co-host with the matching permission) lives in

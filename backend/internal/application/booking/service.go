@@ -26,6 +26,37 @@ type IdentityVerifier interface {
 	IsVerified(ctx context.Context, userID uuid.UUID) (bool, error)
 }
 
+// SplitShareInput mirrors splitpayment.ShareInput at the booking API boundary
+// so callers (HTTP handler, web) don't have to import the splitpayment package.
+type SplitShareInput struct {
+	Email       string
+	AmountCents int64
+}
+
+// SplitterCreateInput is the projection of CreateInput the split-payment
+// context needs to seed a fresh plan alongside the booking.
+type SplitterCreateInput struct {
+	BookingID      uuid.UUID
+	OrganizerID    uuid.UUID
+	OrganizerEmail string
+	Currency       string
+	TotalCents     int64
+	Shares         []SplitShareInput
+}
+
+// Splitter is the port to the split-payment context.
+type Splitter interface {
+	Create(ctx context.Context, in SplitterCreateInput) error
+}
+
+// OrganizerResolver looks up a user's email by id. The booking service uses
+// it to seed the SplitterCreateInput when the caller (handler) only knows
+// the guest's id, and to validate the organizer is among the share payers
+// before persisting.
+type OrganizerResolver interface {
+	EmailByID(ctx context.Context, id uuid.UUID) (string, error)
+}
+
 // Service orchestrates booking use cases.
 type Service struct {
 	bookings       booking.Repository
@@ -41,7 +72,11 @@ type Service struct {
 	// verified guest even when requireKYC is off. A currency without an
 	// entry has no step-up. See IdentityConfig.HighValueThresholdsCents.
 	highValueThresholds map[string]int64
-	uow                 port.UnitOfWork
+	// splitter + users, when wired, enable the split-payment flow (S20a).
+	// nil leaves the booking service in single-payer mode.
+	splitter Splitter
+	users    OrganizerResolver
+	uow      port.UnitOfWork
 }
 
 // NewService wires the booking application service. serviceFeeRate is the
@@ -52,6 +87,15 @@ type Service struct {
 // used when summing the night-by-night subtotal.
 func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, coupons coupon.Repository, priceRules pricerule.Repository, serviceFeeRate float64, identity IdentityVerifier, requireKYC bool, uow port.UnitOfWork) *Service {
 	return &Service{bookings: bookings, properties: properties, blocks: blocks, coupons: coupons, priceRules: priceRules, serviceFeeRate: serviceFeeRate, identity: identity, requireKYC: requireKYC, uow: uow}
+}
+
+// WithSplitter plugs in the split-payment context so the booking service can
+// create a split alongside a booking when the request carries SplitShares.
+// Both deps are required for the split path; either nil disables it.
+func (s *Service) WithSplitter(splitter Splitter, users OrganizerResolver) *Service {
+	s.splitter = splitter
+	s.users = users
+	return s
 }
 
 // WithHighValueThresholds configures the per-currency step-up table. Returns
@@ -70,6 +114,51 @@ func (s *Service) WithHighValueThresholds(thresholds map[string]int64) *Service 
 	}
 	s.highValueThresholds = cp
 	return s
+}
+
+// EventHandler returns an event.Handler that confirms a booking when its
+// attached split-payment plan completes. Split bookings are created in
+// pending status (no instant confirmation, even on instant-book listings)
+// and confirm only when the splitpayment context publishes
+// SplitPaymentCompleted.
+func (s *Service) EventHandler() event.Handler {
+	return func(ctx context.Context, e event.Event) {
+		ev, ok := e.(event.SplitPaymentCompleted)
+		if !ok {
+			return
+		}
+		s.confirmAfterSplit(ctx, ev.BookingID)
+	}
+}
+
+// confirmAfterSplit confirms the booking and emits BookingConfirmed(Split=true).
+// Idempotent: if the booking is already confirmed (e.g. a duplicate event
+// delivery), the second call is a silent no-op.
+func (s *Service) confirmAfterSplit(ctx context.Context, bookingID uuid.UUID) {
+	b, err := s.bookings.FindByID(ctx, bookingID)
+	if err != nil {
+		return
+	}
+	if b.Status == booking.StatusConfirmed {
+		return
+	}
+	prop, err := s.properties.FindByID(ctx, b.PropertyID)
+	if err != nil {
+		return
+	}
+	if err := b.Confirm(); err != nil {
+		return
+	}
+	_ = s.emit(ctx,
+		func(tx port.Tx) error { return tx.Bookings.Update(ctx, b) },
+		event.BookingConfirmed{
+			BookingID:     b.ID,
+			PropertyID:    prop.ID,
+			PropertyTitle: prop.Title,
+			GuestID:       b.GuestID,
+			Split:         true,
+		},
+	)
 }
 
 // enforceStepUp is a no-op unless the booking's total reaches the configured
@@ -127,6 +216,12 @@ type CreateInput struct {
 	// OverridePricePerNightCents, when > 0, replaces the listing's nightly price
 	// (used when a guest accepts a host's special offer). 0 uses the listing price.
 	OverridePricePerNightCents int64
+	// SplitShares, when non-empty, enables the split-payment flow (S20a).
+	// The organizer (guest) must be one of the share emails and the share
+	// amounts must sum exactly to the booking total. Restricted to
+	// instant-book listings — the split itself is the commitment, no
+	// host approval afterwards.
+	SplitShares []SplitShareInput
 }
 
 // Create makes a reservation, enforcing availability and capacity rules.
@@ -241,10 +336,33 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	if err := s.enforceStepUp(ctx, in.GuestID, b.Pricing.Total.AmountCents(), b.Pricing.Total.Currency()); err != nil {
 		return nil, err
 	}
+
+	// Split-payment branch: validate, then create the split alongside the
+	// booking with no instant-confirm (the SplitPaymentCompleted handler
+	// confirms once every share is authorised).
+	useSplit := len(in.SplitShares) > 0
+	var organizerEmail string
+	if useSplit {
+		if s.splitter == nil || s.users == nil {
+			return nil, shared.NewValidationError("split payment is not enabled on this deployment")
+		}
+		if !prop.InstantBook {
+			return nil, shared.NewValidationError("split payment is only available on instant-book listings")
+		}
+		email, err := s.users.EmailByID(ctx, in.GuestID)
+		if err != nil {
+			return nil, err
+		}
+		organizerEmail = email
+	}
+
 	// Instant book: auto-confirm the reservation now instead of holding it for
 	// the host. Both events are published in the same transaction; the relay
 	// dispatches BookingRequested (payment authorize) before BookingConfirmed
 	// (capture + host-earning credit + guest notification).
+	//
+	// Split bookings: NEVER auto-confirm, even on instant-book listings — the
+	// SplitPaymentCompleted handler does it once every share is paid.
 	events := []event.Event{
 		event.BookingRequested{
 			BookingID:     b.ID,
@@ -255,9 +373,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 			TotalCents:    b.Pricing.Total.AmountCents(),
 			Currency:      b.Pricing.Total.Currency(),
 			Instant:       prop.InstantBook,
+			Split:         useSplit,
 		},
 	}
-	if prop.InstantBook {
+	if prop.InstantBook && !useSplit {
 		if err := b.Confirm(); err != nil {
 			return nil, err
 		}
@@ -273,6 +392,22 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		events...,
 	); err != nil {
 		return nil, err
+	}
+	// With the booking persisted, seed the split (if requested). A failure
+	// here leaves a pending booking with no split — the caller can retry by
+	// cancelling and re-booking; the gateway hasn't been touched (Split=true
+	// short-circuited the payment subscriber).
+	if useSplit {
+		if err := s.splitter.Create(ctx, SplitterCreateInput{
+			BookingID:      b.ID,
+			OrganizerID:    in.GuestID,
+			OrganizerEmail: organizerEmail,
+			Currency:       b.Pricing.Total.Currency(),
+			TotalCents:     b.Pricing.Total.AmountCents(),
+			Shares:         in.SplitShares,
+		}); err != nil {
+			return nil, err
+		}
 	}
 	// Record the redemption once the booking is safely persisted. Best-effort: a
 	// failure here must not undo a confirmed reservation. (Under heavy concurrency

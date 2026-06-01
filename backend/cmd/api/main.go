@@ -40,9 +40,11 @@ import (
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	savedsearchapp "github.com/airhost/backend/internal/application/savedsearch"
 	searchapp "github.com/airhost/backend/internal/application/search"
+	splitpaymentapp "github.com/airhost/backend/internal/application/splitpayment"
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 	domainuser "github.com/airhost/backend/internal/domain/user"
 	infraalerting "github.com/airhost/backend/internal/infrastructure/alerting"
 	"github.com/airhost/backend/internal/infrastructure/auth"
@@ -58,6 +60,7 @@ import (
 	"github.com/airhost/backend/internal/interfaces/http/handler"
 	"github.com/airhost/backend/internal/interfaces/http/middleware"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
@@ -129,6 +132,7 @@ func run() error {
 	pushTokenRepo := postgres.NewPushTokenRepository(pool)
 	disputeRepo := postgres.NewDisputeRepository(pool)
 	cohostRepo := postgres.NewCohostRepository(pool)
+	splitPaymentRepo := postgres.NewSplitPaymentRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers,
@@ -169,6 +173,11 @@ func run() error {
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc)
 	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo).WithCohosts(cohostSvc)
 	messageSvc.WithCohosts(cohostSvc)
+	// Split payment: wire the SplitPayment service, then plug a tiny adapter
+	// into bookingapp so it can create a split alongside a booking.
+	splitPaymentSvc := splitpaymentapp.NewService(splitPaymentRepo, userRepo, eventPublisher)
+	bookingSvc.WithSplitter(splitterAdapter{svc: splitPaymentSvc}, userEmailResolver{users: userRepo})
+	dispatcher.Subscribe(bookingSvc.EventHandler())
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment))
 	privacySvc := privacyapp.NewService(userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo)
@@ -242,6 +251,7 @@ func run() error {
 			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
 			Dispute:        handler.NewDisputeHandler(disputeSvc),
 			Cohost:         handler.NewCohostHandler(cohostSvc, userRepo),
+			SplitPayment:   handler.NewSplitPaymentHandler(splitPaymentSvc),
 		},
 	})
 
@@ -318,4 +328,42 @@ func run() error {
 	}
 	slog.Info("server stopped cleanly")
 	return nil
+}
+
+// splitterAdapter bridges the bookingapp.Splitter port onto the concrete
+// splitpaymentapp.Service. The booking package stays free of an upward
+// dependency on splitpaymentapp this way — composition lives at the
+// composition root.
+type splitterAdapter struct {
+	svc *splitpaymentapp.Service
+}
+
+func (a splitterAdapter) Create(ctx context.Context, in bookingapp.SplitterCreateInput) error {
+	shares := make([]splitpayment.ShareInput, 0, len(in.Shares))
+	for _, s := range in.Shares {
+		shares = append(shares, splitpayment.ShareInput{Email: s.Email, AmountCents: s.AmountCents})
+	}
+	_, err := a.svc.Create(ctx, splitpaymentapp.CreateInput{
+		BookingID:      in.BookingID,
+		OrganizerID:    in.OrganizerID,
+		OrganizerEmail: in.OrganizerEmail,
+		Currency:       in.Currency,
+		TotalCents:     in.TotalCents,
+		Shares:         shares,
+	})
+	return err
+}
+
+// userEmailResolver satisfies bookingapp.OrganizerResolver by looking up
+// the organizer's email via the user repository.
+type userEmailResolver struct {
+	users domainuser.Repository
+}
+
+func (r userEmailResolver) EmailByID(ctx context.Context, id uuid.UUID) (string, error) {
+	u, err := r.users.FindByID(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return u.Email, nil
 }
