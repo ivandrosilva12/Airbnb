@@ -9,6 +9,7 @@ import (
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 const maxAttachmentBytes = 10 << 20 // 10 MiB
@@ -55,6 +56,35 @@ func (h *MessageHandler) Start(c *gin.Context) {
 		return
 	}
 	response.Created(c, dto.FromConversation(conv, 0))
+}
+
+// ListCohostMailbox returns the conversations on listings the caller helps
+// manage as a co-host with reply_messages. Each entry carries the host-side
+// unread count — what the team still has to handle.
+func (h *MessageHandler) ListCohostMailbox(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	res, err := h.svc.ListCohostConversations(c.Request.Context(), actorID, pageFromQuery(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	ids := make([]uuid.UUID, 0, len(res.Items))
+	for _, conv := range res.Items {
+		ids = append(ids, conv.ID)
+	}
+	unread, err := h.svc.HostUnreadForCohost(c.Request.Context(), ids)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	items := make([]dto.ConversationView, 0, len(res.Items))
+	for _, conv := range res.Items {
+		items = append(items, dto.FromConversation(conv, unread[conv.ID]))
+	}
+	response.OK(c, dto.PageView[dto.ConversationView]{Items: items, Total: res.Total})
 }
 
 // ListMine returns the actor's conversations, each with their unread count.

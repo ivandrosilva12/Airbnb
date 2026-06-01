@@ -163,6 +163,7 @@ func newHarness(t *testing.T) *harness {
 	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc)
 	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo).WithCohosts(cohostSvc)
+	messageSvc.WithCohosts(cohostSvc)
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewFakeDisburser(), paymentgw.NewFakeConnectGateway())

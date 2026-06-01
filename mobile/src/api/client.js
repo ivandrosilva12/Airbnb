@@ -138,6 +138,7 @@ export function createApi(getAccessToken) {
 
     // Co-host grants (read-only on mobile: surface "listings I help manage").
     myCohostListings: () => request('GET', '/me/cohost-listings', { auth: true }),
+    myCohostMailbox: () => request('GET', '/me/cohost-mailbox', { auth: true }),
 
     confirmBooking: (id) => request('POST', `/bookings/${id}/confirm`, { auth: true }),
     completeBooking: (id) => request('POST', `/bookings/${id}/complete`, { auth: true }),

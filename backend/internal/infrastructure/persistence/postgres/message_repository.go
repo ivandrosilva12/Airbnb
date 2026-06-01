@@ -80,6 +80,38 @@ func (r *MessageRepository) ListConversationsForUser(ctx context.Context, userID
 	return shared.PageResult[*message.Conversation]{Items: items, Total: total}, mapError(rows.Err())
 }
 
+func (r *MessageRepository) ListConversationsByProperties(ctx context.Context, propertyIDs []uuid.UUID, page shared.Page) (shared.PageResult[*message.Conversation], error) {
+	if len(propertyIDs) == 0 {
+		return shared.PageResult[*message.Conversation]{}, nil
+	}
+	var total int64
+	if err := r.pool.QueryRow(ctx,
+		`SELECT count(*) FROM conversations WHERE property_id = ANY($1)`, propertyIDs,
+	).Scan(&total); err != nil {
+		return shared.PageResult[*message.Conversation]{}, mapError(err)
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+conversationColumns+` FROM conversations
+		WHERE property_id = ANY($1)
+		ORDER BY last_message_at DESC LIMIT $2 OFFSET $3`,
+		propertyIDs, page.Limit, page.Offset,
+	)
+	if err != nil {
+		return shared.PageResult[*message.Conversation]{}, mapError(err)
+	}
+	defer rows.Close()
+
+	var items []*message.Conversation
+	for rows.Next() {
+		c, err := scanConversation(rows)
+		if err != nil {
+			return shared.PageResult[*message.Conversation]{}, err
+		}
+		items = append(items, c)
+	}
+	return shared.PageResult[*message.Conversation]{Items: items, Total: total}, mapError(rows.Err())
+}
+
 func (r *MessageRepository) AddMessage(ctx context.Context, m *message.Message) error {
 	var url, ctype, name *string
 	var size *int64

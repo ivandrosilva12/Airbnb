@@ -230,6 +230,9 @@ export const api = {
   revokeCohost: (propertyId, cohostId) =>
     request('DELETE', `/host/properties/${propertyId}/cohosts/${cohostId}`, { auth: true }),
   myCohostListings: () => request('GET', '/me/cohost-listings', { auth: true }),
+  // The "team mailbox": conversations on listings where I'm a co-host with
+  // reply_messages. Distinct from /conversations (those are my own threads).
+  myCohostMailbox: () => request('GET', '/me/cohost-mailbox', { auth: true }),
 
   // Availability (public)
   availability: (id, params = {}) => {

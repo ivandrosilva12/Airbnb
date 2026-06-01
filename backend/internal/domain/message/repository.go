@@ -16,6 +16,11 @@ type Repository interface {
 	// (property, guest) pair, or ErrNotFound. Used to avoid duplicate threads.
 	FindConversationByPropertyAndGuest(ctx context.Context, propertyID, guestID uuid.UUID) (*Conversation, error)
 	ListConversationsForUser(ctx context.Context, userID uuid.UUID, page shared.Page) (shared.PageResult[*Conversation], error)
+	// ListConversationsByProperties returns every conversation attached to
+	// one of the given property ids, ordered newest-activity-first. Used by
+	// the co-host messaging surface to surface the team mailbox; an empty
+	// id slice returns an empty page without hitting the store.
+	ListConversationsByProperties(ctx context.Context, propertyIDs []uuid.UUID, page shared.Page) (shared.PageResult[*Conversation], error)
 
 	AddMessage(ctx context.Context, m *Message) error
 	ListMessages(ctx context.Context, conversationID uuid.UUID, page shared.Page) (shared.PageResult[*Message], error)

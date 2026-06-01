@@ -170,6 +170,10 @@ func NewRouter(d Deps) *gin.Engine {
 		// Messaging (host↔guest). Both roles participate, so these live under
 		// the authenticated group rather than the host-only group.
 		auth.GET("/conversations", h.Message.ListMine)
+		// Team mailbox: threads on listings I help manage as a co-host with
+		// reply_messages. Distinct from /conversations so a co-host can tell
+		// "my own threads" from "threads I help handle".
+		auth.GET("/me/cohost-mailbox", h.Message.ListCohostMailbox)
 		auth.POST("/conversations", h.Message.Start)
 		auth.GET("/conversations/unread-count", h.Message.UnreadCount)
 		auth.GET("/conversations/:id/messages", h.Message.ListMessages)

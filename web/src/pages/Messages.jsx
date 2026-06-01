@@ -105,10 +105,24 @@ export default function Messages() {
 
   async function loadConversations() {
     try {
-      const res = await api.listConversations();
-      setConversations(res.items || []);
-      if (!activeId && res.items?.length) {
-        setActiveId(res.items[0].id);
+      // Pull my own threads and the team-mailbox in parallel. The team-mailbox
+      // is the set of threads on listings I help manage as a co-host with
+      // reply_messages; it's empty (200 with no items) when I'm not a co-host
+      // anywhere, so no special handling is needed for the common case.
+      const [own, mailbox] = await Promise.all([
+        api.listConversations(),
+        api.myCohostMailbox().catch(() => ({ items: [] })),
+      ]);
+      const teamItems = (mailbox.items || []).map((c) => ({ ...c, isTeamMailbox: true }));
+      const ownItems = own.items || [];
+      // The server already ensures threads where I'm a literal participant
+      // don't appear in the mailbox, so this is a safe concatenation.
+      const merged = [...ownItems, ...teamItems].sort((a, b) =>
+        new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0),
+      );
+      setConversations(merged);
+      if (!activeId && merged.length) {
+        setActiveId(merged[0].id);
       }
     } catch (e) {
       setError(e.message);
@@ -224,7 +238,15 @@ export default function Messages() {
         <div className="messages-layout">
           <div className="conv-list">
             {conversations.map((c) => {
-              const role = c.hostId === profile?.id ? t('msg.guestEnquiry') : t('msg.yourEnquiry');
+              // A "team mailbox" thread is one the user can act on as a
+              // co-host (not as the listing's primary host or the guest).
+              // Show it with a "team" tag so the user knows they're replying
+              // on the host's behalf.
+              const role = c.isTeamMailbox
+                ? t('msg.teamMailbox')
+                : c.hostId === profile?.id
+                  ? t('msg.guestEnquiry')
+                  : t('msg.yourEnquiry');
               return (
                 <div
                   key={c.id}
@@ -233,6 +255,7 @@ export default function Messages() {
                 >
                   <div className="conv-row">
                     <span>{role}</span>
+                    {c.isTeamMailbox && <span className="team-badge">{t('msg.teamTag')}</span>}
                     {c.unreadCount > 0 && <span className="count-badge">{c.unreadCount}</span>}
                   </div>
                   <small>{c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleString() : ''}</small>

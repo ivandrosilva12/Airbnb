@@ -669,6 +669,27 @@ func (r *MessageRepository) ListConversationsForUser(_ context.Context, userID u
 	return paginate(all, page), nil
 }
 
+func (r *MessageRepository) ListConversationsByProperties(_ context.Context, propertyIDs []uuid.UUID, page shared.Page) (shared.PageResult[*message.Conversation], error) {
+	if len(propertyIDs) == 0 {
+		return shared.PageResult[*message.Conversation]{}, nil
+	}
+	wanted := make(map[uuid.UUID]struct{}, len(propertyIDs))
+	for _, id := range propertyIDs {
+		wanted[id] = struct{}{}
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []*message.Conversation
+	for _, c := range r.conversations {
+		if _, ok := wanted[c.PropertyID]; ok {
+			cp := c
+			all = append(all, &cp)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].LastMessageAt.After(all[j].LastMessageAt) })
+	return paginate(all, page), nil
+}
+
 func (r *MessageRepository) AddMessage(_ context.Context, m *message.Message) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

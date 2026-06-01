@@ -137,6 +137,31 @@ func (s *CohostService) ListMine(ctx context.Context, userID uuid.UUID) ([]*prop
 	return s.properties.FindByIDs(ctx, ids)
 }
 
+// ListPropertyIDsWithPermission returns the listing IDs on which the caller
+// has a co-host grant containing the given permission. Used by sibling
+// services (e.g. messaging) to scope a "team mailbox" view to listings the
+// co-host is actually allowed to act on.
+func (s *CohostService) ListPropertyIDsWithPermission(ctx context.Context, userID uuid.UUID, required property.CohostPermission) ([]uuid.UUID, error) {
+	ids, err := s.cohosts.ListPropertiesForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]uuid.UUID, 0, len(ids))
+	for _, pid := range ids {
+		grant, err := s.cohosts.FindByPropertyAndUser(ctx, pid, userID)
+		if err != nil {
+			if errors.Is(err, shared.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if grant.Has(required) {
+			out = append(out, pid)
+		}
+	}
+	return out, nil
+}
+
 // Authorize is the relaxed permission gate used by sibling services (calendar
 // blocks, price rules) that admit co-host access. It returns the listing if
 // the actor is either the primary host OR a co-host with the required
