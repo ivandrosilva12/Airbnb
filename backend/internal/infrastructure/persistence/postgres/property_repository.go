@@ -28,12 +28,13 @@ const propertyColumns = `id, host_id, title, description, type, status,
 	price_cents, currency, cleaning_fee_cents, max_guests, bedrooms, beds, bathrooms, amenities,
 	cancellation_policy, average_rating, review_count,
 	weekly_discount_pct, monthly_discount_pct, tax_rate_pct, instant_book, host_is_superhost, created_at, updated_at,
-	min_nights, max_nights, guests_included, extra_guest_fee_cents, security_deposit_cents, weekend_price_cents`
+	min_nights, max_nights, guests_included, extra_guest_fee_cents, security_deposit_cents, weekend_price_cents,
+	check_in_method, arrival_instructions, wifi_ssid, wifi_password`
 
 func (r *PropertyRepository) Create(ctx context.Context, p *property.Property) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO properties (`+propertyColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)`,
 		p.ID, p.HostID, p.Title, p.Description, string(p.Type), string(p.Status),
 		p.Address.Line1, p.Address.City, p.Address.Country, p.Address.PostalCode,
 		p.Address.Latitude, p.Address.Longitude,
@@ -44,6 +45,7 @@ func (r *PropertyRepository) Create(ctx context.Context, p *property.Property) e
 		p.InstantBook, p.HostIsSuperhost, p.CreatedAt, p.UpdatedAt,
 		p.MinNights, p.MaxNights, p.GuestsIncluded, p.ExtraGuestFee.AmountCents(), p.SecurityDeposit.AmountCents(),
 		p.PricingPolicy.WeekendPriceCents,
+		string(p.Arrival.CheckInMethod), p.Arrival.Instructions, p.Arrival.WifiSSID, p.Arrival.WifiPassword,
 	)
 	return mapError(err)
 }
@@ -110,7 +112,8 @@ func (r *PropertyRepository) Update(ctx context.Context, p *property.Property) e
 			amenities=$19, cancellation_policy=$20,
 			weekly_discount_pct=$21, monthly_discount_pct=$22, tax_rate_pct=$23, instant_book=$24, updated_at=$25,
 			min_nights=$26, max_nights=$27, guests_included=$28, extra_guest_fee_cents=$29, security_deposit_cents=$30,
-			weekend_price_cents=$31
+			weekend_price_cents=$31,
+			check_in_method=$32, arrival_instructions=$33, wifi_ssid=$34, wifi_password=$35
 		WHERE id=$1`,
 		p.ID, p.Title, p.Description, string(p.Type), string(p.Status),
 		p.Address.Line1, p.Address.City, p.Address.Country, p.Address.PostalCode,
@@ -120,6 +123,7 @@ func (r *PropertyRepository) Update(ctx context.Context, p *property.Property) e
 		p.PricingPolicy.WeeklyDiscountPct, p.PricingPolicy.MonthlyDiscountPct, p.PricingPolicy.TaxRatePct, p.InstantBook, p.UpdatedAt,
 		p.MinNights, p.MaxNights, p.GuestsIncluded, p.ExtraGuestFee.AmountCents(), p.SecurityDeposit.AmountCents(),
 		p.PricingPolicy.WeekendPriceCents,
+		string(p.Arrival.CheckInMethod), p.Arrival.Instructions, p.Arrival.WifiSSID, p.Arrival.WifiPassword,
 	)
 	if err != nil {
 		return mapError(err)
@@ -378,6 +382,7 @@ func scanProperty(row rowScanner) (*property.Property, error) {
 		policy          string
 		extraGuestCents int64
 		depositCents    int64
+		checkInMethod   string
 	)
 	err := row.Scan(
 		&p.ID, &p.HostID, &p.Title, &p.Description, &pType, &status,
@@ -389,6 +394,7 @@ func scanProperty(row rowScanner) (*property.Property, error) {
 		&p.InstantBook, &p.HostIsSuperhost, &p.CreatedAt, &p.UpdatedAt,
 		&p.MinNights, &p.MaxNights, &p.GuestsIncluded, &extraGuestCents, &depositCents,
 		&p.PricingPolicy.WeekendPriceCents,
+		&checkInMethod, &p.Arrival.Instructions, &p.Arrival.WifiSSID, &p.Arrival.WifiPassword,
 	)
 	if err != nil {
 		return nil, err
@@ -396,6 +402,7 @@ func scanProperty(row rowScanner) (*property.Property, error) {
 	p.Type = property.PropertyType(pType)
 	p.Status = property.Status(status)
 	p.CancellationPolicy = property.CancellationPolicy(policy)
+	p.Arrival.CheckInMethod = property.CheckInMethod(checkInMethod)
 	money, _ := shared.NewMoney(priceCents, currency)
 	p.PricePerNight = money
 	cleaning, _ := shared.NewMoney(cleaningCents, currency)

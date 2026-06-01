@@ -63,3 +63,4 @@ func requireUser(c *gin.Context) (uuid.UUID, bool) {
 	}
 	return u.ID, true
 }
+

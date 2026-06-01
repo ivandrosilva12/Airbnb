@@ -71,6 +71,10 @@ type createPropertyRequest struct {
 	GuestsIncluded       int      `json:"guestsIncluded"`
 	ExtraGuestFeeCents   int64    `json:"extraGuestFeeCents"`
 	SecurityDepositCents int64    `json:"securityDepositCents"`
+	CheckInMethod        string   `json:"checkInMethod"`
+	ArrivalInstructions  string   `json:"arrivalInstructions"`
+	WifiSSID             string   `json:"wifiSsid"`
+	WifiPassword         string   `json:"wifiPassword"`
 }
 
 // Create publishes a new draft listing for the authenticated host.
@@ -113,13 +117,18 @@ func (h *PropertyHandler) Create(c *gin.Context) {
 		GuestsIncluded:       req.GuestsIncluded,
 		ExtraGuestFeeCents:   req.ExtraGuestFeeCents,
 		SecurityDepositCents: req.SecurityDepositCents,
+		CheckInMethod:        req.CheckInMethod,
+		ArrivalInstructions:  req.ArrivalInstructions,
+		WifiSSID:             req.WifiSSID,
+		WifiPassword:         req.WifiPassword,
 	})
 	if err != nil {
 		response.Fail(c, err)
 		return
 	}
 	h.metrics.PropertiesCreated.Inc()
-	response.Created(c, dto.FromProperty(p))
+	// The creator is the host — they can see the arrival info they just set.
+	response.Created(c, dto.FromPropertyForHost(p))
 }
 
 // Search runs a public, filtered listing search. When checkIn/checkOut query
@@ -183,7 +192,10 @@ func (h *PropertyHandler) Amenities(c *gin.Context) {
 	response.OK(c, gin.H{"amenities": property.CanonicalAmenities})
 }
 
-// Get returns a single listing.
+// Get returns a single listing in its public shape — arrival info is omitted.
+// The owning host fetches the same listing with arrival included through
+// GetForHost; a guest with a booking reads arrival via /bookings/:id/arrival
+// once the reveal window opens.
 func (h *PropertyHandler) Get(c *gin.Context) {
 	id, ok := pathUUID(c, "id")
 	if !ok {
@@ -195,6 +207,29 @@ func (h *PropertyHandler) Get(c *gin.Context) {
 		return
 	}
 	response.OK(c, dto.FromProperty(p))
+}
+
+// GetForHost returns a single listing with the host-only arrival block. The
+// caller must be the listing's host; everyone else gets 403.
+func (h *PropertyHandler) GetForHost(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	p, err := h.svc.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	if !p.IsOwnedBy(actorID) {
+		response.FailMessage(c, 403, "host role required for this listing")
+		return
+	}
+	response.OK(c, dto.FromPropertyForHost(p))
 }
 
 type updatePropertyRequest struct {
@@ -215,6 +250,10 @@ type updatePropertyRequest struct {
 	GuestsIncluded       int     `json:"guestsIncluded"`
 	ExtraGuestFeeCents   int64   `json:"extraGuestFeeCents"`
 	SecurityDepositCents int64   `json:"securityDepositCents"`
+	CheckInMethod        string  `json:"checkInMethod"`
+	ArrivalInstructions  string  `json:"arrivalInstructions"`
+	WifiSSID             string  `json:"wifiSsid"`
+	WifiPassword         string  `json:"wifiPassword"`
 }
 
 // Update edits an owned listing.
@@ -249,12 +288,18 @@ func (h *PropertyHandler) Update(c *gin.Context) {
 		GuestsIncluded:       req.GuestsIncluded,
 		ExtraGuestFeeCents:   req.ExtraGuestFeeCents,
 		SecurityDepositCents: req.SecurityDepositCents,
+		CheckInMethod:        req.CheckInMethod,
+		ArrivalInstructions:  req.ArrivalInstructions,
+		WifiSSID:             req.WifiSSID,
+		WifiPassword:         req.WifiPassword,
 	})
 	if err != nil {
 		response.Fail(c, err)
 		return
 	}
-	response.OK(c, dto.FromProperty(p))
+	// The caller is verified to be the host (svc.Update enforced it) — send
+	// back the host-only view so the edit form has the latest arrival info.
+	response.OK(c, dto.FromPropertyForHost(p))
 }
 
 // Publish publishes an owned listing.
@@ -331,9 +376,10 @@ func (h *PropertyHandler) ListMine(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	// All entries here belong to the calling host — include the arrival info.
 	items := make([]dto.PropertyView, 0, len(res.Items))
 	for _, p := range res.Items {
-		items = append(items, dto.FromProperty(p))
+		items = append(items, dto.FromPropertyForHost(p))
 	}
 	response.OK(c, dto.PageView[dto.PropertyView]{Items: items, Total: res.Total})
 }

@@ -173,6 +173,27 @@ func (h *BookingHandler) Get(c *gin.Context) {
 	response.OK(c, dto.FromBooking(b))
 }
 
+// Arrival returns the listing's check-in instructions and wifi credentials
+// to the booking's guest, gated by the reveal window (≤ 48h before check-in
+// through check-out). Outside that window the response is 403 even when the
+// caller owns the booking; missing arrival info returns 404.
+func (h *BookingHandler) Arrival(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	info, err := h.svc.ArrivalForBooking(c.Request.Context(), actorID, id, time.Now().UTC())
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromArrivalInfo(info))
+}
+
 // ListMine returns the authenticated guest's reservations.
 func (h *BookingHandler) ListMine(c *gin.Context) {
 	guestID, ok := requireUser(c)

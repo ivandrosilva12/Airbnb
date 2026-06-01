@@ -16,8 +16,9 @@ export default function EditListing() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    // Pull from the host endpoint so the arrival fields (sensitive) come back.
     api
-      .getProperty(id)
+      .getHostProperty(id)
       .then((p) =>
         setForm({
           title: p.title,
@@ -37,6 +38,10 @@ export default function EditListing() {
           guestsIncluded: p.guestsIncluded || '',
           extraGuestFee: ((p.extraGuestFee?.amountCents || 0) / 100).toString(),
           securityDeposit: ((p.securityDeposit?.amountCents || 0) / 100).toString(),
+          checkInMethod: p.arrival?.checkInMethod || '',
+          arrivalInstructions: p.arrival?.arrivalInstructions || '',
+          wifiSsid: p.arrival?.wifiSsid || '',
+          wifiPassword: p.arrival?.wifiPassword || '',
         }),
       )
       .catch((e) => setError(e.message));
@@ -67,6 +72,10 @@ export default function EditListing() {
         guestsIncluded: Number(form.guestsIncluded) || 0,
         extraGuestFeeCents: Math.round(Number(form.extraGuestFee || 0) * 100),
         securityDepositCents: Math.round(Number(form.securityDeposit || 0) * 100),
+        checkInMethod: form.checkInMethod,
+        arrivalInstructions: form.arrivalInstructions,
+        wifiSsid: form.wifiSsid,
+        wifiPassword: form.wifiPassword,
       });
       navigate('/host');
     } catch (err) {
@@ -108,6 +117,24 @@ export default function EditListing() {
         <label>{t('create.fGuestsIncluded')}<input type="number" min="1" value={form.guestsIncluded} onChange={set('guestsIncluded')} /></label>
         <label>{t('create.fExtraGuestFee')}<input type="number" min="0" step="0.01" value={form.extraGuestFee} onChange={set('extraGuestFee')} /></label>
         <label>{t('create.fSecurityDeposit')}<input type="number" min="0" step="0.01" value={form.securityDeposit} onChange={set('securityDeposit')} /></label>
+        <fieldset className="full arrival-fieldset">
+          <legend>{t('arrival.legend')}</legend>
+          <p className="muted">{t('arrival.hint')}</p>
+          <div className="form-grid">
+            <label>{t('arrival.fCheckInMethod')}
+              <select value={form.checkInMethod} onChange={set('checkInMethod')}>
+                <option value="">{t('arrival.methodUnset')}</option>
+                <option value="self_lockbox">{t('arrival.methodSelfLockbox')}</option>
+                <option value="smart_lock">{t('arrival.methodSmartLock')}</option>
+                <option value="key_exchange">{t('arrival.methodKeyExchange')}</option>
+                <option value="host_greeting">{t('arrival.methodHostGreeting')}</option>
+              </select>
+            </label>
+            <label>{t('arrival.fWifiSsid')}<input value={form.wifiSsid} onChange={set('wifiSsid')} maxLength={100} /></label>
+            <label>{t('arrival.fWifiPassword')}<input value={form.wifiPassword} onChange={set('wifiPassword')} maxLength={200} /></label>
+            <label className="full">{t('arrival.fInstructions')}<textarea value={form.arrivalInstructions} onChange={set('arrivalInstructions')} maxLength={2000} rows={4} /></label>
+          </div>
+        </fieldset>
         <label className="full instant-book-toggle">
           <input
             type="checkbox"

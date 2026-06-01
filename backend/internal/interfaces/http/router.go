@@ -225,6 +225,7 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.GET("/payments/me", h.Payment.ListMine)
 		auth.GET("/bookings/:id/payment", h.Payment.GetForBooking)
 		auth.GET("/bookings/:id/deposit", h.Payment.GetDeposit)
+		auth.GET("/bookings/:id/arrival", h.Booking.Arrival)
 		auth.GET("/bookings/:id/receipt", h.Payment.Receipt)
 
 		// Host-only listing management.
@@ -232,6 +233,7 @@ func NewRouter(d Deps) *gin.Engine {
 		host.Use(middleware.RequireHost())
 		{
 			host.GET("/host/properties", h.Property.ListMine)
+			host.GET("/host/properties/:id", h.Property.GetForHost)
 			host.GET("/host/metrics", h.Analytics.HostMetrics)
 			host.GET("/host/earnings", h.Payout.Summary)
 			host.GET("/host/earnings/entries", h.Payout.ListEntries)

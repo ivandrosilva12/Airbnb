@@ -65,6 +65,10 @@ type CreateInput struct {
 	GuestsIncluded       int
 	ExtraGuestFeeCents   int64
 	SecurityDepositCents int64
+	CheckInMethod        string
+	ArrivalInstructions  string
+	WifiSSID             string
+	WifiPassword         string
 }
 
 // applyStayRules sets the listing's stay-length limits and per-guest pricing,
@@ -125,6 +129,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*property.Propert
 	if err := applyStayRules(p, in.Currency, in.MinNights, in.MaxNights, in.GuestsIncluded, in.ExtraGuestFeeCents, in.SecurityDepositCents); err != nil {
 		return nil, err
 	}
+	if err := p.SetArrivalInfo(property.ArrivalInfo{
+		CheckInMethod: property.CheckInMethod(in.CheckInMethod),
+		Instructions:  in.ArrivalInstructions,
+		WifiSSID:      in.WifiSSID,
+		WifiPassword:  in.WifiPassword,
+	}); err != nil {
+		return nil, err
+	}
 	if err := s.repo.Create(ctx, p); err != nil {
 		return nil, err
 	}
@@ -165,6 +177,10 @@ type UpdateInput struct {
 	GuestsIncluded       int
 	ExtraGuestFeeCents   int64
 	SecurityDepositCents int64
+	CheckInMethod        string
+	ArrivalInstructions  string
+	WifiSSID             string
+	WifiPassword         string
 }
 
 // Update mutates a listing after verifying ownership.
@@ -195,6 +211,14 @@ func (s *Service) Update(ctx context.Context, actorID, propertyID uuid.UUID, in 
 	})
 	p.SetInstantBook(in.InstantBook)
 	if err := applyStayRules(p, in.Currency, in.MinNights, in.MaxNights, in.GuestsIncluded, in.ExtraGuestFeeCents, in.SecurityDepositCents); err != nil {
+		return nil, err
+	}
+	if err := p.SetArrivalInfo(property.ArrivalInfo{
+		CheckInMethod: property.CheckInMethod(in.CheckInMethod),
+		Instructions:  in.ArrivalInstructions,
+		WifiSSID:      in.WifiSSID,
+		WifiPassword:  in.WifiPassword,
+	}); err != nil {
 		return nil, err
 	}
 	if err := s.repo.Update(ctx, p); err != nil {

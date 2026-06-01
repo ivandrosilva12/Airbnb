@@ -155,6 +155,54 @@ type Photo struct {
 	Position  int
 }
 
+// CheckInMethod tells the guest how arrival works at the listing. The host
+// picks one and pairs it with free-text ArrivalInstructions describing the
+// concrete steps.
+type CheckInMethod string
+
+const (
+	CheckInMethodUnknown      CheckInMethod = ""               // not yet configured
+	CheckInMethodSelfLockbox  CheckInMethod = "self_lockbox"   // key/code retrieved from a lockbox
+	CheckInMethodSmartLock    CheckInMethod = "smart_lock"     // PIN-code or app-driven smart lock
+	CheckInMethodKeyExchange  CheckInMethod = "key_exchange"   // hand-off with a doorman / building manager
+	CheckInMethodHostGreeting CheckInMethod = "host_greeting"  // the host meets the guest at arrival
+)
+
+// ValidCheckInMethod normalises an input, falling back to the empty
+// (unconfigured) marker if the value isn't recognised. The empty value is
+// allowed because not every listing needs arrival info (no booking → no
+// reveal anyway).
+func ValidCheckInMethod(m CheckInMethod) CheckInMethod {
+	switch m {
+	case CheckInMethodSelfLockbox, CheckInMethodSmartLock, CheckInMethodKeyExchange, CheckInMethodHostGreeting:
+		return m
+	default:
+		return CheckInMethodUnknown
+	}
+}
+
+// ArrivalInfo bundles the sensitive practicalities a guest needs only when
+// the stay is imminent: how to physically get in, any extra arrival notes,
+// and the property's wifi credentials. The aggregate stores these in the
+// clear (DB at rest + transport encryption are the layered defences); the
+// HTTP layer enforces the visibility window (≤ 48 h before check-in through
+// check-out) before serving them to the guest.
+type ArrivalInfo struct {
+	CheckInMethod CheckInMethod
+	Instructions  string // free-text directions (e.g. "Lockbox #4, code 1234"); <= 2000 chars
+	WifiSSID      string // <= 100 chars
+	WifiPassword  string // <= 200 chars
+}
+
+// IsConfigured reports whether the host has filled in any of the arrival
+// fields. If none of them are set the listing has no arrival info to reveal.
+func (a ArrivalInfo) IsConfigured() bool {
+	return a.CheckInMethod != CheckInMethodUnknown ||
+		strings.TrimSpace(a.Instructions) != "" ||
+		strings.TrimSpace(a.WifiSSID) != "" ||
+		strings.TrimSpace(a.WifiPassword) != ""
+}
+
 // Property is the aggregate root for a listing.
 type Property struct {
 	ID                 uuid.UUID
@@ -183,6 +231,10 @@ type Property struct {
 	GuestsIncluded  int          // guests included in the base price; extras are charged
 	ExtraGuestFee   shared.Money // per extra guest, per night
 	SecurityDeposit shared.Money // refundable hold collected with the booking
+	// Arrival is sensitive — it is never embedded in public listing/search
+	// responses. The HTTP layer reads it on a dedicated guest-only endpoint
+	// once the booking enters the reveal window.
+	Arrival ArrivalInfo
 	// AverageRating and ReviewCount are a denormalised read-model of the
 	// property's guest reviews, refreshed when a review is published.
 	AverageRating float64
@@ -296,6 +348,45 @@ func NewProperty(
 func zeroMoney(currency string) shared.Money {
 	m, _ := shared.NewMoney(0, currency)
 	return m
+}
+
+// ArrivalRevealWindow is how long before check-in the arrival info becomes
+// visible to the guest. The reveal lasts through check-out and then hides
+// again so the credentials don't linger in the guest's trips view forever.
+const ArrivalRevealWindow = 48 * time.Hour
+
+// ArrivalVisibleAt reports whether the arrival info should be exposed to a
+// guest whose stay is [checkIn, checkOut) when the caller is at `now`. The
+// window opens 48h before check-in and closes at check-out. Empty / zero
+// dates mean "never visible" — a guard against unset booking data.
+func ArrivalVisibleAt(now, checkIn, checkOut time.Time) bool {
+	if checkIn.IsZero() || checkOut.IsZero() {
+		return false
+	}
+	reveal := checkIn.Add(-ArrivalRevealWindow)
+	return !now.Before(reveal) && now.Before(checkOut)
+}
+
+// SetArrivalInfo updates the listing's arrival/wifi information. The host
+// may pass an empty CheckInMethod to clear it; all other fields are trimmed
+// and bounded so a malicious input cannot grow the row unboundedly.
+func (p *Property) SetArrivalInfo(info ArrivalInfo) error {
+	info.CheckInMethod = ValidCheckInMethod(info.CheckInMethod)
+	info.Instructions = strings.TrimSpace(info.Instructions)
+	info.WifiSSID = strings.TrimSpace(info.WifiSSID)
+	info.WifiPassword = strings.TrimSpace(info.WifiPassword)
+	if len(info.Instructions) > 2000 {
+		return shared.NewValidationError("arrival instructions are too long (max 2000 characters)")
+	}
+	if len(info.WifiSSID) > 100 {
+		return shared.NewValidationError("wifi SSID is too long (max 100 characters)")
+	}
+	if len(info.WifiPassword) > 200 {
+		return shared.NewValidationError("wifi password is too long (max 200 characters)")
+	}
+	p.Arrival = info
+	p.touch()
+	return nil
 }
 
 // SetStayRules configures the listing's stay-length limits and per-guest pricing.

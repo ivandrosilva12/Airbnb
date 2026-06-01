@@ -208,12 +208,47 @@ type PropertyView struct {
 	MinNights          int         `json:"minNights"`
 	MaxNights          int         `json:"maxNights"`
 	GuestsIncluded     int         `json:"guestsIncluded"`
-	ExtraGuestFee      MoneyView   `json:"extraGuestFee"`
-	SecurityDeposit    MoneyView   `json:"securityDeposit"`
-	AverageRating      float64     `json:"averageRating"`
-	ReviewCount        int         `json:"reviewCount"`
-	HostIsSuperhost    bool        `json:"hostIsSuperhost"`
-	CreatedAt          time.Time   `json:"createdAt"`
+	ExtraGuestFee      MoneyView         `json:"extraGuestFee"`
+	SecurityDeposit    MoneyView         `json:"securityDeposit"`
+	// Arrival is host-only: omitted on public reads, populated on host edit
+	// reads via FromPropertyForHost. Guests fetch it through the dedicated
+	// /bookings/:id/arrival endpoint, gated by the reveal window.
+	Arrival            *ArrivalInfoView  `json:"arrival,omitempty"`
+	AverageRating      float64           `json:"averageRating"`
+	ReviewCount        int               `json:"reviewCount"`
+	HostIsSuperhost    bool              `json:"hostIsSuperhost"`
+	CreatedAt          time.Time         `json:"createdAt"`
+}
+
+// ArrivalInfoView is the wire shape for a listing's check-in and wifi info.
+// It carries the credentials in the clear because the only endpoints serving
+// it (host edit + /bookings/:id/arrival inside the reveal window) are
+// authenticated and authorised before the body is built.
+type ArrivalInfoView struct {
+	CheckInMethod string `json:"checkInMethod"`
+	Instructions  string `json:"arrivalInstructions"`
+	WifiSSID      string `json:"wifiSsid"`
+	WifiPassword  string `json:"wifiPassword"`
+}
+
+// FromArrivalInfo maps the domain value to its wire shape.
+func FromArrivalInfo(a property.ArrivalInfo) ArrivalInfoView {
+	return ArrivalInfoView{
+		CheckInMethod: string(a.CheckInMethod),
+		Instructions:  a.Instructions,
+		WifiSSID:      a.WifiSSID,
+		WifiPassword:  a.WifiPassword,
+	}
+}
+
+// FromPropertyForHost is FromProperty plus the host-only Arrival block. Use
+// this when the caller is verified to be the listing's host (e.g. the
+// /host/properties feed or an edit GET).
+func FromPropertyForHost(p *property.Property) PropertyView {
+	v := FromProperty(p)
+	a := FromArrivalInfo(p.Arrival)
+	v.Arrival = &a
+	return v
 }
 
 // FromProperty maps a property aggregate to its view.

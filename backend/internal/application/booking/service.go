@@ -449,6 +449,36 @@ func (s *Service) GetByID(ctx context.Context, actorID, bookingID uuid.UUID) (*b
 	return b, nil
 }
 
+// ArrivalForBooking returns the property's arrival/wifi info for a booking
+// the actor owns, gated by the reveal window (≤ 48h before check-in through
+// check-out). Returns shared.ErrForbidden outside the window, ErrNotFound
+// when the listing has no arrival info configured. Cancelled bookings never
+// see arrival info — there's no stay to arrive for. Hosts viewing their own
+// listing already see the data through the property edit endpoint.
+func (s *Service) ArrivalForBooking(ctx context.Context, actorID, bookingID uuid.UUID, now time.Time) (property.ArrivalInfo, error) {
+	b, err := s.bookings.FindByID(ctx, bookingID)
+	if err != nil {
+		return property.ArrivalInfo{}, err
+	}
+	if b.GuestID != actorID {
+		return property.ArrivalInfo{}, shared.ErrForbidden
+	}
+	if b.Status == booking.StatusCancelled {
+		return property.ArrivalInfo{}, shared.ErrForbidden
+	}
+	if !property.ArrivalVisibleAt(now, b.Dates.CheckIn, b.Dates.CheckOut) {
+		return property.ArrivalInfo{}, shared.ErrForbidden
+	}
+	prop, err := s.properties.FindByID(ctx, b.PropertyID)
+	if err != nil {
+		return property.ArrivalInfo{}, err
+	}
+	if !prop.Arrival.IsConfigured() {
+		return property.ArrivalInfo{}, shared.ErrNotFound
+	}
+	return prop.Arrival, nil
+}
+
 // ListForGuest returns a guest's reservations.
 func (s *Service) ListForGuest(ctx context.Context, guestID uuid.UUID, page shared.Page) (shared.PageResult[*booking.Booking], error) {
 	return s.bookings.ListByGuest(ctx, guestID, page)

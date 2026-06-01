@@ -194,6 +194,9 @@ export const api = {
   onboardPayouts: (body) => request('POST', '/host/payouts/onboard', { body, auth: true }),
   refreshPayoutAccount: () => request('POST', '/host/payouts/account/refresh', { auth: true }),
   myProperties: () => request('GET', '/host/properties', { auth: true }),
+  // getHostProperty returns the listing with the host-only arrival block —
+  // use this on the edit form so the host sees the credentials they stored.
+  getHostProperty: (id) => request('GET', `/host/properties/${id}`, { auth: true }),
   createProperty: (body) => request('POST', '/properties', { body, auth: true }),
   updateProperty: (id, body) => request('PATCH', `/properties/${id}`, { body, auth: true }),
   publishProperty: (id) => request('POST', `/properties/${id}/publish`, { auth: true }),
@@ -262,4 +265,8 @@ export const api = {
   listPayments: () => request('GET', '/payments/me', { auth: true }),
   downloadReceipt: (bookingId) => downloadFile(`/bookings/${bookingId}/receipt`, `airhost-receipt-${bookingId}.pdf`),
   getBookingDeposit: (bookingId) => request('GET', `/bookings/${bookingId}/deposit`, { auth: true }),
+  // getBookingArrival returns the listing's check-in info to the booking's
+  // guest within the 48h reveal window (403 outside it, 404 when the listing
+  // has no arrival info configured).
+  getBookingArrival: (bookingId) => request('GET', `/bookings/${bookingId}/arrival`, { auth: true }),
 };

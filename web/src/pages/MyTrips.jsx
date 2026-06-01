@@ -158,6 +158,7 @@ export default function MyTrips() {
   const [disputing, setDisputing] = useState(null);
   const [disputes, setDisputes] = useState({}); // bookingId -> dispute view
   const [deposits, setDeposits] = useState({}); // bookingId -> deposit view
+  const [arrivals, setArrivals] = useState({}); // bookingId -> arrival info (when in window)
 
   async function load() {
     setLoading(true);
@@ -183,6 +184,14 @@ export default function MyTrips() {
       const depByBooking = {};
       for (const row of depRows) if (row && row[1]) depByBooking[row[0]] = row[1];
       setDeposits(depByBooking);
+      // /bookings/:id/arrival is 403 outside the reveal window and 404 when
+      // the listing doesn't carry arrival info — silently skip both.
+      const arrRows = await Promise.all((bookingsRes.items || []).map((b) =>
+        api.getBookingArrival(b.id).then((a) => [b.id, a]).catch(() => null)
+      ));
+      const arrByBooking = {};
+      for (const row of arrRows) if (row && row[1]) arrByBooking[row[0]] = row[1];
+      setArrivals(arrByBooking);
       setGuestRating(guestReviews?.summary || null);
       setPending(pendingRes?.items || []);
       setOffers((offersRes?.items || []).filter((o) => o.status === 'pending'));
@@ -329,6 +338,20 @@ export default function MyTrips() {
                       {(deposits[b.id].amount.amountCents / 100).toFixed(2)} {deposits[b.id].amount.currency}
                       {deposits[b.id].capturedCents > 0 && (
                         <> — {t('deposit.captured', { amount: `${(deposits[b.id].capturedCents / 100).toFixed(2)} ${deposits[b.id].amount.currency}` })}</>
+                      )}
+                    </div>
+                  )}
+                  {arrivals[b.id] && (
+                    <div className="arrival-panel" style={{ marginTop: '.5rem', padding: '.5rem', borderLeft: '3px solid #4a90e2', fontSize: '.82rem' }}>
+                      <strong>{t('arrival.bannerTitle')}</strong>
+                      {arrivals[b.id].checkInMethod && (
+                        <div>{t(`arrival.method.${arrivals[b.id].checkInMethod}`)}</div>
+                      )}
+                      {arrivals[b.id].arrivalInstructions && (
+                        <div style={{ whiteSpace: 'pre-wrap' }}>{arrivals[b.id].arrivalInstructions}</div>
+                      )}
+                      {arrivals[b.id].wifiSsid && (
+                        <div>{t('arrival.wifi', { ssid: arrivals[b.id].wifiSsid, password: arrivals[b.id].wifiPassword || '—' })}</div>
                       )}
                     </div>
                   )}
