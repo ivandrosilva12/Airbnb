@@ -26,6 +26,11 @@ func clampFraction(f float64) float64 {
 // lifecycle: authorize on request, capture on confirmation, refund on
 // cancellation. Failures are logged; the payment's own status records the
 // outcome (e.g. failed authorization).
+//
+// When deposit support is wired (Service.WithDeposits) the same handler also
+// places a security-deposit hold on BookingConfirmed (after a successful
+// rental capture) and releases the remainder on BookingCompleted or
+// BookingCancelled.
 func (s *Service) EventHandler() event.Handler {
 	return func(ctx context.Context, e event.Event) {
 		switch ev := e.(type) {
@@ -38,6 +43,7 @@ func (s *Service) EventHandler() event.Handler {
 				}
 				return p.Capture()
 			})
+			s.placeDepositHold(ctx, ev)
 		case event.BookingModified:
 			s.reauthorize(ctx, ev)
 		case event.BookingCancelled:
@@ -63,6 +69,83 @@ func (s *Service) EventHandler() event.Handler {
 					return nil // pending / refunded / failed: nothing to do
 				}
 			})
+			s.releaseDepositHold(ctx, ev.BookingID)
+		case event.BookingCompleted:
+			s.releaseDepositHold(ctx, ev.BookingID)
+		}
+	}
+}
+
+// placeDepositHold authorizes a security-deposit hold when the property is
+// configured with one. Idempotent: a second BookingConfirmed delivery is a
+// no-op because the deposit row already exists for the booking.
+func (s *Service) placeDepositHold(ctx context.Context, ev event.BookingConfirmed) {
+	if s.deposits == nil {
+		return
+	}
+	if _, err := s.deposits.FindByBookingID(ctx, ev.BookingID); err == nil {
+		return // already placed
+	} else if !errors.Is(err, shared.ErrNotFound) {
+		slog.Error("deposit: lookup failed", "booking", ev.BookingID, "error", err)
+		return
+	}
+	b, err := s.bookings.FindByID(ctx, ev.BookingID)
+	if err != nil {
+		slog.Error("deposit: booking lookup failed", "booking", ev.BookingID, "error", err)
+		return
+	}
+	prop, err := s.properties.FindByID(ctx, b.PropertyID)
+	if err != nil {
+		slog.Error("deposit: property lookup failed", "booking", ev.BookingID, "error", err)
+		return
+	}
+	if prop.SecurityDeposit.AmountCents() <= 0 {
+		return // listing doesn't require a deposit
+	}
+	d, err := payment.NewDepositHold(b.ID, b.GuestID, prop.SecurityDeposit)
+	if err != nil {
+		slog.Error("deposit: invalid amount", "booking", ev.BookingID, "error", err)
+		return
+	}
+	ref, gErr := s.gateway.Authorize(ctx, prop.SecurityDeposit, "deposit:"+b.ID.String())
+	if gErr != nil {
+		d.Fail(gErr.Error())
+	} else if err := d.Authorize(ref); err != nil {
+		d.Fail(err.Error())
+	}
+	if err := s.deposits.Create(ctx, d); err != nil {
+		slog.Error("deposit: persist failed", "booking", ev.BookingID, "error", err)
+	}
+}
+
+// releaseDepositHold returns the remaining hold to the guest after a clean
+// stay or a cancellation. A captured / released / failed hold is skipped
+// (terminal); a missing hold is a no-op (idempotent across re-deliveries).
+func (s *Service) releaseDepositHold(ctx context.Context, bookingID uuid.UUID) {
+	if s.deposits == nil {
+		return
+	}
+	d, err := s.deposits.FindByBookingID(ctx, bookingID)
+	if err != nil {
+		if !errors.Is(err, shared.ErrNotFound) {
+			slog.Error("deposit: lookup failed on release", "booking", bookingID, "error", err)
+		}
+		return
+	}
+	switch d.Status {
+	case payment.DepositAuthorized, payment.DepositPartiallyCaptured:
+		if d.Remaining() > 0 {
+			if err := s.gateway.Refund(ctx, d.GatewayRef, d.Remaining()); err != nil {
+				slog.Error("deposit: gateway refund failed", "booking", bookingID, "error", err)
+				return
+			}
+		}
+		if err := d.Release(); err != nil {
+			slog.Error("deposit: release failed", "booking", bookingID, "error", err)
+			return
+		}
+		if err := s.deposits.Update(ctx, d); err != nil {
+			slog.Error("deposit: persist release failed", "booking", bookingID, "error", err)
 		}
 	}
 }

@@ -44,6 +44,7 @@ var (
 	_ favorite.Repository     = (*FavoriteRepository)(nil)
 	_ notification.Repository = (*NotificationRepository)(nil)
 	_ payment.Repository      = (*PaymentRepository)(nil)
+	_ payment.DepositRepository = (*DepositRepository)(nil)
 	_ payout.Repository       = (*PayoutRepository)(nil)
 	_ block.Repository        = (*BlockRepository)(nil)
 	_ identity.Repository     = (*IdentityRepository)(nil)
@@ -2011,4 +2012,72 @@ func (r *DisputeRepository) ListOpen(_ context.Context, page shared.Page) (share
 	// Oldest first — the moderation queue is FIFO.
 	sort.Slice(all, func(i, j int) bool { return all[i].OpenedAt.Before(all[j].OpenedAt) })
 	return paginate(all, page), nil
+}
+
+// --- Deposit holds -----------------------------------------------------------
+
+// DepositRepository is an in-memory payment.DepositRepository.
+type DepositRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]payment.DepositHold
+}
+
+// NewDepositRepository builds an empty in-memory deposit repository.
+func NewDepositRepository() *DepositRepository {
+	return &DepositRepository{m: map[uuid.UUID]payment.DepositHold{}}
+}
+
+// cloneDeposit deep-copies so the store doesn't share its Adjustments backing
+// array with the caller.
+func cloneDeposit(d *payment.DepositHold) payment.DepositHold {
+	out := *d
+	if len(d.Adjustments) > 0 {
+		out.Adjustments = append([]payment.Adjustment(nil), d.Adjustments...)
+	}
+	return out
+}
+
+func (r *DepositRepository) Create(_ context.Context, d *payment.DepositHold) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// One deposit per booking — model the unique constraint Postgres enforces.
+	for _, ex := range r.m {
+		if ex.BookingID == d.BookingID {
+			return shared.ErrConflict
+		}
+	}
+	r.m[d.ID] = cloneDeposit(d)
+	return nil
+}
+
+func (r *DepositRepository) Update(_ context.Context, d *payment.DepositHold) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[d.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[d.ID] = cloneDeposit(d)
+	return nil
+}
+
+func (r *DepositRepository) FindByID(_ context.Context, id uuid.UUID) (*payment.DepositHold, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if d, ok := r.m[id]; ok {
+		c := cloneDeposit(&d)
+		return &c, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *DepositRepository) FindByBookingID(_ context.Context, bookingID uuid.UUID) (*payment.DepositHold, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, d := range r.m {
+		if d.BookingID == bookingID {
+			c := cloneDeposit(&d)
+			return &c, nil
+		}
+	}
+	return nil, shared.ErrNotFound
 }

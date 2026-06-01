@@ -73,6 +73,7 @@ type harness struct {
 	router          *gin.Engine
 	userRepo        *memory.UserRepository
 	paymentRepo     *memory.PaymentRepository
+	depositRepo     *memory.DepositRepository
 	paymentGateway  *paymentgw.FakeGateway
 	propertyRepo    *memory.PropertyRepository
 	bookingRepo     *memory.BookingRepository
@@ -120,6 +121,7 @@ func newHarness(t *testing.T) *harness {
 	favoriteRepo := memory.NewFavoriteRepository()
 	notificationRepo := memory.NewNotificationRepository()
 	paymentRepo := memory.NewPaymentRepository()
+	depositRepo := memory.NewDepositRepository()
 	payoutRepo := memory.NewPayoutRepository()
 	blockRepo := memory.NewBlockRepository()
 	priceRuleRepo := memory.NewPriceRuleRepository()
@@ -152,7 +154,8 @@ func newHarness(t *testing.T) *harness {
 	notificationSvc := notificationapp.NewService(notificationRepo).WithPush(pushTokenSvc.AsNotifier())
 	savedSearchSvc := savedsearchapp.NewService(memory.NewSavedSearchRepository(), searchSvc, notificationSvc)
 	paymentGateway := paymentgw.NewFakeGateway()
-	paymentSvc := paymentapp.NewService(paymentRepo, paymentGateway, bookingRepo, propertyRepo)
+	paymentSvc := paymentapp.NewService(paymentRepo, paymentGateway, bookingRepo, propertyRepo).
+		WithDeposits(depositRepo)
 	disputeSvc := disputeapp.NewService(disputeRepo, bookingRepo, propertyRepo, dispatcher).
 		WithPaymentAdjuster(paymentSvc)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
@@ -236,6 +239,7 @@ func newHarness(t *testing.T) *harness {
 
 	return &harness{
 		t: t, router: router, userRepo: userRepo, paymentRepo: paymentRepo,
+		depositRepo:    depositRepo,
 		paymentGateway: paymentGateway,
 		propertyRepo:   propertyRepo, bookingRepo: bookingRepo, mailer: mailer,
 		silencer: silencer, pusher: pusher, notificationSvc: notificationSvc,

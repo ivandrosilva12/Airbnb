@@ -648,6 +648,52 @@ func FromPayment(p *payment.Payment) PaymentView {
 	}
 }
 
+// DepositView is the public representation of a security-deposit hold.
+type DepositView struct {
+	ID            uuid.UUID           `json:"id"`
+	BookingID     uuid.UUID           `json:"bookingId"`
+	Amount        MoneyView           `json:"amount"`
+	CapturedCents int64               `json:"capturedCents"`
+	Remaining     int64               `json:"remainingCents"`
+	Status        string              `json:"status"`
+	FailureReason string              `json:"failureReason,omitempty"`
+	Adjustments   []PaymentAdjustment `json:"adjustments,omitempty"`
+	CreatedAt     time.Time           `json:"createdAt"`
+	ReleasedAt    *time.Time          `json:"releasedAt,omitempty"`
+}
+
+// FromDeposit maps a DepositHold aggregate to its public view.
+func FromDeposit(d *payment.DepositHold) DepositView {
+	adjs := make([]PaymentAdjustment, 0, len(d.Adjustments))
+	for _, a := range d.Adjustments {
+		refID := ""
+		if a.RefID != (uuid.UUID{}) {
+			refID = a.RefID.String()
+		}
+		adjs = append(adjs, PaymentAdjustment{
+			ID:          a.ID,
+			Kind:        string(a.Kind),
+			AmountCents: a.AmountCents,
+			Reason:      a.Reason,
+			RefKind:     a.RefKind,
+			RefID:       refID,
+			CreatedAt:   a.CreatedAt,
+		})
+	}
+	return DepositView{
+		ID:            d.ID,
+		BookingID:     d.BookingID,
+		Amount:        fromMoney(d.Amount),
+		CapturedCents: d.CapturedCents,
+		Remaining:     d.Remaining(),
+		Status:        string(d.Status),
+		FailureReason: d.FailureReason,
+		Adjustments:   adjs,
+		CreatedAt:     d.CreatedAt,
+		ReleasedAt:    d.ReleasedAt,
+	}
+}
+
 // HostMetricsView renders a host's dashboard analytics.
 type HostMetricsView struct {
 	Listings         int       `json:"listings"`

@@ -55,6 +55,25 @@ func (h *PaymentHandler) GetForBooking(c *gin.Context) {
 	response.OK(c, dto.FromPayment(p))
 }
 
+// GetDeposit returns the security-deposit hold for a booking the guest owns.
+// 404 when the listing has no deposit configured (or the hold was never placed).
+func (h *PaymentHandler) GetDeposit(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	bookingID, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	d, err := h.svc.GetDepositForBooking(c.Request.Context(), actorID, bookingID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromDeposit(d))
+}
+
 // Receipt streams a PDF receipt for a booking's payment to the owning guest.
 func (h *PaymentHandler) Receipt(c *gin.Context) {
 	actorID, ok := requireUser(c)

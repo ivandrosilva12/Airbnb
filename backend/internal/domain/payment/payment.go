@@ -33,10 +33,15 @@ const (
 	// dispute settlement). It is subtracted from the gross captured amount.
 	AdjustmentRefund AdjustmentKind = "refund"
 	// AdjustmentDamageClaim records compensation owed to the host for damage
-	// caused during the stay. It does NOT move funds at the gateway by itself —
-	// it is an accounting marker; actual charging is out of scope until a real
-	// security-deposit hold exists.
+	// caused during the stay where the deposit was insufficient (or absent) —
+	// the overflow that the platform must collect through other means. It is
+	// an accounting marker, not a gateway charge.
 	AdjustmentDamageClaim AdjustmentKind = "damage_claim"
+	// AdjustmentDepositCapture is the inverse: money that DID move at the
+	// gateway, captured from a security-deposit hold to satisfy a damage
+	// claim. Adjustments of this kind live on the DepositHold aggregate, not
+	// on the rental Payment.
+	AdjustmentDepositCapture AdjustmentKind = "deposit_capture"
 )
 
 // Adjustment is one entry in the payment's audit ledger — every partial refund

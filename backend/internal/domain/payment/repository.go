@@ -66,6 +66,18 @@ func (a *RevenueAccumulator) Dominant() Revenue {
 	return best
 }
 
+// DepositRepository is the persistence port for the DepositHold aggregate.
+//
+// Like Payment, the aggregate owns its Adjustments slice — Create/Update
+// must persist the deposit row plus any new adjustment entries in one
+// transaction, and reads must hydrate the slice.
+type DepositRepository interface {
+	Create(ctx context.Context, d *DepositHold) error
+	Update(ctx context.Context, d *DepositHold) error
+	FindByBookingID(ctx context.Context, bookingID uuid.UUID) (*DepositHold, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*DepositHold, error)
+}
+
 // Repository is the persistence port for the Payment aggregate.
 //
 // Adjustments (partial refunds, damage claims) are owned by the aggregate and

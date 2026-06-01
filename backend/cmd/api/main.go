@@ -118,6 +118,7 @@ func run() error {
 	favoriteRepo := postgres.NewFavoriteRepository(pool)
 	notificationRepo := postgres.NewNotificationRepository(pool)
 	paymentRepo := postgres.NewPaymentRepository(pool)
+	depositRepo := postgres.NewDepositRepository(pool)
 	payoutRepo := postgres.NewPayoutRepository(pool)
 	blockRepo := postgres.NewBlockRepository(pool)
 	priceRuleRepo := postgres.NewPriceRuleRepository(pool)
@@ -158,7 +159,8 @@ func run() error {
 	pushSender := infrapush.NewSender(cfg.Push)
 	pushTokenSvc := pushtokenapp.NewService(pushTokenRepo, userRepo, pushSender)
 	notificationSvc := notificationapp.NewService(notificationRepo).WithPush(pushTokenSvc.AsNotifier())
-	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewGateway(cfg.Payment), bookingRepo, propertyRepo)
+	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewGateway(cfg.Payment), bookingRepo, propertyRepo).
+		WithDeposits(depositRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo)
 	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo)

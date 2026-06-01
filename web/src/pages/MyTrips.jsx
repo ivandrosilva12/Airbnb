@@ -157,6 +157,7 @@ export default function MyTrips() {
   const [offers, setOffers] = useState([]);
   const [disputing, setDisputing] = useState(null);
   const [disputes, setDisputes] = useState({}); // bookingId -> dispute view
+  const [deposits, setDeposits] = useState({}); // bookingId -> deposit view
 
   async function load() {
     setLoading(true);
@@ -173,6 +174,15 @@ export default function MyTrips() {
       const byBooking = {};
       for (const p of paymentsRes.items || []) byBooking[p.bookingId] = p;
       setPayments(byBooking);
+      // Fetch the deposit (if any) for each booking. /bookings/:id/deposit
+      // returns 404 when the listing has no deposit configured — we treat
+      // that as "no deposit" and silently skip.
+      const depRows = await Promise.all((bookingsRes.items || []).map((b) =>
+        api.getBookingDeposit(b.id).then((d) => [b.id, d]).catch(() => null)
+      ));
+      const depByBooking = {};
+      for (const row of depRows) if (row && row[1]) depByBooking[row[0]] = row[1];
+      setDeposits(depByBooking);
       setGuestRating(guestReviews?.summary || null);
       setPending(pendingRes?.items || []);
       setOffers((offersRes?.items || []).filter((o) => o.status === 'pending'));
@@ -309,6 +319,18 @@ export default function MyTrips() {
                   )}
                   {payments[b.id] && (
                     <button className="link-btn" onClick={() => downloadReceipt(b.id)}>{t('trips.receipt')}</button>
+                  )}
+                  {deposits[b.id] && (
+                    <div className="muted-text" style={{ fontSize: '.78rem' }}>
+                      <span className={`badge badge-deposit-${deposits[b.id].status}`}>
+                        {t(`deposit.status.${deposits[b.id].status}`)}
+                      </span>
+                      {' '}
+                      {(deposits[b.id].amount.amountCents / 100).toFixed(2)} {deposits[b.id].amount.currency}
+                      {deposits[b.id].capturedCents > 0 && (
+                        <> — {t('deposit.captured', { amount: `${(deposits[b.id].capturedCents / 100).toFixed(2)} ${deposits[b.id].amount.currency}` })}</>
+                      )}
+                    </div>
                   )}
                 </td>
                 <td>

@@ -96,6 +96,7 @@ export function createApi(getAccessToken) {
 
     // Payments (guest-facing reads)
     listPayments: () => request('GET', '/payments/me', { auth: true }),
+    getBookingDeposit: (bookingId) => request('GET', `/bookings/${bookingId}/deposit`, { auth: true }),
 
     // Report a listing for moderation
     reportListing: (propertyId, body) => request('POST', `/properties/${propertyId}/reports`, { body, auth: true }),

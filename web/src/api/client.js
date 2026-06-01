@@ -261,4 +261,5 @@ export const api = {
   // Payments
   listPayments: () => request('GET', '/payments/me', { auth: true }),
   downloadReceipt: (bookingId) => downloadFile(`/bookings/${bookingId}/receipt`, `airhost-receipt-${bookingId}.pdf`),
+  getBookingDeposit: (bookingId) => request('GET', `/bookings/${bookingId}/deposit`, { auth: true }),
 };
