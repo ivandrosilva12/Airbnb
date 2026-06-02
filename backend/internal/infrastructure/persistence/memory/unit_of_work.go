@@ -8,6 +8,7 @@ import (
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 )
 
 // UnitOfWork is the in-memory UnitOfWork used by tests and the e2e harness. It
@@ -16,17 +17,20 @@ import (
 // repositories and the outbox, then drains the relay so events are dispatched
 // synchronously (matching the previous behavior the tests rely on).
 type UnitOfWork struct {
-	bookings booking.Repository
-	messages message.Repository
-	identity identity.Repository
-	outbox   event.OutboxStore
-	relay    *event.DurablePublisher
+	bookings      booking.Repository
+	messages      message.Repository
+	identity      identity.Repository
+	splitPayments splitpayment.Repository
+	outbox        event.OutboxStore
+	relay         *event.DurablePublisher
 }
 
 // NewUnitOfWork builds an in-memory UnitOfWork. relay may be nil to skip
-// dispatch (events are still recorded in the outbox).
-func NewUnitOfWork(bookings booking.Repository, messages message.Repository, identity identity.Repository, outbox event.OutboxStore, relay *event.DurablePublisher) *UnitOfWork {
-	return &UnitOfWork{bookings: bookings, messages: messages, identity: identity, outbox: outbox, relay: relay}
+// dispatch (events are still recorded in the outbox). splitPayments may be nil
+// when the test doesn't exercise the split-payment path; the Tx field will be
+// nil and any caller touching it will panic clearly.
+func NewUnitOfWork(bookings booking.Repository, messages message.Repository, identity identity.Repository, splitPayments splitpayment.Repository, outbox event.OutboxStore, relay *event.DurablePublisher) *UnitOfWork {
+	return &UnitOfWork{bookings: bookings, messages: messages, identity: identity, splitPayments: splitPayments, outbox: outbox, relay: relay}
 }
 
 // Run executes fn against the shared repositories, then dispatches any recorded
@@ -34,10 +38,11 @@ func NewUnitOfWork(bookings booking.Repository, messages message.Repository, ide
 func (u *UnitOfWork) Run(ctx context.Context, fn func(tx port.Tx) error) error {
 	outbox := event.NewRecordingOutbox(u.outbox)
 	if err := fn(port.Tx{
-		Bookings: u.bookings,
-		Messages: u.messages,
-		Identity: u.identity,
-		Outbox:   outbox,
+		Bookings:      u.bookings,
+		Messages:      u.messages,
+		Identity:      u.identity,
+		SplitPayments: u.splitPayments,
+		Outbox:        outbox,
 	}); err != nil {
 		return err
 	}

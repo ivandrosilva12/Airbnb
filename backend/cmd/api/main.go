@@ -177,7 +177,7 @@ func run() error {
 	messageSvc.WithCohosts(cohostSvc)
 	// Split payment: wire the SplitPayment service, then plug a tiny adapter
 	// into bookingapp so it can create a split alongside a booking.
-	splitPaymentSvc := splitpaymentapp.NewService(splitPaymentRepo, userRepo, eventPublisher)
+	splitPaymentSvc := splitpaymentapp.NewService(splitPaymentRepo, userRepo, uow)
 	bookingSvc.WithSplitter(splitterAdapter{svc: splitPaymentSvc}, userEmailResolver{users: userRepo})
 	dispatcher.Subscribe(bookingSvc.EventHandler())
 	messageTemplateSvc := messagetemplateapp.NewService(messageTemplateRepo)

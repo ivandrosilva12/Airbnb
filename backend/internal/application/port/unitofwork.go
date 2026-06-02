@@ -7,6 +7,7 @@ import (
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 )
 
 // Tx exposes the repositories that participate in a single atomic unit of work,
@@ -15,10 +16,11 @@ import (
 // out of step (no event is lost between the write committing and being
 // recorded).
 type Tx struct {
-	Bookings booking.Repository
-	Messages message.Repository
-	Identity identity.Repository
-	Outbox   event.OutboxStore
+	Bookings      booking.Repository
+	Messages      message.Repository
+	Identity      identity.Repository
+	SplitPayments splitpayment.Repository
+	Outbox        event.OutboxStore
 }
 
 // UnitOfWork runs a function inside a transaction. On success the writes and the

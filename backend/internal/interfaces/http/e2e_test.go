@@ -137,10 +137,15 @@ func newHarness(t *testing.T) *harness {
 	pushTokenRepo := memory.NewPushTokenRepository()
 	disputeRepo := memory.NewDisputeRepository()
 
+	// splitPaymentRepo is declared up here so the UnitOfWork can include it
+	// in its Tx (S31 — split-payment writes participate in the same tx as
+	// the SplitPaymentCompleted outbox append).
+	splitPaymentRepo := memory.NewSplitPaymentRepository()
+
 	dispatcher := event.NewDispatcher()
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, dispatcher)
-	uow := memory.NewUnitOfWork(bookingRepo, messageRepo, identityRepo, outbox, relay)
+	uow := memory.NewUnitOfWork(bookingRepo, messageRepo, identityRepo, splitPaymentRepo, outbox, relay)
 
 	userSvc := userapp.NewService(userRepo)
 	identitySvc := identityapp.NewService(identityRepo, uow)
@@ -169,8 +174,8 @@ func newHarness(t *testing.T) *harness {
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc)
 	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo).WithCohosts(cohostSvc)
 	messageSvc.WithCohosts(cohostSvc)
-	splitPaymentRepo := memory.NewSplitPaymentRepository()
-	splitPaymentSvc := splitpaymentapp.NewService(splitPaymentRepo, userRepo, relay)
+	// splitPaymentRepo declared earlier so the UoW can include it. Reuse here.
+	splitPaymentSvc := splitpaymentapp.NewService(splitPaymentRepo, userRepo, uow)
 	bookingSvc.WithSplitter(testSplitterAdapter{svc: splitPaymentSvc}, testUserEmailResolver{users: userRepo})
 	dispatcher.Subscribe(bookingSvc.EventHandler())
 	messageTemplateSvc := messagetemplateapp.NewService(memory.NewMessageTemplateRepository())

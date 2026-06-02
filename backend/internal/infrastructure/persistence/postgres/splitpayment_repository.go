@@ -12,16 +12,33 @@ import (
 )
 
 // SplitPaymentRepository is the Postgres implementation of splitpayment.Repository.
-// Aggregate writes (Create/Update) are transactional: the parent row and
-// every share row commit together so a partially-persisted split cannot
-// linger after a process crash.
+// Aggregate writes (Create/Update) span two tables (split_payments + split_payment_shares)
+// and must commit atomically. When the repository is bound to a *pgxpool.Pool
+// it manages its own inner transaction; when bound to a pgx.Tx (i.e. running
+// inside a UnitOfWork — S31) it reuses the outer transaction so the split write
+// and the outbox event commit together.
 type SplitPaymentRepository struct {
-	pool *pgxpool.Pool
+	db querier
 }
 
-// NewSplitPaymentRepository builds a SplitPaymentRepository.
+// NewSplitPaymentRepository builds a pool-bound SplitPaymentRepository. Direct
+// callers (outside a UnitOfWork) get the inner-transaction behaviour for free.
 func NewSplitPaymentRepository(pool *pgxpool.Pool) *SplitPaymentRepository {
-	return &SplitPaymentRepository{pool: pool}
+	return &SplitPaymentRepository{db: pool}
+}
+
+// NewSplitPaymentTxRepository binds the repository to an existing transaction.
+// Use this from a UnitOfWork so the parent + shares write joins the outer tx
+// instead of opening a nested savepoint.
+func NewSplitPaymentTxRepository(tx pgx.Tx) *SplitPaymentRepository {
+	return &SplitPaymentRepository{db: tx}
+}
+
+// txBeginner is the subset of *pgxpool.Pool needed to open an inner tx for
+// compound writes. pgx.Tx does NOT satisfy it (its Begin returns a savepoint,
+// which we deliberately avoid by skipping Begin altogether when already in a tx).
+type txBeginner interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
 var _ splitpayment.Repository = (*SplitPaymentRepository)(nil)
@@ -33,12 +50,24 @@ const splitShareColumns = `id, split_payment_id, payer_email, payer_user_id, amo
 		status, paid_at, created_at, updated_at`
 
 func (r *SplitPaymentRepository) Create(ctx context.Context, sp *splitpayment.SplitPayment) error {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return mapError(err)
+	// When bound to a Pool, open an inner tx so the parent + shares are
+	// atomic. When already inside an outer tx (UoW path), reuse it.
+	if pool, ok := r.db.(txBeginner); ok {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return mapError(err)
+		}
+		defer tx.Rollback(ctx) //nolint:errcheck // commit overrides on success
+		if err := createSplitWithin(ctx, tx, sp); err != nil {
+			return err
+		}
+		return mapError(tx.Commit(ctx))
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck // commit overrides on success
-	if _, err := tx.Exec(ctx, `
+	return createSplitWithin(ctx, r.db, sp)
+}
+
+func createSplitWithin(ctx context.Context, q querier, sp *splitpayment.SplitPayment) error {
+	if _, err := q.Exec(ctx, `
 		INSERT INTO split_payments (`+splitPaymentColumns+`)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
 		sp.ID, sp.BookingID, sp.OrganizerID, sp.Currency, sp.TotalCents,
@@ -46,19 +75,26 @@ func (r *SplitPaymentRepository) Create(ctx context.Context, sp *splitpayment.Sp
 	); err != nil {
 		return mapError(err)
 	}
-	if err := insertShares(ctx, tx, sp.Shares); err != nil {
-		return err
-	}
-	return mapError(tx.Commit(ctx))
+	return insertShares(ctx, q, sp.Shares)
 }
 
 func (r *SplitPaymentRepository) Update(ctx context.Context, sp *splitpayment.SplitPayment) error {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return mapError(err)
+	if pool, ok := r.db.(txBeginner); ok {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return mapError(err)
+		}
+		defer tx.Rollback(ctx) //nolint:errcheck
+		if err := updateSplitWithin(ctx, tx, sp); err != nil {
+			return err
+		}
+		return mapError(tx.Commit(ctx))
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-	ct, err := tx.Exec(ctx, `
+	return updateSplitWithin(ctx, r.db, sp)
+}
+
+func updateSplitWithin(ctx context.Context, q querier, sp *splitpayment.SplitPayment) error {
+	ct, err := q.Exec(ctx, `
 		UPDATE split_payments
 		   SET status=$2, updated_at=$3, completed_at=$4, cancelled_at=$5
 		 WHERE id=$1`,
@@ -74,18 +110,15 @@ func (r *SplitPaymentRepository) Update(ctx context.Context, sp *splitpayment.Sp
 	// in lockstep. The set is tiny (typically 2-5 shares), so the cost is
 	// negligible and the logic is easier to reason about than per-share
 	// diffing.
-	if _, err := tx.Exec(ctx, `DELETE FROM split_payment_shares WHERE split_payment_id=$1`, sp.ID); err != nil {
+	if _, err := q.Exec(ctx, `DELETE FROM split_payment_shares WHERE split_payment_id=$1`, sp.ID); err != nil {
 		return mapError(err)
 	}
-	if err := insertShares(ctx, tx, sp.Shares); err != nil {
-		return err
-	}
-	return mapError(tx.Commit(ctx))
+	return insertShares(ctx, q, sp.Shares)
 }
 
-func insertShares(ctx context.Context, tx pgx.Tx, shares []splitpayment.Share) error {
+func insertShares(ctx context.Context, q querier, shares []splitpayment.Share) error {
 	for _, sh := range shares {
-		if _, err := tx.Exec(ctx, `
+		if _, err := q.Exec(ctx, `
 			INSERT INTO split_payment_shares (`+splitShareColumns+`)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 			sh.ID, sh.SplitPaymentID, sh.PayerEmail, sh.PayerUserID, sh.AmountCents,
@@ -106,7 +139,7 @@ func (r *SplitPaymentRepository) FindByBookingID(ctx context.Context, bookingID 
 }
 
 func (r *SplitPaymentRepository) loadOne(ctx context.Context, query string, arg uuid.UUID) (*splitpayment.SplitPayment, error) {
-	row := r.pool.QueryRow(ctx, query, arg)
+	row := r.db.QueryRow(ctx, query, arg)
 	sp, err := scanSplitPayment(row)
 	if err != nil {
 		return nil, err
@@ -120,7 +153,7 @@ func (r *SplitPaymentRepository) loadOne(ctx context.Context, query string, arg 
 }
 
 func (r *SplitPaymentRepository) loadShares(ctx context.Context, splitID uuid.UUID) ([]splitpayment.Share, error) {
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT `+splitShareColumns+` FROM split_payment_shares WHERE split_payment_id=$1 ORDER BY created_at`,
 		splitID,
 	)
@@ -149,7 +182,7 @@ func (r *SplitPaymentRepository) ListForUser(ctx context.Context, userID uuid.UU
 	// Two-step lookup: ids the user has any stake in, then hydrate each
 	// aggregate with its shares. Splits-per-user is small, so a per-id
 	// fan-out is fine and keeps the SQL simple.
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.db.Query(ctx, `
 		SELECT DISTINCT sp.id, sp.created_at FROM split_payments sp
 		LEFT JOIN split_payment_shares sh ON sh.split_payment_id = sp.id
 		WHERE sp.organizer_id = $1

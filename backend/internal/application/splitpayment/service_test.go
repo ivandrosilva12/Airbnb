@@ -15,15 +15,16 @@ import (
 	"github.com/google/uuid"
 )
 
-// capturingPublisher records every event the service publishes so the test
-// can assert on completion-event fan-out without spinning up the in-process
-// dispatcher.
+// capturingPublisher records every event that flows through the in-process
+// dispatcher (after the outbox commits). The S31 service publishes via the
+// UnitOfWork's outbox; the relay then dispatches to handlers, which is where
+// we hook this capturer in.
 type capturingPublisher struct {
 	mu     sync.Mutex
 	events []event.Event
 }
 
-func (p *capturingPublisher) Publish(_ context.Context, ev event.Event) {
+func (p *capturingPublisher) capture(_ context.Context, ev event.Event) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.events = append(p.events, ev)
@@ -40,7 +41,9 @@ func (p *capturingPublisher) names() []string {
 }
 
 // splitFixture is the common harness: organizer + invitee user accounts,
-// in-memory repos, a capturing publisher, the service.
+// in-memory repos, a capturing handler subscribed to the dispatcher, and the
+// service wired through a real UnitOfWork so the completion event flows
+// outbox → relay → dispatcher → handler (matching production semantics).
 type splitFixture struct {
 	svc       *splitpaymentapp.Service
 	splits    *memory.SplitPaymentRepository
@@ -58,7 +61,13 @@ func newSplitFixture(t *testing.T) *splitFixture {
 	users := memory.NewUserRepository()
 	splits := memory.NewSplitPaymentRepository()
 	pub := &capturingPublisher{}
-	svc := splitpaymentapp.NewService(splits, users, pub)
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(pub.capture)
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, dispatcher)
+	uow := memory.NewUnitOfWork(nil, nil, nil, splits, outbox, relay)
+	svc := splitpaymentapp.NewService(splits, users, uow)
 
 	mustUser := func(email string) *user.User {
 		u, err := user.NewUser("kc-"+email, email, "Test "+email, user.RoleGuest)
@@ -122,7 +131,7 @@ func TestAuthorizeMyShareNotCompletedYet(t *testing.T) {
 	if after.Status != splitpayment.StatusPending {
 		t.Fatalf("status = %v, want pending after 1 of 2", after.Status)
 	}
-	if len(f.publisher.events) != 0 {
+	if len(f.publisher.names()) != 0 {
 		t.Fatalf("publisher events = %v, want none yet", f.publisher.names())
 	}
 }

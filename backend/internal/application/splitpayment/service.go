@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/domain/user"
@@ -19,20 +20,25 @@ import (
 )
 
 // Service orchestrates split-payment use cases.
+//
+// AuthorizeShare runs inside a UnitOfWork so the share-paid write and the
+// SplitPaymentCompleted outbox append commit atomically — S31. A crash
+// between the DB write and the event being recorded would otherwise strand
+// the booking in pending forever; the outbox recovery relay re-delivers any
+// completion event whose dispatch was interrupted, and the in-tx append
+// guarantees the event is recorded if and only if the share is marked paid.
 type Service struct {
-	splits    splitpayment.Repository
-	users     user.Repository
-	publisher event.Publisher
+	splits splitpayment.Repository
+	users  user.Repository
+	uow    port.UnitOfWork
 }
 
-// NewService wires the split-payment application service. The publisher is
-// used to fan out SplitPaymentCompleted when the final share is authorised;
-// pass event.Nop() to disable event emission (useful in unit tests).
-func NewService(splits splitpayment.Repository, users user.Repository, publisher event.Publisher) *Service {
-	if publisher == nil {
-		publisher = event.Nop()
-	}
-	return &Service{splits: splits, users: users, publisher: publisher}
+// NewService wires the split-payment application service. The UnitOfWork is
+// used by AuthorizeShare so the share-paid write and the
+// SplitPaymentCompleted outbox append commit atomically. uow may be nil in
+// unit tests that don't exercise the completion path.
+func NewService(splits splitpayment.Repository, users user.Repository, uow port.UnitOfWork) *Service {
+	return &Service{splits: splits, users: users, uow: uow}
 }
 
 // CreateInput is what bookingapp passes to seed a new split alongside a
@@ -74,28 +80,74 @@ func (s *Service) AuthorizeShare(ctx context.Context, actorID, splitID, shareID 
 	if err != nil {
 		return nil, err
 	}
+	if s.uow == nil {
+		// No UoW wired — fall back to the non-durable path. Used by tests
+		// that don't exercise completion; production wires a real UoW.
+		return s.authorizeWithoutUoW(ctx, actorID, splitID, shareID, actor.Email)
+	}
+	var out *splitpayment.SplitPayment
+	err = s.uow.Run(ctx, func(tx port.Tx) error {
+		sp, err := tx.SplitPayments.FindByID(ctx, splitID)
+		if err != nil {
+			return err
+		}
+		if err := sp.MarkSharePaid(shareID, actorID, actor.Email); err != nil {
+			return err
+		}
+		completed := false
+		if sp.AllPaid() {
+			if err := sp.MarkCompleted(); err != nil {
+				return err
+			}
+			completed = true
+		}
+		if err := tx.SplitPayments.Update(ctx, sp); err != nil {
+			return err
+		}
+		// S31 — append the completion event inside the same transaction as
+		// the share-paid write. The outbox row commits atomically with the
+		// domain change, so a crash between the two cannot lose the event;
+		// the recovery relay picks up any record whose dispatch was
+		// interrupted on the next startup.
+		if completed {
+			rec, err := event.NewRecord(event.SplitPaymentCompleted{
+				SplitPaymentID: sp.ID,
+				BookingID:      sp.BookingID,
+			})
+			if err != nil {
+				return err
+			}
+			if err := tx.Outbox.Append(ctx, rec); err != nil {
+				return err
+			}
+		}
+		out = sp
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// authorizeWithoutUoW is the legacy path retained for tests that construct
+// the service without a UnitOfWork. It does NOT publish the completion event
+// — callers that need the booking confirmation must use the UoW path.
+func (s *Service) authorizeWithoutUoW(ctx context.Context, actorID, splitID, shareID uuid.UUID, actorEmail string) (*splitpayment.SplitPayment, error) {
 	sp, err := s.splits.FindByID(ctx, splitID)
 	if err != nil {
 		return nil, err
 	}
-	if err := sp.MarkSharePaid(shareID, actorID, actor.Email); err != nil {
+	if err := sp.MarkSharePaid(shareID, actorID, actorEmail); err != nil {
 		return nil, err
 	}
-	completed := false
 	if sp.AllPaid() {
 		if err := sp.MarkCompleted(); err != nil {
 			return nil, err
 		}
-		completed = true
 	}
 	if err := s.splits.Update(ctx, sp); err != nil {
 		return nil, err
-	}
-	if completed {
-		s.publisher.Publish(ctx, event.SplitPaymentCompleted{
-			SplitPaymentID: sp.ID,
-			BookingID:      sp.BookingID,
-		})
 	}
 	return sp, nil
 }

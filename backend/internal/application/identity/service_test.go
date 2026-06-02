@@ -21,7 +21,7 @@ func newIdentityService(repo *memory.IdentityRepository) (*identityapp.Service, 
 	d.Subscribe(func(_ context.Context, e event.Event) { *captured = append(*captured, e) })
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, d)
-	uow := memory.NewUnitOfWork(nil, nil, repo, outbox, relay)
+	uow := memory.NewUnitOfWork(nil, nil, repo, nil, outbox, relay)
 	return identityapp.NewService(repo, uow), captured
 }
 

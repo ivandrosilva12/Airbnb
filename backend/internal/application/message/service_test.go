@@ -35,7 +35,7 @@ func newMessageService(t *testing.T) (*messageapp.Service, *memory.PropertyRepos
 	dispatcher := event.NewDispatcher()
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, dispatcher)
-	uow := memory.NewUnitOfWork(bookings, messages, identities, outbox, relay)
+	uow := memory.NewUnitOfWork(bookings, messages, identities, nil, outbox, relay)
 	return messageapp.NewService(messages, properties, memory.NewUserBlockRepository(), fakeStorage{}, uow), properties
 }
 
@@ -51,7 +51,7 @@ func newMessageServiceWithBlocks(t *testing.T) (*messageapp.Service, *memory.Pro
 	dispatcher := event.NewDispatcher()
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, dispatcher)
-	uow := memory.NewUnitOfWork(bookings, messages, identities, outbox, relay)
+	uow := memory.NewUnitOfWork(bookings, messages, identities, nil, outbox, relay)
 	return messageapp.NewService(messages, properties, blocks, fakeStorage{}, uow), properties, blocks
 }
 
