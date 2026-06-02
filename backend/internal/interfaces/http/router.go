@@ -49,6 +49,7 @@ type Handlers struct {
 	HouseRules      *handler.HouseRulesHandler
 	Tax             *handler.TaxHandler
 	TaxRemittance   *handler.TaxRemittanceHandler
+	Fraud           *handler.FraudHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -456,6 +457,12 @@ func NewRouter(d Deps) *gin.Engine {
 			// no state machine; the operator hands the output to the
 			// tax authority. ?year=YYYY&month=1..12.
 			admin.GET("/tax/remittance", h.TaxRemittance.AdminPeriod)
+
+			// Fraud detection (S68) — read-only review queue over the
+			// assessments emitted as a side-effect of booking creation.
+			// ?level=low|medium|high filters; default returns all.
+			admin.GET("/fraud/assessments", h.Fraud.AdminList)
+			admin.GET("/fraud/assessments/by-booking/:bookingId", h.Fraud.AdminGetByBooking)
 		}
 	}
 

@@ -42,6 +42,7 @@ import (
 	pushtokenapp "github.com/airhost/backend/internal/application/pushtoken"
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reportapp "github.com/airhost/backend/internal/application/report"
+	fraudapp "github.com/airhost/backend/internal/application/fraud"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	savedsearchapp "github.com/airhost/backend/internal/application/savedsearch"
 	searchapp "github.com/airhost/backend/internal/application/search"
@@ -62,6 +63,7 @@ import (
 	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/airhost/backend/internal/observability/tracing"
 	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
+	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 	"github.com/airhost/backend/internal/infrastructure/persistence/postgres"
 	infrapush "github.com/airhost/backend/internal/infrastructure/push"
 	"github.com/airhost/backend/internal/infrastructure/realtime"
@@ -269,6 +271,13 @@ func run() error {
 	bookingSvc.WithTaxQuoter(taxQuoterAdapter{svc: taxSvc})
 	// S62 — read-only remittance aggregator over the same booking data.
 	taxRemittanceSvc := taxremittanceapp.NewService(bookingRepo, propertyRepo)
+	// S68 — fraud detection BC. Memory-only repository for the first
+	// slice (intentional — we want to shape the wire API before
+	// committing to a postgres schema). Reuses the same per-currency
+	// high-value table as the KYC step-up gate so the two surfaces
+	// don't drift over time.
+	fraudRepo := memory.NewFraudRepository()
+	fraudSvc := fraudapp.NewService(fraudRepo, bookingRepo, userRepo, identitySvc, cfg.Identity.HighValueThresholdsCents)
 	// Plug the verifier into the booking service so Create enforces the
 	// guest acknowledged the listing's current rules version (S47). The
 	// BookingHandler below records the per-booking acceptance row right
@@ -323,7 +332,7 @@ func run() error {
 			Health:         handler.NewHealthHandler(pool),
 			User:           handler.NewUserHandler(userSvc).WithAudit(auditSvc),
 			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc).WithCache(cacheBackend, cfg.Cache.PropertyTTL),
-			Booking:        handler.NewBookingHandler(bookingSvc, metrics).WithHouseRules(houseRulesSvc),
+			Booking:        handler.NewBookingHandler(bookingSvc, metrics).WithHouseRules(houseRulesSvc).WithFraud(fraudSvc),
 			Review:         handler.NewReviewHandler(reviewSvc),
 			Message:        handler.NewMessageHandler(messageSvc),
 			Favorite:       handler.NewFavoriteHandler(favoriteSvc),
@@ -353,6 +362,7 @@ func run() error {
 			HouseRules:      handler.NewHouseRulesHandler(houseRulesSvc),
 			Tax:             handler.NewTaxHandler(taxSvc).WithAudit(auditSvc),
 			TaxRemittance:   handler.NewTaxRemittanceHandler(taxRemittanceSvc),
+			Fraud:           handler.NewFraudHandler(fraudSvc),
 		},
 	})
 

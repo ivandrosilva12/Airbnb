@@ -37,6 +37,7 @@ import (
 	pushtokenapp "github.com/airhost/backend/internal/application/pushtoken"
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reportapp "github.com/airhost/backend/internal/application/report"
+	fraudapp "github.com/airhost/backend/internal/application/fraud"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	savedsearchapp "github.com/airhost/backend/internal/application/savedsearch"
 	searchapp "github.com/airhost/backend/internal/application/search"
@@ -194,6 +195,11 @@ func newHarness(t *testing.T) *harness {
 	bookingSvc.WithTaxQuoter(testTaxQuoter{svc: taxSvc})
 	// S62 — remittance read-model over the same booking + property repos.
 	taxRemittanceSvc := taxremittanceapp.NewService(bookingRepo, propertyRepo)
+	// S68 — fraud detection BC. Memory-only repo and the same high-
+	// value table as the KYC step-up gate, so the heuristic + the
+	// hard gate stay aligned in tests.
+	fraudRepo := memory.NewFraudRepository()
+	fraudSvc := fraudapp.NewService(fraudRepo, bookingRepo, userRepo, identitySvc, map[string]int64{"EUR": 500000, "USD": 500000})
 	// Plug the verifier into the booking service so the gate fires when a
 	// listing has rules; the BookingHandler below records the per-booking
 	// acceptance row right after Create succeeds (S47).
@@ -256,7 +262,7 @@ func newHarness(t *testing.T) *harness {
 			Health:         handler.NewHealthHandler(nil),
 			User:           handler.NewUserHandler(userSvc).WithAudit(auditSvc),
 			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc).WithCache(cache.NewMemory(), 60*time.Second),
-			Booking:        handler.NewBookingHandler(bookingSvc, metrics).WithHouseRules(houseRulesSvc),
+			Booking:        handler.NewBookingHandler(bookingSvc, metrics).WithHouseRules(houseRulesSvc).WithFraud(fraudSvc),
 			Review:         handler.NewReviewHandler(reviewSvc),
 			Message:        handler.NewMessageHandler(messageSvc),
 			Favorite:       handler.NewFavoriteHandler(favoriteSvc),
@@ -285,6 +291,7 @@ func newHarness(t *testing.T) *harness {
 			HouseRules:      handler.NewHouseRulesHandler(houseRulesSvc),
 			Tax:             handler.NewTaxHandler(taxSvc).WithAudit(auditSvc),
 			TaxRemittance:   handler.NewTaxRemittanceHandler(taxRemittanceSvc),
+			Fraud:           handler.NewFraudHandler(fraudSvc),
 		},
 	})
 

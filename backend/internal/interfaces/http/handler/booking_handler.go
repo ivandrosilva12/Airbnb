@@ -8,6 +8,7 @@ import (
 	"time"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	fraudapp "github.com/airhost/backend/internal/application/fraud"
 	houserulesapp "github.com/airhost/backend/internal/application/houserules"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/infrastructure/ical"
@@ -23,6 +24,7 @@ type BookingHandler struct {
 	svc        *bookingapp.Service
 	metrics    *observability.Metrics
 	houseRules *houserulesapp.Service // nil = acceptance-recording disabled
+	fraud      *fraudapp.Service      // nil = fraud scoring disabled (S68)
 }
 
 // NewBookingHandler builds a BookingHandler.
@@ -36,6 +38,17 @@ func NewBookingHandler(svc *bookingapp.Service, m *observability.Metrics) *Booki
 // post-commit recording without affecting the booking response.
 func (h *BookingHandler) WithHouseRules(svc *houserulesapp.Service) *BookingHandler {
 	h.houseRules = svc
+	return h
+}
+
+// WithFraud wires the fraud assessor so each successful booking is
+// scored right after Create commits (S68). Best-effort: a failure
+// here MUST NOT undo the booking and MUST NOT block the response —
+// the guest legitimately reserved, and the assessor's job is
+// forensic, not gating. nil leaves the BookingHandler unaffected
+// (e.g. tests that don't care about the fraud trail).
+func (h *BookingHandler) WithFraud(svc *fraudapp.Service) *BookingHandler {
+	h.fraud = svc
 	return h
 }
 
@@ -123,6 +136,22 @@ func (h *BookingHandler) Create(c *gin.Context) {
 			logctx.LoggerFrom(c.Request.Context()).Error(
 				"house-rules acceptance recording failed",
 				"bookingId", b.ID, "version", req.AcceptedHouseRulesVersion, "err", err,
+			)
+		}
+	}
+
+	// Score the fresh booking against the fraud heuristics (S68).
+	// Best-effort post-commit: the assessor scans the guest's history
+	// and emits a per-booking assessment that admins can browse via
+	// GET /admin/fraud/assessments. Errors are logged loudly (a
+	// missing assessment row is observable as a gap in the trail)
+	// but never bubble out to the guest — fraud detection must not
+	// gate the booking response.
+	if h.fraud != nil {
+		if _, err := h.fraud.Assess(c.Request.Context(), b.ID); err != nil {
+			logctx.LoggerFrom(c.Request.Context()).Error(
+				"fraud assessment failed",
+				"bookingId", b.ID, "err", err,
 			)
 		}
 	}

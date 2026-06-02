@@ -16,6 +16,7 @@ import (
 	"github.com/airhost/backend/internal/domain/coupon"
 	"github.com/airhost/backend/internal/domain/dispute"
 	"github.com/airhost/backend/internal/domain/favorite"
+	"github.com/airhost/backend/internal/domain/fraud"
 	"github.com/airhost/backend/internal/domain/houserules"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
@@ -63,6 +64,7 @@ var (
 	_ audit.Repository             = (*AuditRepository)(nil)
 	_ houserules.Repository        = (*HouseRulesRepository)(nil)
 	_ tax.Repository               = (*TaxRepository)(nil)
+	_ fraud.Repository             = (*FraudRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -2675,4 +2677,94 @@ func (r *TaxRepository) RulesFor(_ context.Context, country, city string, at tim
 		}
 	}
 	return out, nil
+}
+
+// --- Fraud -------------------------------------------------------------------
+
+// FraudRepository is an in-memory fraud.Repository. One row per
+// assessment; bookingID is unique so a re-Assess overwrites the
+// previous record (Save is upsert).
+type FraudRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]fraud.Assessment
+}
+
+// NewFraudRepository builds an empty in-memory fraud repository.
+func NewFraudRepository() *FraudRepository {
+	return &FraudRepository{m: map[uuid.UUID]fraud.Assessment{}}
+}
+
+func (r *FraudRepository) Save(_ context.Context, a *fraud.Assessment) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Replace any earlier assessment for the same booking. A re-Assess
+	// (e.g. after a booking modification once we wire that path)
+	// should overwrite, not append, so admins always see the latest
+	// score for a booking instead of a stale row + a new row.
+	for id, existing := range r.m {
+		if existing.BookingID == a.BookingID {
+			delete(r.m, id)
+			break
+		}
+	}
+	r.m[a.ID] = *a
+	return nil
+}
+
+func (r *FraudRepository) FindByBookingID(_ context.Context, bookingID uuid.UUID) (*fraud.Assessment, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, v := range r.m {
+		if v.BookingID == bookingID {
+			dup := v
+			return &dup, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
+
+// List filters by minimum level (low → everything; medium → medium+high; high
+// → high only) and pages by CreatedAt DESC with ID as a stable tiebreaker.
+func (r *FraudRepository) List(_ context.Context, f fraud.ListFilter, page shared.Page) (shared.PageResult[*fraud.Assessment], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	// minRank maps the filter floor to a comparable int so we can
+	// drop everything below it in a single compare.
+	rank := func(l fraud.Level) int {
+		switch l {
+		case fraud.LevelHigh:
+			return 3
+		case fraud.LevelMedium:
+			return 2
+		default:
+			return 1
+		}
+	}
+	floor := 0 // zero means "no floor" — keep everything
+	if f.MinLevel.Valid() {
+		floor = rank(f.MinLevel)
+	}
+	all := make([]*fraud.Assessment, 0, len(r.m))
+	for _, v := range r.m {
+		if floor > 0 && rank(v.Level) < floor {
+			continue
+		}
+		dup := v
+		all = append(all, &dup)
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if !all[i].CreatedAt.Equal(all[j].CreatedAt) {
+			return all[i].CreatedAt.After(all[j].CreatedAt)
+		}
+		return all[i].ID.String() < all[j].ID.String()
+	})
+	total := int64(len(all))
+	if page.Offset >= len(all) {
+		return shared.PageResult[*fraud.Assessment]{Items: nil, Total: total}, nil
+	}
+	end := page.Offset + page.Limit
+	if end > len(all) {
+		end = len(all)
+	}
+	return shared.PageResult[*fraud.Assessment]{Items: all[page.Offset:end], Total: total}, nil
 }
