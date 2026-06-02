@@ -64,6 +64,11 @@ func NewRouter(d Deps) *gin.Engine {
 	// so a client cannot spoof its source IP to evade the per-IP rate limiter.
 	_ = r.SetTrustedProxies(d.Config.HTTP.TrustedProxies)
 	r.Use(gin.Recovery())
+	// RequestID runs early so every downstream middleware and handler sees
+	// the same per-request UUID — both on the gin context (RequestIDGin) and
+	// on the stdlib context (RequestIDFrom / LoggerFrom). The response also
+	// carries X-Request-ID so a client or upstream proxy can correlate.
+	r.Use(middleware.RequestID())
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.Metrics(d.Metrics))
 	r.Use(middleware.MaxBody(d.Config.Security.MaxRequestBodyBytes))
