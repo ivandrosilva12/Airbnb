@@ -27,6 +27,7 @@ import (
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/application/port"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
+	houserulesapp "github.com/airhost/backend/internal/application/houserules"
 	identityapp "github.com/airhost/backend/internal/application/identity"
 	messageapp "github.com/airhost/backend/internal/application/message"
 	messagetemplateapp "github.com/airhost/backend/internal/application/messagetemplate"
@@ -145,6 +146,7 @@ func run() error {
 	splitPaymentRepo := postgres.NewSplitPaymentRepository(pool)
 	messageTemplateRepo := postgres.NewMessageTemplateRepository(pool)
 	auditRepo := postgres.NewAuditRepository(pool)
+	houseRulesRepo := postgres.NewHouseRulesRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers,
@@ -192,6 +194,12 @@ func run() error {
 	dispatcher.Subscribe(bookingSvc.EventHandler())
 	messageTemplateSvc := messagetemplateapp.NewService(messageTemplateRepo)
 	auditSvc := auditapp.NewService(auditRepo)
+	houseRulesSvc := houserulesapp.NewService(houseRulesRepo, propertyRepo)
+	// Plug the verifier into the booking service so Create enforces the
+	// guest acknowledged the listing's current rules version (S47). The
+	// BookingHandler below records the per-booking acceptance row right
+	// after a successful Create.
+	bookingSvc.WithHouseRules(houseRulesSvc)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment))
 	privacySvc := privacyapp.NewService(userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo)
@@ -241,7 +249,7 @@ func run() error {
 			Health:         handler.NewHealthHandler(pool),
 			User:           handler.NewUserHandler(userSvc),
 			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc),
-			Booking:        handler.NewBookingHandler(bookingSvc, metrics),
+			Booking:        handler.NewBookingHandler(bookingSvc, metrics).WithHouseRules(houseRulesSvc),
 			Review:         handler.NewReviewHandler(reviewSvc),
 			Message:        handler.NewMessageHandler(messageSvc),
 			Favorite:       handler.NewFavoriteHandler(favoriteSvc),
@@ -268,6 +276,7 @@ func run() error {
 			Cohost:          handler.NewCohostHandler(cohostSvc, userRepo, metrics),
 			SplitPayment:    handler.NewSplitPaymentHandler(splitPaymentSvc, metrics),
 			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),
+			HouseRules:      handler.NewHouseRulesHandler(houseRulesSvc),
 		},
 	})
 

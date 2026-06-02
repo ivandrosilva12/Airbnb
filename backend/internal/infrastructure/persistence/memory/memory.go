@@ -16,6 +16,7 @@ import (
 	"github.com/airhost/backend/internal/domain/coupon"
 	"github.com/airhost/backend/internal/domain/dispute"
 	"github.com/airhost/backend/internal/domain/favorite"
+	"github.com/airhost/backend/internal/domain/houserules"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/audit"
@@ -59,6 +60,7 @@ var (
 	_ splitpayment.Repository      = (*SplitPaymentRepository)(nil)
 	_ messagetemplate.Repository   = (*MessageTemplateRepository)(nil)
 	_ audit.Repository             = (*AuditRepository)(nil)
+	_ houserules.Repository        = (*HouseRulesRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -2438,4 +2440,115 @@ func (r *AuditRepository) List(_ context.Context, f audit.Filter, page shared.Pa
 	// what the admin UI will display.
 	sort.Slice(matches, func(i, j int) bool { return matches[i].CreatedAt.After(matches[j].CreatedAt) })
 	return paginate(matches, page), nil
+}
+
+// --- HouseRules --------------------------------------------------------------
+
+// HouseRulesRepository is an in-memory houserules.Repository. Rules
+// are stored by (propertyID, version) so historical lookups work the
+// same way the postgres path will, and acceptances are keyed by
+// bookingID so RecordAcceptance can be idempotent without a unique
+// index. The two halves share one mutex — the workload is read-heavy
+// and contention isn't a concern at the harness scale.
+type HouseRulesRepository struct {
+	mu          sync.RWMutex
+	versions    map[uuid.UUID]map[int]houserules.Rules // propertyID → version → Rules
+	current     map[uuid.UUID]int                      // propertyID → latest version
+	acceptances map[uuid.UUID]houserules.Acceptance    // bookingID → Acceptance
+}
+
+// NewHouseRulesRepository builds an empty repo.
+func NewHouseRulesRepository() *HouseRulesRepository {
+	return &HouseRulesRepository{
+		versions:    map[uuid.UUID]map[int]houserules.Rules{},
+		current:     map[uuid.UUID]int{},
+		acceptances: map[uuid.UUID]houserules.Acceptance{},
+	}
+}
+
+func (r *HouseRulesRepository) GetCurrent(_ context.Context, propertyID uuid.UUID) (*houserules.Rules, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	v, ok := r.current[propertyID]
+	if !ok {
+		return nil, shared.ErrNotFound
+	}
+	rules := r.versions[propertyID][v]
+	return cloneRules(rules), nil
+}
+
+func (r *HouseRulesRepository) GetVersion(_ context.Context, propertyID uuid.UUID, version int) (*houserules.Rules, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	per, ok := r.versions[propertyID]
+	if !ok {
+		return nil, shared.ErrNotFound
+	}
+	rules, ok := per[version]
+	if !ok {
+		return nil, shared.ErrNotFound
+	}
+	return cloneRules(rules), nil
+}
+
+// Save inserts a new (propertyID, version) row, refusing to clobber an
+// existing one. The application service is expected to read-current
+// then Bump, so a collision means a concurrent writer beat us — surface
+// it as a conflict rather than silently winning.
+func (r *HouseRulesRepository) Save(_ context.Context, rules *houserules.Rules) error {
+	if rules == nil {
+		return shared.NewValidationError("houserules: nil rules")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	per, ok := r.versions[rules.PropertyID]
+	if !ok {
+		per = map[int]houserules.Rules{}
+		r.versions[rules.PropertyID] = per
+	}
+	if _, exists := per[rules.Version]; exists {
+		return shared.ErrConflict
+	}
+	per[rules.Version] = *rules
+	if rules.Version > r.current[rules.PropertyID] {
+		r.current[rules.PropertyID] = rules.Version
+	}
+	return nil
+}
+
+// RecordAcceptance writes the per-booking proof. Idempotent: a repeat
+// call with the same bookingID returns nil without mutating the row.
+func (r *HouseRulesRepository) RecordAcceptance(_ context.Context, a *houserules.Acceptance) error {
+	if a == nil {
+		return shared.NewValidationError("houserules: nil acceptance")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.acceptances[a.BookingID]; exists {
+		return nil
+	}
+	r.acceptances[a.BookingID] = *a
+	return nil
+}
+
+func (r *HouseRulesRepository) AcceptanceFor(_ context.Context, bookingID uuid.UUID) (*houserules.Acceptance, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	a, ok := r.acceptances[bookingID]
+	if !ok {
+		return nil, shared.ErrNotFound
+	}
+	dup := a
+	return &dup, nil
+}
+
+// cloneRules deep-copies the Items slice so callers can't mutate the
+// stored row through the returned pointer. The Rules value itself is
+// already a fresh value-copy.
+func cloneRules(in houserules.Rules) *houserules.Rules {
+	items := make([]string, len(in.Items))
+	copy(items, in.Items)
+	out := in
+	out.Items = items
+	return &out
 }

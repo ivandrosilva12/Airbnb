@@ -46,6 +46,7 @@ type Handlers struct {
 	Cohost          *handler.CohostHandler
 	SplitPayment    *handler.SplitPaymentHandler
 	MessageTemplate *handler.MessageTemplateHandler
+	HouseRules      *handler.HouseRulesHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -134,6 +135,9 @@ func NewRouter(d Deps) *gin.Engine {
 	api.GET("/properties/:id/calendar.ics", h.Booking.CalendarICS)
 	api.GET("/properties/:id/reviews", h.Review.ListForProperty)
 	api.GET("/properties/:id/reviews/summary", h.Review.Summary)
+	// House rules (S47) — public read so a prospective guest can
+	// preview the rules before logging in to book.
+	api.GET("/properties/:id/house-rules", h.HouseRules.Get)
 		// Publicly shared wishlist collection (anyone with the link).
 		api.GET("/shared/collections/:token", h.Favorite.GetShared)
 
@@ -303,6 +307,11 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.POST("/disputes/:id/evidence", writeRateLimit("dispute_evidence"), h.Dispute.AddEvidence)
 		auth.POST("/disputes/:id/host-response", writeRateLimit("dispute_host_response"), h.Dispute.HostRespond)
 
+		// House-rules acceptance proof (S47) — the per-booking row plus
+		// the versioned rules text the guest acknowledged. Callable by
+		// the booking's guest, the listing's host, or an admin.
+		auth.GET("/bookings/:id/house-rules-acceptance", h.HouseRules.GetAcceptance)
+
 		// Payments (guest-facing reads).
 		auth.GET("/payments/me", h.Payment.ListMine)
 		auth.GET("/bookings/:id/payment", h.Payment.GetForBooking)
@@ -329,6 +338,11 @@ func NewRouter(d Deps) *gin.Engine {
 			host.PATCH("/properties/:id", h.Property.Update)
 			host.DELETE("/properties/:id", h.Property.Delete)
 			host.POST("/properties/:id/publish", h.Property.Publish)
+			// House rules write — primary host only; the service enforces
+			// HostID match before persisting so the route gate is enough
+			// here (no extra permission check). Co-hosts intentionally
+			// cannot edit rules.
+			host.PATCH("/properties/:id/house-rules", h.HouseRules.Set)
 			host.POST("/properties/:id/photos", h.Property.UploadPhoto)
 			host.PATCH("/properties/:id/photos/order", h.Property.ReorderPhotos)
 			host.DELETE("/properties/:id/photos/:photoId", h.Property.DeletePhoto)

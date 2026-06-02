@@ -22,6 +22,7 @@ import (
 	emailapp "github.com/airhost/backend/internal/application/email"
 	"github.com/airhost/backend/internal/application/event"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
+	houserulesapp "github.com/airhost/backend/internal/application/houserules"
 	identityapp "github.com/airhost/backend/internal/application/identity"
 	messageapp "github.com/airhost/backend/internal/application/message"
 	auditapp "github.com/airhost/backend/internal/application/audit"
@@ -181,6 +182,12 @@ func newHarness(t *testing.T) *harness {
 	dispatcher.Subscribe(bookingSvc.EventHandler())
 	messageTemplateSvc := messagetemplateapp.NewService(memory.NewMessageTemplateRepository())
 	auditSvc := auditapp.NewService(memory.NewAuditRepository())
+	houseRulesRepo := memory.NewHouseRulesRepository()
+	houseRulesSvc := houserulesapp.NewService(houseRulesRepo, propertyRepo)
+	// Plug the verifier into the booking service so the gate fires when a
+	// listing has rules; the BookingHandler below records the per-booking
+	// acceptance row right after Create succeeds (S47).
+	bookingSvc.WithHouseRules(houseRulesSvc)
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewFakeDisburser(), paymentgw.NewFakeConnectGateway())
@@ -232,7 +239,7 @@ func newHarness(t *testing.T) *harness {
 			Health:         handler.NewHealthHandler(nil),
 			User:           handler.NewUserHandler(userSvc),
 			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc),
-			Booking:        handler.NewBookingHandler(bookingSvc, metrics),
+			Booking:        handler.NewBookingHandler(bookingSvc, metrics).WithHouseRules(houseRulesSvc),
 			Review:         handler.NewReviewHandler(reviewSvc),
 			Message:        handler.NewMessageHandler(messageSvc),
 			Favorite:       handler.NewFavoriteHandler(favoriteSvc),
@@ -258,6 +265,7 @@ func newHarness(t *testing.T) *harness {
 			SplitPayment:    handler.NewSplitPaymentHandler(splitPaymentSvc, metrics),
 			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),
 			Audit:           handler.NewAuditHandler(auditSvc),
+			HouseRules:      handler.NewHouseRulesHandler(houseRulesSvc),
 		},
 	})
 

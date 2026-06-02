@@ -26,6 +26,15 @@ type IdentityVerifier interface {
 	IsVerified(ctx context.Context, userID uuid.UUID) (bool, error)
 }
 
+// HouseRulesVerifier is the small port exposed by the houserules BC so
+// the booking service can enforce "guest must acknowledge the current
+// rules version" without importing the houserules domain. Returns the
+// version a guest must currently acknowledge, or 0 when the listing
+// has no active rule set (the gate is then skipped).
+type HouseRulesVerifier interface {
+	RequiresAcceptanceFor(ctx context.Context, propertyID uuid.UUID) (int, error)
+}
+
 // SplitShareInput mirrors splitpayment.ShareInput at the booking API boundary
 // so callers (HTTP handler, web) don't have to import the splitpayment package.
 type SplitShareInput struct {
@@ -79,7 +88,11 @@ type Service struct {
 	// nil leaves the booking service in single-payer mode.
 	splitter Splitter
 	users    OrganizerResolver
-	uow      port.UnitOfWork
+	// houseRules, when wired, enables the house-rules acceptance gate
+	// (S47). nil disables it — the booking service then ignores any
+	// AcceptedHouseRulesVersion on the input and never asks the verifier.
+	houseRules HouseRulesVerifier
+	uow        port.UnitOfWork
 }
 
 // NewService wires the booking application service. serviceFeeRate is the
@@ -98,6 +111,14 @@ func NewService(bookings booking.Repository, properties property.Repository, blo
 func (s *Service) WithSplitter(splitter Splitter, users OrganizerResolver) *Service {
 	s.splitter = splitter
 	s.users = users
+	return s
+}
+
+// WithHouseRules wires the verifier port that gates booking creation on
+// the guest having acknowledged the current rules version (S47). Nil
+// leaves the gate off (legacy/test paths that don't need it).
+func (s *Service) WithHouseRules(v HouseRulesVerifier) *Service {
+	s.houseRules = v
 	return s
 }
 
@@ -225,6 +246,13 @@ type CreateInput struct {
 	// instant-book listings — the split itself is the commitment, no
 	// host approval afterwards.
 	SplitShares []SplitShareInput
+	// AcceptedHouseRulesVersion is the version of the listing's house
+	// rules the guest is acknowledging (S47). When the listing has an
+	// active rule set and this number doesn't match the current version,
+	// Create returns a validation error so the client knows to re-fetch
+	// rules and re-prompt. Zero means "no acknowledgement provided" —
+	// rejected when the listing actually has rules.
+	AcceptedHouseRulesVersion int
 }
 
 // Create makes a reservation, enforcing availability and capacity rules.
@@ -247,6 +275,23 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	}
 	if in.Guests > prop.MaxGuests {
 		return nil, shared.NewValidationError("number of guests exceeds property capacity")
+	}
+
+	// House-rules acknowledgement gate (S47). The verifier returns the
+	// version the guest must currently acknowledge; 0 means "no rules",
+	// which lets the input field be skipped. If the listing has an
+	// active rule set the input must match — a stale or missing version
+	// fails the booking so the client re-fetches and re-prompts.
+	requiredRulesVersion := 0
+	if s.houseRules != nil {
+		v, err := s.houseRules.RequiresAcceptanceFor(ctx, prop.ID)
+		if err != nil {
+			return nil, err
+		}
+		requiredRulesVersion = v
+	}
+	if requiredRulesVersion > 0 && in.AcceptedHouseRulesVersion != requiredRulesVersion {
+		return nil, shared.NewValidationError("please accept the current house rules to book")
 	}
 
 	dates, err := booking.NewDateRange(in.CheckIn, in.CheckOut)

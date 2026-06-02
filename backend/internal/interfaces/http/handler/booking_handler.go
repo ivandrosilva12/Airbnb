@@ -7,23 +7,35 @@ import (
 	"time"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	houserulesapp "github.com/airhost/backend/internal/application/houserules"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/infrastructure/ical"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
+	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/gin-gonic/gin"
 )
 
 // BookingHandler exposes reservation endpoints.
 type BookingHandler struct {
-	svc     *bookingapp.Service
-	metrics *observability.Metrics
+	svc        *bookingapp.Service
+	metrics    *observability.Metrics
+	houseRules *houserulesapp.Service // nil = acceptance-recording disabled
 }
 
 // NewBookingHandler builds a BookingHandler.
 func NewBookingHandler(svc *bookingapp.Service, m *observability.Metrics) *BookingHandler {
 	return &BookingHandler{svc: svc, metrics: m}
+}
+
+// WithHouseRules wires the houserules service so the handler can
+// persist the per-booking acceptance row right after Create succeeds
+// (S47). Optional: a deployment without house rules wired skips the
+// post-commit recording without affecting the booking response.
+func (h *BookingHandler) WithHouseRules(svc *houserulesapp.Service) *BookingHandler {
+	h.houseRules = svc
+	return h
 }
 
 type createBookingRequest struct {
@@ -37,6 +49,12 @@ type createBookingRequest struct {
 	// amounts must sum exactly to the booking total. Restricted to
 	// instant-book listings.
 	SplitShares []splitShareRequest `json:"splitShares"`
+	// AcceptedHouseRulesVersion is the version of the listing's house
+	// rules the guest just acknowledged (S47). Required when the listing
+	// has an active rule set; the booking service enforces the match —
+	// a stale or missing number returns 422 with a re-prompt-the-guest
+	// signal to the client.
+	AcceptedHouseRulesVersion int `json:"acceptedHouseRulesVersion"`
 }
 
 type splitShareRequest struct {
@@ -73,13 +91,14 @@ func (h *BookingHandler) Create(c *gin.Context) {
 		shares = append(shares, bookingapp.SplitShareInput{Email: s.Email, AmountCents: s.AmountCents})
 	}
 	b, err := h.svc.Create(c.Request.Context(), bookingapp.CreateInput{
-		GuestID:     guestID,
-		PropertyID:  propertyID,
-		CheckIn:     checkIn,
-		CheckOut:    checkOut,
-		Guests:      req.Guests,
-		CouponCode:  req.CouponCode,
-		SplitShares: shares,
+		GuestID:                   guestID,
+		PropertyID:                propertyID,
+		CheckIn:                   checkIn,
+		CheckOut:                  checkOut,
+		Guests:                    req.Guests,
+		CouponCode:                req.CouponCode,
+		SplitShares:               shares,
+		AcceptedHouseRulesVersion: req.AcceptedHouseRulesVersion,
 	})
 	if err != nil {
 		// S29 — track high-value bookings that hit the KYC step-up gate, so
@@ -92,6 +111,21 @@ func (h *BookingHandler) Create(c *gin.Context) {
 		return
 	}
 	h.metrics.BookingsCreated.Inc()
+
+	// Record the per-booking house-rules acceptance proof (S47). Best
+	// effort: a failure here MUST NOT undo the booking — the guest
+	// legitimately acknowledged the version that was current at the
+	// time, and that is the legal commitment. The missing proof row is
+	// then a follow-up for ops (we log loudly so it's observable).
+	if h.houseRules != nil && req.AcceptedHouseRulesVersion > 0 {
+		if err := h.houseRules.RecordAcceptance(c.Request.Context(), b.ID, guestID, b.PropertyID, req.AcceptedHouseRulesVersion); err != nil {
+			logctx.LoggerFrom(c.Request.Context()).Error(
+				"house-rules acceptance recording failed",
+				"bookingId", b.ID, "version", req.AcceptedHouseRulesVersion, "err", err,
+			)
+		}
+	}
+
 	response.Created(c, dto.FromBooking(b))
 }
 
