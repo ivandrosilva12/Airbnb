@@ -386,3 +386,57 @@ main:focus { outline: none; }
   .form-grid { grid-template-columns: 1fr; }
   .dispute-row { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* Cookie consent banner (S70). Pinned to the bottom of the viewport on
+   first visit; hidden once the user records a decision. Semi-floating
+   rather than an opaque overlay so the page stays readable while the
+   user decides. */
+.cookie-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: #fff;
+  border-top: 1px solid #e6e6e6;
+  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.08);
+}
+.cookie-banner-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 18px 24px;
+}
+.cookie-banner-inner h2 {
+  margin: 0 0 6px 0;
+  font-size: 16px;
+}
+.cookie-banner-inner p {
+  margin: 0 0 12px 0;
+  color: #444;
+  font-size: 14px;
+}
+.cookie-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.cookie-customize {
+  margin-top: 8px;
+}
+.consent-categories {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px 0;
+  display: grid;
+  gap: 8px;
+}
+.consent-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+.consent-row input[type='checkbox'] {
+  margin-top: 4px;
+}

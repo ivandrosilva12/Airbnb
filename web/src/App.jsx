@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { useT } from './i18n/I18nContext';
 import Navbar from './components/Navbar';
+import CookieBanner from './components/CookieBanner';
 import Home from './pages/Home';
 import PropertyDetail from './pages/PropertyDetail';
 import MyTrips from './pages/MyTrips';
@@ -67,6 +68,7 @@ export default function App() {
           </Routes>
         )}
       </main>
+      <CookieBanner />
     </>
   );
 }

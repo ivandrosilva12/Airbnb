@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import keycloak from '../keycloak';
+import { useConsent } from '../context/ConsentContext';
 import { useT } from '../i18n/I18nContext';
 
 export default function Settings() {
@@ -90,8 +91,96 @@ export default function Settings() {
       <VerificationPanel />
       <SecurityPanel />
       <PrivacyPanel />
+      <CookieConsentPanel />
       <SavedRepliesPanel />
     </div>
+  );
+}
+
+// CookieConsentPanel (S70) lets a user change the cookie/tracking preferences
+// they recorded via the banner — or reopen the banner from scratch. The
+// "current state" header doubles as a transparency signal: "this is what
+// the platform is currently allowed to do".
+function CookieConsentPanel() {
+  const { t } = useT();
+  const { consent, acceptAll, rejectNonEssential, savePartial, reopen } = useConsent();
+  // Local draft mirrors the banner's customize picker so toggles are
+  // staged before Save. Necessary stays read-only / always-on.
+  const [draft, setDraft] = useState({
+    analytics: consent.analytics,
+    marketing: consent.marketing,
+  });
+  // If the persisted consent changes elsewhere (e.g. the user clicked
+  // "Reset" then chose Reject), re-sync the draft.
+  useEffect(() => {
+    setDraft({ analytics: consent.analytics, marketing: consent.marketing });
+  }, [consent.analytics, consent.marketing]);
+
+  return (
+    <section className="privacy-panel" aria-labelledby="cookie-pref-title">
+      <h2 id="cookie-pref-title">{t('consent.settingsTitle')}</h2>
+      <p className="muted">{t('consent.settingsHint')}</p>
+      {consent.decided && (
+        <p className="muted-text">
+          {t('consent.lastSet', {
+            when: consent.decidedAt
+              ? new Date(consent.decidedAt).toLocaleDateString()
+              : '—',
+          })}
+        </p>
+      )}
+      <ul className="consent-categories">
+        <li>
+          <label className="consent-row">
+            <input type="checkbox" checked disabled />
+            <span>
+              <strong>{t('consent.cat.necessary')}</strong>
+              <span className="muted-text"> — {t('consent.cat.necessaryHint')}</span>
+            </span>
+          </label>
+        </li>
+        <li>
+          <label className="consent-row">
+            <input
+              type="checkbox"
+              checked={draft.analytics}
+              onChange={(e) => setDraft({ ...draft, analytics: e.target.checked })}
+            />
+            <span>
+              <strong>{t('consent.cat.analytics')}</strong>
+              <span className="muted-text"> — {t('consent.cat.analyticsHint')}</span>
+            </span>
+          </label>
+        </li>
+        <li>
+          <label className="consent-row">
+            <input
+              type="checkbox"
+              checked={draft.marketing}
+              onChange={(e) => setDraft({ ...draft, marketing: e.target.checked })}
+            />
+            <span>
+              <strong>{t('consent.cat.marketing')}</strong>
+              <span className="muted-text"> — {t('consent.cat.marketingHint')}</span>
+            </span>
+          </label>
+        </li>
+      </ul>
+      <div className="privacy-actions">
+        <button type="button" className="btn btn-ghost" onClick={rejectNonEssential}>
+          {t('consent.reject')}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={acceptAll}>
+          {t('consent.acceptAll')}
+        </button>
+        <button type="button" className="btn btn-primary" onClick={() => savePartial(draft)}>
+          {t('consent.save')}
+        </button>
+        <button type="button" className="btn-link-danger" onClick={reopen}>
+          {t('consent.reset')}
+        </button>
+      </div>
+    </section>
   );
 }
 

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
+import { ConsentProvider } from './context/ConsentContext';
 import { FavoritesProvider } from './context/FavoritesContext';
 import { NotificationsProvider } from './context/NotificationsContext';
 import { MessagesProvider } from './context/MessagesContext';
@@ -14,17 +15,19 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <I18nProvider>
-        <AuthProvider>
-          <FavoritesProvider>
-            <NotificationsProvider>
-              <MessagesProvider>
-                <RealtimeProvider>
-                  <App />
-                </RealtimeProvider>
-              </MessagesProvider>
-            </NotificationsProvider>
-          </FavoritesProvider>
-        </AuthProvider>
+        <ConsentProvider>
+          <AuthProvider>
+            <FavoritesProvider>
+              <NotificationsProvider>
+                <MessagesProvider>
+                  <RealtimeProvider>
+                    <App />
+                  </RealtimeProvider>
+                </MessagesProvider>
+              </NotificationsProvider>
+            </FavoritesProvider>
+          </AuthProvider>
+        </ConsentProvider>
       </I18nProvider>
     </BrowserRouter>
   </React.StrictMode>,

@@ -47,6 +47,24 @@ export const translations = {
     'privacy.delete': 'Delete my account',
     'privacy.deleteConfirm': 'Permanently delete your account? Your profile will be anonymised and you will be signed out. This cannot be undone.',
 
+    'consent.title': 'Cookies on AirHost',
+    'consent.body': 'We use cookies to keep you signed in and, optionally, to understand how the site is used so we can improve it. You can change your choice at any time in Settings.',
+    'consent.acceptAll': 'Accept all',
+    'consent.reject': 'Reject non-essential',
+    'consent.customize': 'Customise',
+    'consent.save': 'Save preferences',
+    'consent.reset': 'Reopen banner',
+    'consent.settingsTitle': 'Cookie preferences',
+    'consent.settingsHint': 'Choose which cookies you allow. Necessary cookies cannot be turned off — without them you cannot sign in.',
+    'consent.lastSet': 'Last updated on {when}',
+    'consent.cat.necessary': 'Necessary',
+    'consent.cat.necessaryHint': 'Session, authentication, security. Always on.',
+    'consent.cat.analytics': 'Analytics',
+    'consent.cat.analyticsHint': 'Anonymised page-view metrics so we can see what to improve.',
+    'consent.cat.marketing': 'Marketing',
+    'consent.cat.marketingHint': 'Third-party retargeting / ad pixels. Off unless you opt in.',
+
+
     'security.title': 'Two-factor authentication',
     'security.hint': 'Add a one-time code from an authenticator app to your sign-in for extra protection. You will be taken to the secure sign-in page to set it up.',
     'security.enable2fa': 'Set up two-factor authentication',
@@ -714,6 +732,24 @@ export const translations = {
     'privacy.export': 'Exportar os meus dados',
     'privacy.delete': 'Apagar a minha conta',
     'privacy.deleteConfirm': 'Apagar permanentemente a sua conta? O seu perfil será anonimizado e a sessão terminada. Esta ação é irreversível.',
+
+    'consent.title': 'Cookies no AirHost',
+    'consent.body': 'Usamos cookies para o manter com sessão iniciada e, opcionalmente, para entender como o site é utilizado e melhorá-lo. Pode alterar a sua escolha a qualquer momento em Definições.',
+    'consent.acceptAll': 'Aceitar tudo',
+    'consent.reject': 'Rejeitar não essenciais',
+    'consent.customize': 'Personalizar',
+    'consent.save': 'Guardar preferências',
+    'consent.reset': 'Reabrir banner',
+    'consent.settingsTitle': 'Preferências de cookies',
+    'consent.settingsHint': 'Escolha que cookies permite. Os cookies necessários não podem ser desligados — sem eles não consegue iniciar sessão.',
+    'consent.lastSet': 'Última atualização a {when}',
+    'consent.cat.necessary': 'Necessários',
+    'consent.cat.necessaryHint': 'Sessão, autenticação, segurança. Sempre ligados.',
+    'consent.cat.analytics': 'Analíticos',
+    'consent.cat.analyticsHint': 'Métricas anónimas de visitas para sabermos o que melhorar.',
+    'consent.cat.marketing': 'Marketing',
+    'consent.cat.marketingHint': 'Píxeis publicitários de terceiros. Desligados a menos que ative.',
+
 
     'security.title': 'Autenticação de dois fatores',
     'security.hint': 'Adicione um código único de uma app autenticadora ao seu início de sessão para mais proteção. Será encaminhado para a página segura de início de sessão para configurar.',
@@ -1384,6 +1420,12 @@ export const translations = {
     'admin.users.confirmSuspend': 'Suspender {email}? A sessão será encerrada e a plataforma ficará inacessível.',
     'admin.tax.title': 'Recolhimento de impostos',
     'admin.tax.hint': 'Detalhamento por jurisdição para um mês fechado. Gere quando estiver pronto para entregar.',
+    // Cookie consent — BR-specific phrasing where PT diverges
+    // ("definições" → "configurações", "anónimas" → "anônimas",
+    // "iniciar sessão" → "fazer login").
+    'consent.body': 'Usamos cookies para manter você logado e, opcionalmente, para entender como o site é utilizado e melhorá-lo. Você pode alterar sua escolha a qualquer momento em Configurações.',
+    'consent.settingsHint': 'Escolha quais cookies você permite. Os cookies necessários não podem ser desativados — sem eles não é possível fazer login.',
+    'consent.cat.analyticsHint': 'Métricas anônimas de visitas para sabermos o que melhorar.',
   },
   // Spanish (es) — starter set covering the most user-visible surfaces
   // (nav, common widgets, home, settings, type selector). Untranslated
@@ -1473,5 +1515,23 @@ export const translations = {
     'privacy.hint': 'Descarga una copia de tus datos o elimina tu cuenta permanentemente.',
     'privacy.export': 'Exportar mis datos',
     'privacy.delete': 'Eliminar mi cuenta',
+    // Cookie consent (S70). Full set in Spanish so a first-time visitor
+    // sees the banner in their language rather than the English fallback.
+    'consent.title': 'Cookies en AirHost',
+    'consent.body': 'Usamos cookies para mantener tu sesión iniciada y, opcionalmente, para entender cómo se utiliza el sitio y mejorarlo. Puedes cambiar tu elección en cualquier momento en Configuración.',
+    'consent.acceptAll': 'Aceptar todo',
+    'consent.reject': 'Rechazar no esenciales',
+    'consent.customize': 'Personalizar',
+    'consent.save': 'Guardar preferencias',
+    'consent.reset': 'Reabrir banner',
+    'consent.settingsTitle': 'Preferencias de cookies',
+    'consent.settingsHint': 'Elige qué cookies permites. Las cookies necesarias no se pueden desactivar — sin ellas no puedes iniciar sesión.',
+    'consent.lastSet': 'Última actualización el {when}',
+    'consent.cat.necessary': 'Necesarias',
+    'consent.cat.necessaryHint': 'Sesión, autenticación, seguridad. Siempre activadas.',
+    'consent.cat.analytics': 'Analíticas',
+    'consent.cat.analyticsHint': 'Métricas anónimas de visitas para saber qué mejorar.',
+    'consent.cat.marketing': 'Marketing',
+    'consent.cat.marketingHint': 'Píxeles publicitarios de terceros. Desactivados a menos que los actives.',
   },
 };
