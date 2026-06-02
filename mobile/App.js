@@ -19,6 +19,8 @@ import HostPropertyBookingsScreen from './src/screens/HostPropertyBookingsScreen
 import HostCalendarScreen from './src/screens/HostCalendarScreen';
 import HostListingFormScreen from './src/screens/HostListingFormScreen';
 import SplitsScreen from './src/screens/SplitsScreen';
+import DisputeScreen from './src/screens/DisputeScreen';
+import MyDisputesScreen from './src/screens/MyDisputesScreen';
 import { HeaderAuthButton } from './src/screens/HeaderAuthButton';
 
 const Stack = createNativeStackNavigator();
@@ -61,6 +63,8 @@ export default function App() {
           <Stack.Screen name="HostCalendar" component={HostCalendarScreen} options={{ title: 'Calendar' }} />
           <Stack.Screen name="HostListingForm" component={HostListingFormScreen} options={{ title: 'Listing' }} />
           <Stack.Screen name="Splits" component={SplitsScreen} options={{ title: 'Split payments' }} />
+          <Stack.Screen name="Dispute" component={DisputeScreen} options={{ title: 'Resolution case' }} />
+          <Stack.Screen name="MyDisputes" component={MyDisputesScreen} options={{ title: 'Resolution cases' }} />
         </Stack.Navigator>
       </NavigationContainer>
       </RealtimeProvider>

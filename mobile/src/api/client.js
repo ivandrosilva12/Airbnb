@@ -113,6 +113,10 @@ export function createApi(getAccessToken) {
     // Resolution Center
     openDispute: (bookingId, body) => request('POST', `/bookings/${bookingId}/disputes`, { body, auth: true }),
     listMyDisputes: () => request('GET', '/me/disputes', { auth: true }),
+    getDispute: (id) => request('GET', `/disputes/${id}`, { auth: true }),
+    addDisputeEvidence: (id, body) => request('POST', `/disputes/${id}/evidence`, { body, auth: true }),
+    hostRespondDispute: (id, response) =>
+      request('POST', `/disputes/${id}/host-response`, { body: { response }, auth: true }),
 
     // Host
     hostMetrics: () => request('GET', '/host/metrics', { auth: true }),

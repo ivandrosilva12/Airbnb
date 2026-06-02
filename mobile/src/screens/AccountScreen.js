@@ -9,6 +9,7 @@ const LINKS = [
   { screen: 'Messages', label: 'Messages', icon: '💬' },
   { screen: 'Notifications', label: 'Notifications', icon: '🔔' },
   { screen: 'Splits', label: 'Split payments', icon: '🤝' },
+  { screen: 'MyDisputes', label: 'Resolution cases', icon: '⚖️' },
   { screen: 'Verification', label: 'Identity verification', icon: '🪪' },
 ];
 

@@ -365,10 +365,13 @@ export default function TripsScreen({ navigation }) {
                   </Pressable>
                 ))}
               {disputes[item.id] && (
-                <Text style={styles.disputeBadge}>
-                  Case: {disputes[item.id].status}
-                  {disputes[item.id].overdue ? ' · overdue' : ''}
-                </Text>
+                <Pressable onPress={() => navigation.navigate('Dispute', { id: disputes[item.id].id })}>
+                  <Text style={styles.disputeBadge}>
+                    Case: {disputes[item.id].status}
+                    {disputes[item.id].overdue ? ' · overdue' : ''}
+                    {' · view'}
+                  </Text>
+                </Pressable>
               )}
 
               {splits[item.id] && (
