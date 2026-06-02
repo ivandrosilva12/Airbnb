@@ -16,7 +16,155 @@ export default function Admin() {
       <DisputeQueue />
       <CouponsPanel />
       <SilencesPanel />
+      <UsersPanel />
     </div>
+  );
+}
+
+// UsersPanel (S65) — admin browsing and moderation of platform accounts.
+// Drives /admin/users with email substring + role + active-only filters;
+// each row gets a Suspend or Unsuspend action wired to S61. Hard-fails the
+// audit hook on the backend, so a successful action means the trail row
+// actually landed.
+function UsersPanel() {
+  const { t } = useT();
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  // Filter state is local; the URL stays clean because admins rarely
+  // bookmark a filtered users list. The Apply button (or Enter on the
+  // input) triggers the fetch.
+  const [filters, setFilters] = useState({ email: '', role: '', activeOnly: false });
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.adminListUsers({
+        email: filters.email.trim(),
+        role: filters.role,
+        activeOnly: filters.activeOnly ? 'true' : '',
+        limit: 50,
+      });
+      setItems(res.items || []);
+      setTotal(res.total || 0);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function suspend(id, email) {
+    if (!confirm(t('admin.users.confirmSuspend', { email }))) return;
+    setError(null);
+    try {
+      await api.adminSuspendUser(id);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  async function unsuspend(id) {
+    setError(null);
+    try {
+      await api.adminUnsuspendUser(id);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  return (
+    <section className="admin-panel" aria-label={t('admin.users.title')}>
+      <h2>{t('admin.users.title')}</h2>
+      <form
+        className="admin-filters"
+        onSubmit={(e) => { e.preventDefault(); load(); }}
+        aria-label={t('admin.users.filterLabel')}
+      >
+        <input
+          type="search"
+          placeholder={t('admin.users.emailPlaceholder')}
+          value={filters.email}
+          onChange={(e) => setFilters({ ...filters, email: e.target.value })}
+          aria-label={t('admin.users.emailPlaceholder')}
+        />
+        <select
+          value={filters.role}
+          onChange={(e) => setFilters({ ...filters, role: e.target.value })}
+          aria-label={t('admin.users.roleLabel')}
+        >
+          <option value="">{t('admin.users.anyRole')}</option>
+          <option value="guest">{t('admin.users.roleGuest')}</option>
+          <option value="host">{t('admin.users.roleHost')}</option>
+          <option value="admin">{t('admin.users.roleAdmin')}</option>
+        </select>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={filters.activeOnly}
+            onChange={(e) => setFilters({ ...filters, activeOnly: e.target.checked })}
+          />
+          <span>{t('admin.users.activeOnly')}</span>
+        </label>
+        <button type="submit" className="btn btn-primary">{t('admin.users.apply')}</button>
+      </form>
+      {error && <p className="error" role="alert">{error}</p>}
+      {loading ? (
+        <p role="status">{t('common.loading')}</p>
+      ) : items.length === 0 ? (
+        <p>{t('admin.users.empty')}</p>
+      ) : (
+        <>
+          <p className="muted">{t('admin.users.total', { n: total })}</p>
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>{t('admin.users.colEmail')}</th>
+                <th>{t('admin.users.colName')}</th>
+                <th>{t('admin.users.colRole')}</th>
+                <th>{t('admin.users.colStatus')}</th>
+                <th>{t('admin.users.colActions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((u) => (
+                <tr key={u.id}>
+                  <td>{u.email}</td>
+                  <td>{u.fullName}</td>
+                  <td><span className={`badge badge-${u.role}`}>{u.role}</span></td>
+                  <td>
+                    <span className={`badge badge-${u.isActive ? 'active' : 'suspended'}`}>
+                      {u.isActive ? t('admin.users.statusActive') : t('admin.users.statusSuspended')}
+                    </span>
+                  </td>
+                  <td className="actions">
+                    {u.isActive ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => suspend(u.id, u.email)}
+                        aria-label={`${t('admin.users.suspend')}: ${u.email}`}
+                      >{t('admin.users.suspend')}</button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => unsuspend(u.id)}
+                        aria-label={`${t('admin.users.unsuspend')}: ${u.email}`}
+                      >{t('admin.users.unsuspend')}</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </section>
   );
 }
 

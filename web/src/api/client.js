@@ -176,6 +176,13 @@ export const api = {
   adminDismissReport: (id, resolution) => request('POST', `/admin/reports/${id}/dismiss`, { body: { resolution }, auth: true }),
   adminSuspendProperty: (id) => request('POST', `/admin/properties/${id}/suspend`, { auth: true }),
   adminUnsuspendProperty: (id) => request('POST', `/admin/properties/${id}/unsuspend`, { auth: true }),
+  // S65 — admin user-management.
+  adminListUsers: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null)).toString();
+    return request('GET', `/admin/users${qs ? `?${qs}` : ''}`, { auth: true });
+  },
+  adminSuspendUser: (id) => request('POST', `/admin/users/${id}/suspend`, { auth: true }),
+  adminUnsuspendUser: (id) => request('POST', `/admin/users/${id}/unsuspend`, { auth: true }),
 
   // Promo codes (admin)
   adminListCoupons: () => request('GET', '/admin/coupons', { auth: true }),

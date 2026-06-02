@@ -120,6 +120,29 @@ func (r *UserRepository) FindByPayoutAccountID(_ context.Context, accountID stri
 	return r.findBy(func(u user.User) bool { return u.PayoutAccountID == accountID })
 }
 
+// List returns users matching filter, paginated, newest first (S65).
+func (r *UserRepository) List(_ context.Context, f user.ListFilter, page shared.Page) (shared.PageResult[*user.User], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	emailNeedle := strings.ToLower(strings.TrimSpace(f.EmailContains))
+	matches := make([]*user.User, 0)
+	for _, u := range r.m {
+		if f.ActiveOnly && !u.IsActive {
+			continue
+		}
+		if f.Role != "" && u.Role != f.Role {
+			continue
+		}
+		if emailNeedle != "" && !strings.Contains(strings.ToLower(u.Email), emailNeedle) {
+			continue
+		}
+		c := u
+		matches = append(matches, &c)
+	}
+	sort.Slice(matches, func(i, j int) bool { return matches[i].CreatedAt.After(matches[j].CreatedAt) })
+	return paginate(matches, page), nil
+}
+
 func (r *UserRepository) findBy(pred func(user.User) bool) (*user.User, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

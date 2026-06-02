@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"strings"
 
+	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -64,6 +66,66 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*user.U
 
 func (r *UserRepository) FindByPayoutAccountID(ctx context.Context, accountID string) (*user.User, error) {
 	return r.findBy(ctx, `WHERE payout_account_id=$1`, accountID)
+}
+
+// List returns users matching filter, paginated, newest first (S65).
+//
+// Builds the WHERE dynamically: each non-zero filter contributes a positional
+// argument. The placeholder count must stay in lockstep with args; that's
+// awkward but the alternative (12 named-param permutations) is worse.
+func (r *UserRepository) List(ctx context.Context, f user.ListFilter, page shared.Page) (shared.PageResult[*user.User], error) {
+	var (
+		clauses []string
+		args    []any
+	)
+	if needle := strings.TrimSpace(f.EmailContains); needle != "" {
+		args = append(args, "%"+strings.ToLower(needle)+"%")
+		clauses = append(clauses, "LOWER(email) LIKE $"+itoa(len(args)))
+	}
+	if f.Role != "" {
+		args = append(args, string(f.Role))
+		clauses = append(clauses, "role = $"+itoa(len(args)))
+	}
+	if f.ActiveOnly {
+		clauses = append(clauses, "is_active = TRUE")
+	}
+	where := ""
+	if len(clauses) > 0 {
+		where = "WHERE " + strings.Join(clauses, " AND ")
+	}
+
+	var total int64
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users `+where, args...).Scan(&total); err != nil {
+		return shared.PageResult[*user.User]{}, mapError(err)
+	}
+
+	args = append(args, page.Limit, page.Offset)
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+userColumns+` FROM users `+where+
+			` ORDER BY created_at DESC, id ASC LIMIT $`+itoa(len(args)-1)+` OFFSET $`+itoa(len(args)),
+		args...,
+	)
+	if err != nil {
+		return shared.PageResult[*user.User]{}, mapError(err)
+	}
+	defer rows.Close()
+
+	items := make([]*user.User, 0)
+	for rows.Next() {
+		var (
+			u    user.User
+			role string
+		)
+		if err := rows.Scan(&u.ID, &u.KeycloakSub, &u.Email, &u.FullName, &role, &u.AvatarURL, &u.IsActive,
+			&u.EmailPrefs.Bookings, &u.EmailPrefs.Messages,
+			&u.PushPrefs.Bookings, &u.PushPrefs.Messages,
+			&u.PayoutAccountID, &u.PayoutsEnabled, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return shared.PageResult[*user.User]{}, mapError(err)
+		}
+		u.Role = user.Role(role)
+		items = append(items, &u)
+	}
+	return shared.PageResult[*user.User]{Items: items, Total: total}, mapError(rows.Err())
 }
 
 func (r *UserRepository) findBy(ctx context.Context, where string, arg any) (*user.User, error) {

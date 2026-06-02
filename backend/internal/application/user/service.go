@@ -134,6 +134,12 @@ func (s *Service) UpdatePushPreferences(ctx context.Context, id uuid.UUID, prefs
 	return u, nil
 }
 
+// List returns users matching filter (S65). Admin-only — the route gate
+// enforces that; this service just delegates to the repo.
+func (s *Service) List(ctx context.Context, f user.ListFilter, page shared.Page) (shared.PageResult[*user.User], error) {
+	return s.repo.List(ctx, f, page)
+}
+
 // Suspend disables a user account (S61). Admin-only — the route gate enforces
 // that; this service just performs the state change. Returns the updated user.
 // A no-op (already inactive) returns the current state without error so a

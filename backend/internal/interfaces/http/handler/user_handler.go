@@ -150,6 +150,32 @@ func (h *UserHandler) BecomeHost(c *gin.Context) {
 	response.OK(c, dto.FromUser(u))
 }
 
+// AdminList serves the admin user-management table (S65). Filters by email
+// substring, role, and active-only via query params; paginated via the shared
+// page helper.
+//
+//	GET /api/v1/admin/users?email=foo&role=host&activeOnly=true&limit=20
+func (h *UserHandler) AdminList(c *gin.Context) {
+	if _, ok := requireUser(c); !ok {
+		return
+	}
+	filter := domainuser.ListFilter{
+		EmailContains: c.Query("email"),
+		Role:          domainuser.Role(c.Query("role")),
+		ActiveOnly:    c.Query("activeOnly") == "true",
+	}
+	res, err := h.svc.List(c.Request.Context(), filter, pageFromQuery(c))
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	items := make([]dto.UserView, 0, len(res.Items))
+	for _, u := range res.Items {
+		items = append(items, dto.FromUser(u))
+	}
+	response.OK(c, dto.PageView[dto.UserView]{Items: items, Total: res.Total})
+}
+
 // AdminSuspend locks a user out of the platform (S61). The auth middleware
 // already refuses inactive bearers, so flipping IsActive false here is the
 // minimal mechanism — no token revocation needed. Records an audit row on

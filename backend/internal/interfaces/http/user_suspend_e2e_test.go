@@ -85,6 +85,71 @@ func TestEndToEnd_AdminCannotSuspendSelf(t *testing.T) {
 	mustStatus(t, rec, http.StatusBadRequest, "self-suspend")
 }
 
+// TestEndToEnd_AdminListUsers_FiltersAndPaginates proves the S65 list
+// endpoint: admins can browse users, filter by email substring + role +
+// activeOnly, and the page envelope reports the total honestly.
+func TestEndToEnd_AdminListUsers_FiltersAndPaginates(t *testing.T) {
+	h := newHarness(t)
+	admin := h.seedUser(domainuser.RoleAdmin, "ls-admin@test.dev")
+	adminTok := admin.ID.String()
+	gA := h.seedUser(domainuser.RoleGuest, "alice@example.test")
+	gB := h.seedUser(domainuser.RoleGuest, "bob@example.test")
+	host := h.seedUser(domainuser.RoleHost, "host-alice@example.test")
+
+	// No filter: everyone shows.
+	rec := h.do(http.MethodGet, "/api/v1/admin/users", adminTok, nil)
+	mustStatus(t, rec, http.StatusOK, "list all")
+	body := h.decode(rec)
+	if body["total"].(float64) < 4 {
+		t.Fatalf("total = %v, want >= 4", body["total"])
+	}
+
+	// email substring narrows to the alice-ish accounts (guest + host).
+	rec = h.do(http.MethodGet, "/api/v1/admin/users?email=alice", adminTok, nil)
+	mustStatus(t, rec, http.StatusOK, "list filtered email")
+	items := h.decode(rec)["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("alice-filtered items = %d, want 2 (body: %s)", len(items), rec.Body.String())
+	}
+
+	// role=host narrows to one row.
+	rec = h.do(http.MethodGet, "/api/v1/admin/users?role=host", adminTok, nil)
+	mustStatus(t, rec, http.StatusOK, "list filtered role")
+	items = h.decode(rec)["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("host-filtered items = %d, want 1", len(items))
+	}
+	if items[0].(map[string]any)["id"] != host.ID.String() {
+		t.Fatalf("host-filtered id = %v, want host", items[0].(map[string]any)["id"])
+	}
+
+	// activeOnly=true hides suspended accounts. Suspend bob, then filter.
+	rec = h.do(http.MethodPost, "/api/v1/admin/users/"+gB.ID.String()+"/suspend", adminTok, nil)
+	mustStatus(t, rec, http.StatusOK, "suspend bob")
+	rec = h.do(http.MethodGet, "/api/v1/admin/users?activeOnly=true", adminTok, nil)
+	mustStatus(t, rec, http.StatusOK, "list active only")
+	items = h.decode(rec)["items"].([]any)
+	for _, raw := range items {
+		row := raw.(map[string]any)
+		if row["id"] == gB.ID.String() {
+			t.Fatal("activeOnly filter should hide bob (suspended)")
+		}
+	}
+
+	_ = gA
+}
+
+// TestEndToEnd_AdminListUsers_ForbidsNonAdmin keeps the page behind the
+// admin gate even though it's a read.
+func TestEndToEnd_AdminListUsers_ForbidsNonAdmin(t *testing.T) {
+	h := newHarness(t)
+	guest := h.seedUser(domainuser.RoleGuest, "ls-spy@test.dev")
+	rec := h.do(http.MethodGet, "/api/v1/admin/users", guest.ID.String(), nil)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("non-admin should not list users (got 200)")
+	}
+}
+
 // TestEndToEnd_SuspendForbidsNonAdmin — the admin route gate must reject a
 // regular user trying to escalate (403 from RequireAdmin).
 func TestEndToEnd_SuspendForbidsNonAdmin(t *testing.T) {
