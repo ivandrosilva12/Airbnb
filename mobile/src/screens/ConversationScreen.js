@@ -25,6 +25,10 @@ export default function ConversationScreen({ route, navigation }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [blockedIds, setBlockedIds] = useState([]);
+  // savedTemplates is the host's per-user playbook (S20b). Empty for users
+  // who never bother creating one — the chip row just stops at the canned
+  // QUICK_REPLIES in that case, no extra section, no visual clutter.
+  const [savedTemplates, setSavedTemplates] = useState([]);
 
   // The counterparty is the sender of any message that isn't ours.
   const otherId = messages.find((m) => myId && m.senderId !== myId)?.senderId || null;
@@ -56,14 +60,17 @@ export default function ConversationScreen({ route, navigation }) {
 
   const load = useCallback(async () => {
     try {
-      const [me, res, blocks] = await Promise.all([
+      const [me, res, blocks, tpls] = await Promise.all([
         api.me().catch(() => null),
         api.listMessages(id),
         api.listUserBlocks().catch(() => ({ blocked: [] })),
+        // Silent failure: a guest with no saved templates just gets [].
+        api.listMessageTemplates().catch(() => ({ items: [] })),
       ]);
       if (me) setMyId(me.id);
       setMessages(res.items || []);
       setBlockedIds(blocks?.blocked || []);
+      setSavedTemplates(tpls?.items || []);
       api.markConversationRead(id).catch(() => {});
     } catch (e) {
       setError(e.message);
@@ -190,6 +197,14 @@ export default function ConversationScreen({ route, navigation }) {
             <Text style={styles.quickChipText} numberOfLines={1}>{q}</Text>
           </Pressable>
         ))}
+        {/* The host's saved replies — chip uses the label, taps insert the
+            body. Distinct rose-tinted style so users see "this is mine"
+            vs the platform's canned set. */}
+        {savedTemplates.map((tpl) => (
+          <Pressable key={tpl.id} style={styles.savedChip} onPress={() => setDraft(tpl.body)}>
+            <Text style={styles.savedChipText} numberOfLines={1}>{tpl.label}</Text>
+          </Pressable>
+        ))}
       </ScrollView>
       <View style={styles.composer}>
         <Pressable style={styles.attachBtn} onPress={attach} disabled={sending}>
@@ -229,6 +244,8 @@ const styles = StyleSheet.create({
   quickRepliesContent: { gap: 6, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center' },
   quickChip: { backgroundColor: '#f7f7f7', borderWidth: 1, borderColor: '#ddd', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, maxWidth: 220 },
   quickChipText: { color: '#222', fontSize: 12 },
+  savedChip: { backgroundColor: '#fff0f3', borderWidth: 1, borderColor: '#ffc9d4', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, maxWidth: 220 },
+  savedChipText: { color: '#a02043', fontSize: 12, fontWeight: '600' },
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, padding: 10, borderTopWidth: 1, borderColor: '#eee' },
   attachBtn: { paddingHorizontal: 8, paddingVertical: 8, justifyContent: 'center' },
   attachText: { fontSize: 22 },

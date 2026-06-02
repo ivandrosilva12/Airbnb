@@ -10,6 +10,7 @@ const LINKS = [
   { screen: 'Notifications', label: 'Notifications', icon: '🔔' },
   { screen: 'Splits', label: 'Split payments', icon: '🤝' },
   { screen: 'MyDisputes', label: 'Resolution cases', icon: '⚖️' },
+  { screen: 'SavedReplies', label: 'Saved replies', icon: '📝' },
   { screen: 'Verification', label: 'Identity verification', icon: '🪪' },
 ];
 
