@@ -18,6 +18,7 @@ on-call engineer can jump straight from the notification to the diagnosis steps.
 | Runbook | Trigger |
 | --- | --- |
 | [SecretsRotation.md](SecretsRotation.md) | Scheduled rotation cadence, or any suspected secret leak |
+| [BackupAndRecovery.md](BackupAndRecovery.md) | Setting up backups, restoring from one, or running the quarterly drill |
 
 ## Conventions
 
