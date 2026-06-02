@@ -9,6 +9,7 @@ import (
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
+	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
 	"github.com/gin-gonic/gin"
@@ -26,13 +27,14 @@ type userLookup interface {
 // co-host grants, plus the read-only "listings I help manage" endpoint
 // reachable by any authenticated user.
 type CohostHandler struct {
-	svc   *propertyapp.CohostService
-	users userLookup
+	svc     *propertyapp.CohostService
+	users   userLookup
+	metrics *observability.Metrics
 }
 
 // NewCohostHandler wires a CohostHandler.
-func NewCohostHandler(svc *propertyapp.CohostService, users userLookup) *CohostHandler {
-	return &CohostHandler{svc: svc, users: users}
+func NewCohostHandler(svc *propertyapp.CohostService, users userLookup, m *observability.Metrics) *CohostHandler {
+	return &CohostHandler{svc: svc, users: users, metrics: m}
 }
 
 // inviteRequest accepts either an explicit user id or an email to look up.
@@ -117,6 +119,9 @@ func (h *CohostHandler) Invite(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	if h.metrics != nil {
+		h.metrics.CohostActions.WithLabelValues("invited").Inc()
+	}
 	u, _ := h.users.FindByID(c.Request.Context(), cohost.UserID)
 	response.Created(c, dto.FromCohost(cohost, u))
 }
@@ -146,6 +151,9 @@ func (h *CohostHandler) UpdatePermissions(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	if h.metrics != nil {
+		h.metrics.CohostActions.WithLabelValues("permissions_changed").Inc()
+	}
 	u, _ := h.users.FindByID(c.Request.Context(), cohost.UserID)
 	response.OK(c, dto.FromCohost(cohost, u))
 }
@@ -167,6 +175,9 @@ func (h *CohostHandler) Revoke(c *gin.Context) {
 	if err := h.svc.Revoke(c.Request.Context(), hostID, propertyID, cohostID); err != nil {
 		response.Fail(c, err)
 		return
+	}
+	if h.metrics != nil {
+		h.metrics.CohostActions.WithLabelValues("revoked").Inc()
 	}
 	response.NoContent(c)
 }

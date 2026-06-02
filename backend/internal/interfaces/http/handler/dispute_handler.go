@@ -5,6 +5,7 @@ import (
 
 	disputeapp "github.com/airhost/backend/internal/application/dispute"
 	domaindispute "github.com/airhost/backend/internal/domain/dispute"
+	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
 	"github.com/gin-gonic/gin"
@@ -13,12 +14,13 @@ import (
 // DisputeHandler exposes Resolution Center endpoints: guests/hosts open and
 // participate in cases, admins decide them.
 type DisputeHandler struct {
-	svc *disputeapp.Service
+	svc     *disputeapp.Service
+	metrics *observability.Metrics
 }
 
 // NewDisputeHandler builds a DisputeHandler.
-func NewDisputeHandler(svc *disputeapp.Service) *DisputeHandler {
-	return &DisputeHandler{svc: svc}
+func NewDisputeHandler(svc *disputeapp.Service, m *observability.Metrics) *DisputeHandler {
+	return &DisputeHandler{svc: svc, metrics: m}
 }
 
 type openDisputeRequest struct {
@@ -53,6 +55,9 @@ func (h *DisputeHandler) Open(c *gin.Context) {
 	if err != nil {
 		response.Fail(c, err)
 		return
+	}
+	if h.metrics != nil {
+		h.metrics.DisputesOpened.Inc()
 	}
 	response.Created(c, dto.FromDispute(d))
 }

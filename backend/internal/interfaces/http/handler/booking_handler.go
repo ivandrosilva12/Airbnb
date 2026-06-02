@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/infrastructure/ical"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
@@ -80,6 +82,12 @@ func (h *BookingHandler) Create(c *gin.Context) {
 		SplitShares: shares,
 	})
 	if err != nil {
+		// S29 — track high-value bookings that hit the KYC step-up gate, so
+		// ops can correlate spikes with newly-onboarded high-value listings
+		// or with KYC backlog.
+		if errors.Is(err, shared.ErrKYCStepUpRequired) {
+			h.metrics.KYCStepUpRequired.Inc()
+		}
 		response.Fail(c, err)
 		return
 	}

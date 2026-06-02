@@ -2,6 +2,8 @@ package handler
 
 import (
 	"github.com/airhost/backend/internal/application/splitpayment"
+	domainsplit "github.com/airhost/backend/internal/domain/splitpayment"
+	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
 	"github.com/gin-gonic/gin"
@@ -10,12 +12,13 @@ import (
 // SplitPaymentHandler exposes the per-payer surface for split-payment plans:
 // read the plan, authorise your share, list your splits, organizer cancel.
 type SplitPaymentHandler struct {
-	svc *splitpaymentapp.Service
+	svc     *splitpaymentapp.Service
+	metrics *observability.Metrics
 }
 
 // NewSplitPaymentHandler builds a SplitPaymentHandler.
-func NewSplitPaymentHandler(svc *splitpaymentapp.Service) *SplitPaymentHandler {
-	return &SplitPaymentHandler{svc: svc}
+func NewSplitPaymentHandler(svc *splitpaymentapp.Service, m *observability.Metrics) *SplitPaymentHandler {
+	return &SplitPaymentHandler{svc: svc, metrics: m}
 }
 
 // Get returns the split if the caller is the organizer or one of the payers.
@@ -74,6 +77,13 @@ func (h *SplitPaymentHandler) AuthorizeShare(c *gin.Context) {
 	if err != nil {
 		response.Fail(c, err)
 		return
+	}
+	// S29 — the share authorise call flips the plan to completed when it's
+	// the last share. We count the transition (not every authorize) so the
+	// metric tracks fully-funded splits 1:1 with the booking confirmations
+	// they trigger.
+	if h.metrics != nil && sp.Status == domainsplit.StatusCompleted {
+		h.metrics.SplitPaymentsCompleted.Inc()
 	}
 	response.OK(c, dto.FromSplitPayment(sp))
 }

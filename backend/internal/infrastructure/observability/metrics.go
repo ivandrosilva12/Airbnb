@@ -15,6 +15,13 @@ type Metrics struct {
 	PropertiesCreated   prometheus.Counter
 	WebhookEventsTotal  *prometheus.CounterVec
 	RateLimitedTotal    *prometheus.CounterVec
+	// S29 — new-feature counters. Each increments at the point of the
+	// successful business event, NOT on a transport-layer status code, so
+	// retries / partial failures upstream don't double-count.
+	KYCStepUpRequired      prometheus.Counter
+	SplitPaymentsCompleted prometheus.Counter
+	DisputesOpened         prometheus.Counter
+	CohostActions          *prometheus.CounterVec
 }
 
 // NewMetrics registers and returns the metric collectors. It uses a dedicated
@@ -68,6 +75,31 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Help: "Total requests rejected by a rate limiter, labeled by route.",
 			},
 			[]string{"route"},
+		),
+		KYCStepUpRequired: factory.NewCounter(
+			prometheus.CounterOpts{
+				Name: "airhost_kyc_step_up_required_total",
+				Help: "Total bookings rejected because the guest needs a higher-tier identity check for a high-value reservation (S19).",
+			},
+		),
+		SplitPaymentsCompleted: factory.NewCounter(
+			prometheus.CounterOpts{
+				Name: "airhost_split_payments_completed_total",
+				Help: "Total split-payment plans where every share has been authorised and the booking auto-confirmed (S20a).",
+			},
+		),
+		DisputesOpened: factory.NewCounter(
+			prometheus.CounterOpts{
+				Name: "airhost_disputes_opened_total",
+				Help: "Total Resolution Center cases opened by guests or hosts (S13).",
+			},
+		),
+		CohostActions: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "airhost_cohost_actions_total",
+				Help: "Total co-host grant mutations, labeled by action (invited / permissions_changed / revoked).",
+			},
+			[]string{"action"},
 		),
 	}
 }

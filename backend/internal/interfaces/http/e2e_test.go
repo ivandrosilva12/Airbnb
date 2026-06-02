@@ -246,9 +246,9 @@ func newHarness(t *testing.T) *harness {
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
 			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
-			Dispute:        handler.NewDisputeHandler(disputeSvc),
-			Cohost:          handler.NewCohostHandler(cohostSvc, userRepo),
-			SplitPayment:    handler.NewSplitPaymentHandler(splitPaymentSvc),
+			Dispute:        handler.NewDisputeHandler(disputeSvc, metrics),
+			Cohost:          handler.NewCohostHandler(cohostSvc, userRepo, metrics),
+			SplitPayment:    handler.NewSplitPaymentHandler(splitPaymentSvc, metrics),
 			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),
 		},
 	})
