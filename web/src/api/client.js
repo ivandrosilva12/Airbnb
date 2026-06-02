@@ -235,6 +235,10 @@ export const api = {
   updateProperty: (id, body) => request('PATCH', `/properties/${id}`, { body, auth: true }),
   publishProperty: (id) => request('POST', `/properties/${id}/publish`, { auth: true }),
   deleteProperty: (id) => request('DELETE', `/properties/${id}`, { auth: true }),
+  // duplicateProperty (S60) — clone an owned listing into a fresh draft.
+  // The new listing's id is returned so the caller can navigate to its
+  // edit page; photos and arrival info do not carry over.
+  duplicateProperty: (id) => request('POST', `/properties/${id}/duplicate`, { auth: true }),
   uploadPhoto: (id, file) => {
     const fd = new FormData();
     fd.append('photo', file);

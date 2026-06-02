@@ -183,6 +183,47 @@ type UpdateInput struct {
 	WifiPassword         string
 }
 
+// Duplicate clones a host's listing into a fresh draft (S60). The clone copies
+// description, type, address, pricing, policy, stay rules and amenities, but:
+//   - title gets " (copy)" appended so the host can disambiguate before saving;
+//   - status is reset to draft (the host must publish explicitly);
+//   - photos and arrival info are NOT copied — photos live behind property-scoped
+//     object keys we can't safely re-reference, and arrival credentials are
+//     sensitive enough that the host should restate them per listing;
+//   - rating/review aggregates and Superhost-fanout flags reset.
+//
+// Only the owning host may duplicate; ErrForbidden otherwise.
+func (s *Service) Duplicate(ctx context.Context, actorID, propertyID uuid.UUID) (*property.Property, error) {
+	src, err := s.ownedProperty(ctx, actorID, propertyID)
+	if err != nil {
+		return nil, err
+	}
+	copyTitle := src.Title + " (copy)"
+	if len(copyTitle) > 200 { // keep within any title bound; "(copy)" is 6 chars + space
+		copyTitle = copyTitle[:200]
+	}
+	dup, err := property.NewProperty(
+		src.HostID, copyTitle, src.Description, src.Type,
+		src.Address, src.PricePerNight, src.CleaningFee,
+		src.MaxGuests, src.Bedrooms, src.Beds, src.Bathrooms, src.Amenities,
+	)
+	if err != nil {
+		return nil, err
+	}
+	dup.SetCancellationPolicy(src.CancellationPolicy)
+	dup.SetPricingPolicy(src.PricingPolicy)
+	dup.SetInstantBook(src.InstantBook)
+	if err := applyStayRules(dup, src.PricePerNight.Currency(),
+		src.MinNights, src.MaxNights, src.GuestsIncluded,
+		src.ExtraGuestFee.AmountCents(), src.SecurityDeposit.AmountCents()); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Create(ctx, dup); err != nil {
+		return nil, err
+	}
+	return dup, nil
+}
+
 // Update mutates a listing after verifying ownership.
 func (s *Service) Update(ctx context.Context, actorID, propertyID uuid.UUID, in UpdateInput) (*property.Property, error) {
 	p, err := s.ownedProperty(ctx, actorID, propertyID)

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useT } from '../i18n/I18nContext';
@@ -7,6 +7,7 @@ import { useT } from '../i18n/I18nContext';
 export default function HostDashboard() {
   const { t } = useT();
   const { isHost, becomeHost, refreshProfile } = useAuth();
+  const navigate = useNavigate();
   const [properties, setProperties] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [earnings, setEarnings] = useState(null);
@@ -55,6 +56,19 @@ export default function HostDashboard() {
     try {
       await api.deleteProperty(id);
       load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  // duplicate (S60) — clone an owned listing and jump straight to its edit
+  // page so the host can tweak title/address/photos before publishing. We
+  // navigate instead of reloading the table to surface that this is a new,
+  // editable draft, not a side-effect on the row the host just acted on.
+  async function duplicate(id) {
+    try {
+      const dup = await api.duplicateProperty(id);
+      navigate(`/host/properties/${dup.id}/edit`);
     } catch (e) {
       setError(e.message);
     }
@@ -160,6 +174,11 @@ export default function HostDashboard() {
                     to={`/host/properties/${p.id}/photos`}
                     aria-label={`${t('host.photos')}: ${p.title}`}
                   >{t('host.photos')}</Link>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => duplicate(p.id)}
+                    aria-label={`${t('host.duplicate')}: ${p.title}`}
+                  >{t('host.duplicate')}</button>
                   <button
                     className="btn btn-ghost"
                     onClick={() => remove(p.id)}

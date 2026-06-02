@@ -356,6 +356,10 @@ func NewRouter(d Deps) *gin.Engine {
 			host.PATCH("/properties/:id", h.Property.Update)
 			host.DELETE("/properties/:id", h.Property.Delete)
 			host.POST("/properties/:id/publish", h.Property.Publish)
+			// Duplicate (S60) — clone a listing into a fresh draft. Ownership
+			// is checked by the service; co-hosts cannot fork another host's
+			// inventory.
+			host.POST("/properties/:id/duplicate", h.Property.Duplicate)
 			// House rules write — primary host only; the service enforces
 			// HostID match before persisting so the route gate is enough
 			// here (no extra permission check). Co-hosts intentionally

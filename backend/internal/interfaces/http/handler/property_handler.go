@@ -397,6 +397,28 @@ func (h *PropertyHandler) Publish(c *gin.Context) {
 	response.OK(c, dto.FromProperty(p))
 }
 
+// Duplicate clones an owned listing into a fresh draft (S60). The new listing
+// inherits description, type, address, pricing, policy and amenities; photos
+// and arrival info are not copied — the host must restate them. Returns 201
+// with the new property's view so the client can navigate straight to the
+// edit page.
+func (h *PropertyHandler) Duplicate(c *gin.Context) {
+	actorID, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	id, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	dup, err := h.svc.Duplicate(c.Request.Context(), actorID, id)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.Created(c, dto.FromProperty(dup))
+}
+
 // Delete removes an owned listing.
 func (h *PropertyHandler) Delete(c *gin.Context) {
 	actorID, ok := requireUser(c)
