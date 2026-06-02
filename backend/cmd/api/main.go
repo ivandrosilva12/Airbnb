@@ -52,6 +52,7 @@ import (
 	"github.com/airhost/backend/internal/infrastructure/auth"
 	"github.com/airhost/backend/internal/infrastructure/email"
 	"github.com/airhost/backend/internal/infrastructure/observability"
+	"github.com/airhost/backend/internal/observability/logctx"
 	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/postgres"
 	infrapush "github.com/airhost/backend/internal/infrastructure/push"
@@ -68,7 +69,13 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// Wrap the JSON handler with PII redaction (S44) so emails, IPv4,
+	// card-shaped digits and JWT tokens get masked in every log line
+	// regardless of which call site emitted them. logctx.LoggerFrom
+	// derives request-scoped loggers from slog.Default, so the
+	// redaction propagates through the whole structured-log chain.
+	base := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+	logger := slog.New(logctx.NewRedactingHandler(base))
 	slog.SetDefault(logger)
 
 	if err := run(); err != nil {
