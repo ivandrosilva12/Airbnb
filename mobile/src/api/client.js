@@ -62,6 +62,18 @@ export function createApi(getAccessToken) {
     deleteSavedSearch: (id) => request('DELETE', `/saved-searches/${id}`, { auth: true }),
     getReviews: (id) => request('GET', `/properties/${id}/reviews`),
     getReviewSummary: (id) => request('GET', `/properties/${id}/reviews/summary`),
+    // House rules (S64 mobile parity). Public read — anonymous-friendly
+    // so the rules render alongside the listing without forcing a login.
+    getHouseRules: (id) => request('GET', `/properties/${id}/house-rules`),
+    // Tax quote — public preview of the per-jurisdiction tax breakdown
+    // (S64 mobile parity). Anonymous-friendly so the booking screen can
+    // render lines before sign-in.
+    getTaxQuote: (id, { checkIn, nights, guests, subtotalCents }) => {
+      const qs = new URLSearchParams({
+        checkIn, nights: String(nights), guests: String(guests), subtotalCents: String(subtotalCents),
+      }).toString();
+      return request('GET', `/properties/${id}/tax-quote?${qs}`);
+    },
     me: () => request('GET', '/me', { auth: true }),
     becomeHost: () => request('POST', '/me/become-host', { auth: true }),
     updatePreferences: (prefs) => request('PATCH', '/me/preferences', { body: prefs, auth: true }),

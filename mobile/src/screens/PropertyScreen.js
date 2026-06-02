@@ -35,12 +35,49 @@ export default function PropertyScreen({ route, navigation }) {
   const [reportReason, setReportReason] = useState('inappropriate');
   const [reportNote, setReportNote] = useState('');
   const [reported, setReported] = useState(false);
+  // S64 — house rules + per-jurisdiction tax preview, mirroring web S56/S57.
+  // houseRules is null until fetched and { version, rules: [], updatedAt }
+  // once loaded. rulesAccepted is the explicit-consent toggle below the
+  // book button; required when houseRules.version > 0 (server gate).
+  const [houseRules, setHouseRules] = useState(null);
+  const [rulesAccepted, setRulesAccepted] = useState(false);
+  const [taxQuote, setTaxQuote] = useState(null);
 
   useEffect(() => {
     api.getProperty(id).then(setProperty).catch((e) => setError(e.message));
     api.getReviews(id).then((r) => setReviews(r.items || [])).catch(() => {});
     api.getReviewSummary(id).then(setSummary).catch(() => {});
+    // S64 — load house rules so the panel renders alongside the listing.
+    // 404 (no rules configured) is normal — swallow it.
+    api.getHouseRules(id).then(setHouseRules).catch(() => setHouseRules(null));
   }, [id]);
+
+  // S64 — refresh the tax preview whenever the inputs change. We use a
+  // cancellation flag so an out-of-order response doesn't clobber the
+  // latest one (e.g. the user types a new date before the previous fetch
+  // resolved). Stops fetching while inputs are incomplete to keep the
+  // initial render clean.
+  useEffect(() => {
+    if (!property || !checkIn || !checkOut) {
+      setTaxQuote(null);
+      return undefined;
+    }
+    const inDate = new Date(checkIn);
+    const outDate = new Date(checkOut);
+    const nights = Math.max(0, Math.round((outDate - inDate) / (1000 * 60 * 60 * 24)));
+    if (nights < 1) {
+      setTaxQuote(null);
+      return undefined;
+    }
+    const guestsN = Math.max(1, Number(guests) || 1);
+    const subtotalCents = (property.pricePerNight?.amountCents || 0) * nights;
+    let cancelled = false;
+    api
+      .getTaxQuote(id, { checkIn, nights, guests: guestsN, subtotalCents })
+      .then((q) => { if (!cancelled) setTaxQuote(q); })
+      .catch(() => { if (!cancelled) setTaxQuote(null); });
+    return () => { cancelled = true; };
+  }, [id, checkIn, checkOut, guests, property]);
 
   const REVIEW_CATS = ['cleanliness', 'accuracy', 'communication', 'location', 'checkIn', 'value'];
   const CAT_LABELS = {
@@ -194,10 +231,23 @@ export default function PropertyScreen({ route, navigation }) {
       login();
       return;
     }
+    // S64 — client-side gate matching the server's house-rules check. The
+    // server would 422 anyway, but this short-circuit gives a clearer
+    // message than the generic validation error string.
+    if (houseRules && houseRules.version > 0 && !rulesAccepted) {
+      setError('Please accept the house rules to continue.');
+      return;
+    }
     try {
       const b = await api.createBooking({
         propertyId: id, checkIn, checkOut, guests: Number(guests),
         couponCode: coupon.trim() || undefined,
+        // Only send the field when the listing actually has rules — sending
+        // a zero would still let the server detect a missing acknowledgement,
+        // but omitting it keeps the payload tidy for rule-less listings.
+        ...(houseRules && houseRules.version > 0
+          ? { acceptedHouseRulesVersion: houseRules.version }
+          : {}),
       });
       setMessage(`Booked ${b.nights} night(s) for ${b.totalPrice.display}. Status: ${b.status}.`);
     } catch (e) {
@@ -279,6 +329,43 @@ export default function PropertyScreen({ route, navigation }) {
             </Pressable>
           </View>
           {couponInfo && <Text style={styles.success} accessibilityRole="alert">Coupon applied — you save {couponInfo.discount.display}.</Text>}
+          {/* S64 — per-jurisdiction tax breakdown. Renders only when we
+              actually have rules matching this stay; an empty result
+              (anonymous listing in a no-tax jurisdiction) shows nothing. */}
+          {taxQuote && taxQuote.lines && taxQuote.lines.length > 0 && (
+            <View style={styles.taxBox} accessibilityRole="none">
+              <Text style={styles.taxTitle}>Taxes</Text>
+              {taxQuote.lines.map((line) => (
+                <View key={line.ruleId || line.name} style={styles.taxRow}>
+                  <Text style={styles.taxName}>{line.name}</Text>
+                  <Text style={styles.taxVal}>{(line.amountCents / 100).toFixed(2)} {taxQuote.currency || ''}</Text>
+                </View>
+              ))}
+              <Text style={styles.taxHint}>Included in the total when you confirm.</Text>
+            </View>
+          )}
+          {/* S64 — house rules preview + acceptance gate. Renders before
+              the book button so a guest can't tap-through without
+              acknowledging. Only shown when the listing has an active
+              ruleset. */}
+          {houseRules && houseRules.version > 0 && (
+            <View style={styles.rulesBox} accessibilityRole="none">
+              <Text style={styles.rulesTitle}>House rules</Text>
+              {(houseRules.rules || []).map((rule, i) => (
+                <Text key={i} style={styles.rulesItem}>• {rule}</Text>
+              ))}
+              <Pressable
+                style={styles.acceptRow}
+                onPress={() => setRulesAccepted((v) => !v)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: rulesAccepted }}
+                accessibilityLabel="Accept the house rules"
+              >
+                <Text style={rulesAccepted ? styles.acceptOn : styles.acceptOff}>{rulesAccepted ? '☑' : '☐'}</Text>
+                <Text style={styles.acceptLabel}>I accept the house rules</Text>
+              </Pressable>
+            </View>
+          )}
           <Pressable
             style={styles.btn}
             onPress={book}
@@ -536,6 +623,21 @@ const styles = StyleSheet.create({
   secondaryText: { fontWeight: '600', color: '#222' },
   couponRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   couponBtn: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' },
+  // S64 — house rules + tax preview styles, kept minimal to match the
+  // visual weight of the existing bookBox.
+  taxBox: { backgroundColor: '#fafafa', borderRadius: 8, padding: 10, marginBottom: 10 },
+  taxTitle: { fontWeight: '700', color: '#222', marginBottom: 6 },
+  taxRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
+  taxName: { color: '#222' },
+  taxVal: { color: '#222', fontWeight: '600' },
+  taxHint: { color: '#717171', fontSize: 12, marginTop: 6 },
+  rulesBox: { backgroundColor: '#fff5e6', borderRadius: 8, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#f5c97a' },
+  rulesTitle: { fontWeight: '800', color: '#8a5d00', marginBottom: 6 },
+  rulesItem: { color: '#5a3f00', lineHeight: 20 },
+  acceptRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  acceptOn: { color: '#ff385c', fontSize: 22 },
+  acceptOff: { color: '#999', fontSize: 22 },
+  acceptLabel: { color: '#222', fontWeight: '600' },
   reviewsSection: { marginTop: 20 },
   sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: 8 },
   catBreakdown: { backgroundColor: '#fafafa', borderRadius: 8, padding: 12, marginBottom: 12 },
