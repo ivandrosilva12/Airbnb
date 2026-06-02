@@ -49,12 +49,20 @@ export default function PropertyDetail() {
   // yet verified. When set, the UI swaps the generic error for a "verify and
   // come back" prompt with a direct link to /settings.
   const [stepUp, setStepUp] = useState(null);
+  // House rules (S56): the public-read snapshot for this listing + the
+  // guest's "I've read and accept" checkbox. The acceptance MUST submit
+  // with the booking — the backend version-checks server-side so a
+  // stale UI (rules bumped between page-load and submit) is rejected
+  // with the standard validation error.
+  const [houseRules, setHouseRules] = useState({ version: 0, items: [] });
+  const [rulesAccepted, setRulesAccepted] = useState(false);
 
   useEffect(() => {
     api.getProperty(id).then(setProperty).catch((e) => setError(e.message));
     api.getReviews(id).then((r) => setReviews(r.items || [])).catch(() => {});
     api.getReviewSummary(id).then(setSummary).catch(() => {});
     api.availability(id).then((a) => setBooked(a.booked || [])).catch(() => {});
+    api.getHouseRules(id).then(setHouseRules).catch(() => {});
   }, [id]);
 
   async function book(e) {
@@ -70,6 +78,14 @@ export default function PropertyDetail() {
       setError(t('detail.datesUnavailable'));
       return;
     }
+    // House-rules acceptance precondition: when the listing has active
+    // rules, the guest MUST tick the box. Local UX guard so we surface
+    // a clean message instead of letting the backend return its generic
+    // "please accept the current house rules to book" validation.
+    if (houseRules.version > 0 && houseRules.items.length > 0 && !rulesAccepted) {
+      setError(t('houseRules.mustAccept'));
+      return;
+    }
     try {
       const booking = await api.createBooking({
         propertyId: id,
@@ -77,6 +93,11 @@ export default function PropertyDetail() {
         checkOut: form.checkOut,
         guests: Number(form.guests),
         couponCode: coupon.trim() || undefined,
+        // 0 = no acknowledgement; backend ignores it on listings without
+        // active rules and rejects with the version-mismatch error on
+        // listings that DO have them.
+        acceptedHouseRulesVersion:
+          houseRules.version > 0 && houseRules.items.length > 0 ? houseRules.version : undefined,
       });
       setMessage(t('detail.booked', { nights: booking.nights, total: booking.totalPrice.display, status: booking.status }));
       api.availability(id).then((a) => setBooked(a.booked || [])).catch(() => {});
@@ -186,6 +207,18 @@ export default function PropertyDetail() {
           <h3>{t('detail.cancellation')}</h3>
           <p className="policy-line">{t(`policy.${property.cancellationPolicy}`)}</p>
 
+          {houseRules.items && houseRules.items.length > 0 && (
+            <div className="house-rules-preview">
+              <h3>{t('houseRules.guestHeading')}</h3>
+              <ul aria-label={t('houseRules.guestHeading')}>
+                {houseRules.items.map((rule, i) => (
+                  <li key={i}>{rule}</li>
+                ))}
+              </ul>
+              <small className="muted">{t('houseRules.versionLabel', { version: houseRules.version })}</small>
+            </div>
+          )}
+
           <h3>{t('detail.amenities')}</h3>
           <ul className="amenities">
             {property.amenities.length === 0 && <li>{t('detail.noAmenities')}</li>}
@@ -269,6 +302,18 @@ export default function PropertyDetail() {
             </div>
             {couponInfo && <p className="success coupon-msg">{t('detail.couponApplied', { discount: couponInfo.discount.display })}</p>}
             {couponError && <p className="error coupon-msg">{couponError}</p>}
+            {houseRules.items && houseRules.items.length > 0 && (
+              <label className="house-rules-check">
+                <input
+                  type="checkbox"
+                  checked={rulesAccepted}
+                  onChange={(e) => setRulesAccepted(e.target.checked)}
+                  aria-describedby="house-rules-hint"
+                />
+                <span>{t('houseRules.acceptLabel', { version: houseRules.version })}</span>
+                <small id="house-rules-hint" className="muted">{t('houseRules.acceptHint')}</small>
+              </label>
+            )}
             <button className="btn btn-primary block" type="submit">
               {!authenticated
                 ? t('detail.signInReserve')

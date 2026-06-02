@@ -94,6 +94,15 @@ export const api = {
   },
   getProperty: (id) => request('GET', `/properties/${id}`),
   listAmenities: () => request('GET', '/amenities'),
+  // House rules (S47 + S56) — public read of the current versioned rule
+  // set, host-only PATCH that bumps version (history preserved server-side).
+  // getHouseRulesAcceptance returns the per-booking proof bundled with the
+  // exact items the guest acknowledged.
+  getHouseRules: (propertyId) => request('GET', `/properties/${propertyId}/house-rules`),
+  setHouseRules: (propertyId, items) =>
+    request('PATCH', `/properties/${propertyId}/house-rules`, { body: { items }, auth: true }),
+  getHouseRulesAcceptance: (bookingId) =>
+    request('GET', `/bookings/${bookingId}/house-rules-acceptance`, { auth: true }),
   // Saved searches & alerts
   listSavedSearches: () => request('GET', '/saved-searches', { auth: true }),
   saveSearch: (body) => request('POST', '/saved-searches', { body, auth: true }),

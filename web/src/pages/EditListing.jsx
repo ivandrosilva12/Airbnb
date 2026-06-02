@@ -94,6 +94,7 @@ export default function EditListing() {
       {error && <p className="error">{error}</p>}
       <PriceRulesPanel propertyId={id} currency={form.currency} />
       <CohostsPanel propertyId={id} />
+      <HouseRulesPanel propertyId={id} />
 
       <form className="form-grid" onSubmit={submit}>
         <label>{t('create.fTitle')}<input required value={form.title} onChange={set('title')} /></label>
@@ -403,6 +404,110 @@ function CohostsPanel({ propertyId }) {
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+// HouseRulesPanel lets the host author / edit the versioned rule set
+// for a listing (S56). Every PATCH bumps the version on the server
+// side; old versions stay queryable so historical acceptances still
+// resolve to the exact text the guest saw. The component shows the
+// CURRENT version below the items list so the host knows what guests
+// are seeing right now and what version a future booking will
+// acknowledge.
+function HouseRulesPanel({ propertyId }) {
+  const { t } = useT();
+  const [items, setItems] = useState(['']);
+  const [version, setVersion] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [savedMsg, setSavedMsg] = useState(null);
+
+  // Initial load — re-fetch after a save returns so the rendered
+  // version reflects the bump the server just did.
+  const reload = useCallback(() => {
+    api
+      .getHouseRules(propertyId)
+      .then((r) => {
+        setVersion(r.version || 0);
+        // Show at least one editable row so an empty rules set is
+        // still authorable without an extra "add" click.
+        setItems(r.items && r.items.length > 0 ? r.items : ['']);
+      })
+      .catch((e) => setError(e.message));
+  }, [propertyId]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  function updateItem(i, value) {
+    setItems((prev) => prev.map((it, idx) => (idx === i ? value : it)));
+    setSavedMsg(null);
+  }
+  function addItem() {
+    setItems((prev) => [...prev, '']);
+  }
+  function removeItem(i) {
+    setItems((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    setSavedMsg(null);
+    try {
+      // Drop blanks so a user who hit "+" and didn't fill it in doesn't
+      // get rejected by the server-side validation.
+      const cleaned = items.map((s) => s.trim()).filter(Boolean);
+      const r = await api.setHouseRules(propertyId, cleaned);
+      setVersion(r.version);
+      setItems(r.items.length > 0 ? r.items : ['']);
+      setSavedMsg(t('houseRules.saved', { version: r.version }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="house-rules-panel">
+      <h2>{t('houseRules.title')}</h2>
+      <p className="muted">{t('houseRules.hint')}</p>
+      {error && <p className="error">{error}</p>}
+      <form onSubmit={save}>
+        {items.map((it, i) => (
+          <div key={i} className="rule-row">
+            <input
+              type="text"
+              value={it}
+              maxLength={500}
+              placeholder={t('houseRules.placeholder')}
+              aria-label={t('houseRules.itemAria', { n: i + 1 })}
+              onChange={(e) => updateItem(i, e.target.value)}
+            />
+            {items.length > 1 && (
+              <button type="button" className="btn btn-link" onClick={() => removeItem(i)} aria-label={t('houseRules.remove')}>
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+        <button type="button" className="btn btn-ghost" onClick={addItem}>
+          {t('houseRules.add')}
+        </button>
+        <div className="rules-footer">
+          <small className="muted">
+            {version > 0 ? t('houseRules.currentVersion', { version }) : t('houseRules.notSet')}
+          </small>
+          <button className="btn btn-primary" type="submit" disabled={saving}>
+            {saving ? t('houseRules.saving') : t('houseRules.save')}
+          </button>
+        </div>
+        {savedMsg && <p className="success">{savedMsg}</p>}
+      </form>
     </section>
   );
 }
