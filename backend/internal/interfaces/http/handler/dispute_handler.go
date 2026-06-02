@@ -3,7 +3,9 @@ package handler
 import (
 	"sort"
 
+	auditapp "github.com/airhost/backend/internal/application/audit"
 	disputeapp "github.com/airhost/backend/internal/application/dispute"
+	"github.com/airhost/backend/internal/domain/audit"
 	domaindispute "github.com/airhost/backend/internal/domain/dispute"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
@@ -16,11 +18,19 @@ import (
 type DisputeHandler struct {
 	svc     *disputeapp.Service
 	metrics *observability.Metrics
+	audit   *auditapp.Service // nil = no audit trail (legacy/test path)
 }
 
 // NewDisputeHandler builds a DisputeHandler.
 func NewDisputeHandler(svc *disputeapp.Service, m *observability.Metrics) *DisputeHandler {
 	return &DisputeHandler{svc: svc, metrics: m}
+}
+
+// WithAudit attaches the audit service so admin decisions record a
+// trail (S45). Returns the receiver for chaining at composition root.
+func (h *DisputeHandler) WithAudit(a *auditapp.Service) *DisputeHandler {
+	h.audit = a
+	return h
 }
 
 type openDisputeRequest struct {
@@ -216,14 +226,30 @@ func (h *DisputeHandler) adminDecide(c *gin.Context, sideWithOpener bool) {
 		d   *domaindispute.Dispute
 		err error
 	)
+	action := audit.ActionDisputeResolve
 	if sideWithOpener {
 		d, err = h.svc.AdminResolve(c.Request.Context(), in)
 	} else {
 		d, err = h.svc.AdminReject(c.Request.Context(), in)
+		action = audit.ActionDisputeReject
 	}
 	if err != nil {
 		response.Fail(c, err)
 		return
+	}
+	if h.audit != nil {
+		if err := h.audit.Record(c.Request.Context(), auditapp.RecordInput{
+			ActorID: uid, Action: action,
+			TargetType: audit.TargetDispute, TargetID: id,
+			Metadata: map[string]any{
+				"resolution":        req.Resolution,
+				"refundAmountCents": req.RefundAmountCents,
+				"damageAmountCents": req.DamageAmountCents,
+			},
+		}); err != nil {
+			response.Fail(c, err)
+			return
+		}
 	}
 	response.OK(c, dto.FromDispute(d))
 }

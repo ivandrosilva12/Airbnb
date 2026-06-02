@@ -16,6 +16,7 @@ import (
 	"time"
 
 	alertingapp "github.com/airhost/backend/internal/application/alerting"
+	auditapp "github.com/airhost/backend/internal/application/audit"
 	alertstateapp "github.com/airhost/backend/internal/application/alertstate"
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
 	blockapp "github.com/airhost/backend/internal/application/block"
@@ -143,6 +144,7 @@ func run() error {
 	cohostRepo := postgres.NewCohostRepository(pool)
 	splitPaymentRepo := postgres.NewSplitPaymentRepository(pool)
 	messageTemplateRepo := postgres.NewMessageTemplateRepository(pool)
+	auditRepo := postgres.NewAuditRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers,
@@ -189,6 +191,7 @@ func run() error {
 	bookingSvc.WithSplitter(splitterAdapter{svc: splitPaymentSvc}, userEmailResolver{users: userRepo})
 	dispatcher.Subscribe(bookingSvc.EventHandler())
 	messageTemplateSvc := messagetemplateapp.NewService(messageTemplateRepo)
+	auditSvc := auditapp.NewService(auditRepo)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment))
 	privacySvc := privacyapp.NewService(userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo)
@@ -237,7 +240,7 @@ func run() error {
 		Handlers: apphttp.Handlers{
 			Health:         handler.NewHealthHandler(pool),
 			User:           handler.NewUserHandler(userSvc),
-			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics),
+			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc),
 			Booking:        handler.NewBookingHandler(bookingSvc, metrics),
 			Review:         handler.NewReviewHandler(reviewSvc),
 			Message:        handler.NewMessageHandler(messageSvc),
@@ -248,7 +251,7 @@ func run() error {
 			Block:          handler.NewBlockHandler(blockSvc),
 			Payout:         handler.NewPayoutHandler(payoutSvc),
 			Realtime:       handler.NewRealtimeHandler(realtimeHub),
-			Identity:       handler.NewIdentityHandler(identitySvc),
+			Identity:       handler.NewIdentityHandler(identitySvc).WithAudit(auditSvc),
 			Report:         handler.NewReportHandler(reportSvc),
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
 			ConnectWebhook: handler.NewConnectWebhookHandler(payoutSvc, paymentgw.NewConnectWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
@@ -260,7 +263,8 @@ func run() error {
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
 			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
-			Dispute:        handler.NewDisputeHandler(disputeSvc, metrics),
+			Audit:          handler.NewAuditHandler(auditSvc),
+			Dispute:        handler.NewDisputeHandler(disputeSvc, metrics).WithAudit(auditSvc),
 			Cohost:          handler.NewCohostHandler(cohostSvc, userRepo, metrics),
 			SplitPayment:    handler.NewSplitPaymentHandler(splitPaymentSvc, metrics),
 			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),

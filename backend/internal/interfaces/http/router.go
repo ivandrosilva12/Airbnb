@@ -38,6 +38,7 @@ type Handlers struct {
 	SavedSearch    *handler.SavedSearchHandler
 	PriceRule      *handler.PriceRuleHandler
 	PushToken      *handler.PushTokenHandler
+	Audit          *handler.AuditHandler
 	Dispute        *handler.DisputeHandler
 	Cohost          *handler.CohostHandler
 	SplitPayment    *handler.SplitPaymentHandler
@@ -381,6 +382,12 @@ func NewRouter(d Deps) *gin.Engine {
 			admin.GET("/alerts/silences", h.Alert.ListSilences)
 			admin.POST("/alerts/silences", h.Alert.CreateSilence)
 			admin.DELETE("/alerts/silences/:id", h.Alert.DeleteSilence)
+
+			// Audit trail (S45): read-only feed of admin-initiated state
+			// changes. Writes happen implicitly inside other admin handlers
+			// on success (property suspend/unsuspend, KYC approve/reject,
+			// dispute resolve/reject).
+			admin.GET("/audit", h.Audit.List)
 		}
 	}
 

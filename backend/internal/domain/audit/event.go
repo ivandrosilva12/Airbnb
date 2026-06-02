@@ -1,0 +1,111 @@
+// Package audit owns the AuditEvent aggregate — a tamper-resistant
+// record of admin-initiated state changes. Distinct from the domain
+// event outbox (which feeds subscribers and may be re-delivered): an
+// audit event is appended once, synchronously, on the success path of
+// the admin action, and is never re-fired. The two answer different
+// questions: outbox events answer "what should happen next?", audit
+// events answer "who changed this and when?".
+package audit
+
+import (
+	"strings"
+	"time"
+
+	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/google/uuid"
+)
+
+// Action enumerates the admin actions that produce an audit event. The
+// list is closed: callers MUST pass one of the constants below so a
+// future ops/legal query can rely on a finite set of action strings
+// (no per-call free text). New actions are added by extending this
+// enum + flipping a switch in Action.Valid().
+type Action string
+
+const (
+	ActionPropertySuspend   Action = "property.suspend"
+	ActionPropertyUnsuspend Action = "property.unsuspend"
+	ActionIdentityApprove   Action = "identity.approve"
+	ActionIdentityReject    Action = "identity.reject"
+	ActionReportResolve     Action = "report.resolve"
+	ActionReportDismiss     Action = "report.dismiss"
+	ActionDisputeResolve    Action = "dispute.resolve"
+	ActionDisputeReject     Action = "dispute.reject"
+	ActionCouponDeactivate  Action = "coupon.deactivate"
+)
+
+// Valid reports whether a is one of the recognised actions. The zero
+// value is invalid.
+func (a Action) Valid() bool {
+	switch a {
+	case ActionPropertySuspend, ActionPropertyUnsuspend,
+		ActionIdentityApprove, ActionIdentityReject,
+		ActionReportResolve, ActionReportDismiss,
+		ActionDisputeResolve, ActionDisputeReject,
+		ActionCouponDeactivate:
+		return true
+	}
+	return false
+}
+
+// TargetType labels the kind of entity an action affected. Keeping it
+// a typed string (vs the action's "property" prefix) makes it cheap to
+// index and filter on "show me everything that happened to property X"
+// without parsing strings.
+type TargetType string
+
+const (
+	TargetProperty TargetType = "property"
+	TargetIdentity TargetType = "identity"
+	TargetReport   TargetType = "report"
+	TargetDispute  TargetType = "dispute"
+	TargetCoupon   TargetType = "coupon"
+)
+
+// Event is one entry in the audit trail. Immutable by convention: the
+// repository exposes no Update method; once persisted it is append-only.
+type Event struct {
+	ID         uuid.UUID
+	ActorID    uuid.UUID  // admin (or system, see SystemActor) who acted
+	Action     Action
+	TargetType TargetType
+	TargetID   uuid.UUID
+	// Metadata holds free-form context that didn't fit the schema: a
+	// dispute resolution string, a suspension reason, the refund cents
+	// included in a decision. JSON-shaped at the repo layer; here it's
+	// a string-keyed map so the domain stays storage-agnostic.
+	Metadata map[string]any
+	// RequestID ties the audit entry back to the HTTP request that
+	// triggered it (populated from logctx.RequestIDFrom). Empty when
+	// the action ran outside a request (scheduler, recovery).
+	RequestID string
+	CreatedAt time.Time
+}
+
+// New builds an Event, validating the action + target id. Returns
+// shared.NewValidationError when inputs are missing or unknown — the
+// service layer surfaces that as 422 rather than persisting garbage.
+func New(actorID uuid.UUID, action Action, targetType TargetType, targetID uuid.UUID, meta map[string]any, requestID string) (*Event, error) {
+	if actorID == uuid.Nil {
+		return nil, shared.NewValidationError("audit: actorID is required")
+	}
+	if !action.Valid() {
+		return nil, shared.NewValidationError("audit: unknown action " + string(action))
+	}
+	if strings.TrimSpace(string(targetType)) == "" {
+		return nil, shared.NewValidationError("audit: targetType is required")
+	}
+	if targetID == uuid.Nil {
+		return nil, shared.NewValidationError("audit: targetID is required")
+	}
+	return &Event{
+		ID:         uuid.New(),
+		ActorID:    actorID,
+		Action:     action,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Metadata:   meta,
+		RequestID:  requestID,
+		CreatedAt:  time.Now().UTC(),
+	}, nil
+}

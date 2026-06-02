@@ -3,7 +3,9 @@ package handler
 import (
 	"errors"
 
+	auditapp "github.com/airhost/backend/internal/application/audit"
 	identityapp "github.com/airhost/backend/internal/application/identity"
+	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
@@ -13,12 +15,20 @@ import (
 // IdentityHandler exposes KYC identity-verification endpoints (user-facing
 // submit/status plus the administrator review queue).
 type IdentityHandler struct {
-	svc *identityapp.Service
+	svc   *identityapp.Service
+	audit *auditapp.Service // nil = no audit trail (legacy/test path)
 }
 
 // NewIdentityHandler builds an IdentityHandler.
 func NewIdentityHandler(svc *identityapp.Service) *IdentityHandler {
 	return &IdentityHandler{svc: svc}
+}
+
+// WithAudit attaches the audit service so KYC approve/reject record a
+// trail (S45). Returns the receiver for chaining at composition root.
+func (h *IdentityHandler) WithAudit(a *auditapp.Service) *IdentityHandler {
+	h.audit = a
+	return h
 }
 
 type submitVerificationRequest struct {
@@ -98,6 +108,16 @@ func (h *IdentityHandler) Approve(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	if h.audit != nil {
+		if err := h.audit.Record(c.Request.Context(), auditapp.RecordInput{
+			ActorID: adminID, Action: audit.ActionIdentityApprove,
+			TargetType: audit.TargetIdentity, TargetID: id,
+			Metadata: map[string]any{"userId": v.UserID.String()},
+		}); err != nil {
+			response.Fail(c, err)
+			return
+		}
+	}
 	response.OK(c, dto.FromVerification(v))
 }
 
@@ -123,6 +143,16 @@ func (h *IdentityHandler) Reject(c *gin.Context) {
 	if err != nil {
 		response.Fail(c, err)
 		return
+	}
+	if h.audit != nil {
+		if err := h.audit.Record(c.Request.Context(), auditapp.RecordInput{
+			ActorID: adminID, Action: audit.ActionIdentityReject,
+			TargetType: audit.TargetIdentity, TargetID: id,
+			Metadata: map[string]any{"userId": v.UserID.String(), "reason": req.Reason},
+		}); err != nil {
+			response.Fail(c, err)
+			return
+		}
 	}
 	response.OK(c, dto.FromVerification(v))
 }

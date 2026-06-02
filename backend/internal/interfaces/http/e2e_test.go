@@ -24,6 +24,7 @@ import (
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
 	identityapp "github.com/airhost/backend/internal/application/identity"
 	messageapp "github.com/airhost/backend/internal/application/message"
+	auditapp "github.com/airhost/backend/internal/application/audit"
 	messagetemplateapp "github.com/airhost/backend/internal/application/messagetemplate"
 	notificationapp "github.com/airhost/backend/internal/application/notification"
 	offerapp "github.com/airhost/backend/internal/application/offer"
@@ -179,6 +180,7 @@ func newHarness(t *testing.T) *harness {
 	bookingSvc.WithSplitter(testSplitterAdapter{svc: splitPaymentSvc}, testUserEmailResolver{users: userRepo})
 	dispatcher.Subscribe(bookingSvc.EventHandler())
 	messageTemplateSvc := messagetemplateapp.NewService(memory.NewMessageTemplateRepository())
+	auditSvc := auditapp.NewService(memory.NewAuditRepository())
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewFakeDisburser(), paymentgw.NewFakeConnectGateway())
@@ -229,7 +231,7 @@ func newHarness(t *testing.T) *harness {
 		Handlers: apphttp.Handlers{
 			Health:         handler.NewHealthHandler(nil),
 			User:           handler.NewUserHandler(userSvc),
-			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics),
+			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc),
 			Booking:        handler.NewBookingHandler(bookingSvc, metrics),
 			Review:         handler.NewReviewHandler(reviewSvc),
 			Message:        handler.NewMessageHandler(messageSvc),
@@ -240,7 +242,7 @@ func newHarness(t *testing.T) *harness {
 			Block:          handler.NewBlockHandler(blockSvc),
 			Payout:         handler.NewPayoutHandler(payoutSvc),
 			Realtime:       handler.NewRealtimeHandler(realtimeHub),
-			Identity:       handler.NewIdentityHandler(identitySvc),
+			Identity:       handler.NewIdentityHandler(identitySvc).WithAudit(auditSvc),
 			Report:         handler.NewReportHandler(reportSvc),
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(config.PaymentConfig{GPayAngola: config.GPayAngolaConfig{WebhookSecret: webhookSecret}}), memory.NewWebhookEventRepository(), metrics),
 			ConnectWebhook: handler.NewConnectWebhookHandler(payoutSvc, nil, memory.NewWebhookEventRepository(), metrics),
@@ -251,10 +253,11 @@ func newHarness(t *testing.T) *harness {
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
 			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
-			Dispute:        handler.NewDisputeHandler(disputeSvc, metrics),
+			Dispute:        handler.NewDisputeHandler(disputeSvc, metrics).WithAudit(auditSvc),
 			Cohost:          handler.NewCohostHandler(cohostSvc, userRepo, metrics),
 			SplitPayment:    handler.NewSplitPaymentHandler(splitPaymentSvc, metrics),
 			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),
+			Audit:           handler.NewAuditHandler(auditSvc),
 		},
 	})
 

@@ -8,8 +8,10 @@ import (
 	"strings"
 	"time"
 
+	auditapp "github.com/airhost/backend/internal/application/audit"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	searchapp "github.com/airhost/backend/internal/application/search"
+	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
@@ -30,16 +32,27 @@ var allowedPhotoContentTypes = map[string]bool{
 	"image/gif":  true,
 }
 
-// PropertyHandler exposes listing endpoints.
+// PropertyHandler exposes listing endpoints. audit is optional — when
+// nil (e.g. older callers in tests) the admin suspend/unsuspend paths
+// still work but no audit row is written. Production wires it via
+// WithAudit.
 type PropertyHandler struct {
 	svc     *propertyapp.Service
 	search  *searchapp.Service
 	metrics *observability.Metrics
+	audit   *auditapp.Service
 }
 
 // NewPropertyHandler builds a PropertyHandler.
 func NewPropertyHandler(svc *propertyapp.Service, search *searchapp.Service, m *observability.Metrics) *PropertyHandler {
 	return &PropertyHandler{svc: svc, search: search, metrics: m}
+}
+
+// WithAudit attaches the audit service so admin actions record a trail.
+// Returns the receiver for chaining at composition root.
+func (h *PropertyHandler) WithAudit(a *auditapp.Service) *PropertyHandler {
+	h.audit = a
+	return h
 }
 
 type createPropertyRequest struct {
@@ -337,8 +350,14 @@ func (h *PropertyHandler) Delete(c *gin.Context) {
 	response.NoContent(c)
 }
 
-// AdminSuspend hides a listing from search (admin only).
+// AdminSuspend hides a listing from search (admin only). Records an
+// audit row on success — failure to audit is a hard error so we don't
+// ship a state change without a trail (S45).
 func (h *PropertyHandler) AdminSuspend(c *gin.Context) {
+	adminID, ok := requireUser(c)
+	if !ok {
+		return
+	}
 	id, ok := pathUUID(c, "id")
 	if !ok {
 		return
@@ -348,11 +367,25 @@ func (h *PropertyHandler) AdminSuspend(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	if h.audit != nil {
+		if err := h.audit.Record(c.Request.Context(), auditapp.RecordInput{
+			ActorID: adminID, Action: audit.ActionPropertySuspend,
+			TargetType: audit.TargetProperty, TargetID: id,
+			Metadata: map[string]any{"title": p.Title},
+		}); err != nil {
+			response.Fail(c, err)
+			return
+		}
+	}
 	response.OK(c, dto.FromProperty(p))
 }
 
 // AdminUnsuspend restores a suspended listing to published (admin only).
 func (h *PropertyHandler) AdminUnsuspend(c *gin.Context) {
+	adminID, ok := requireUser(c)
+	if !ok {
+		return
+	}
 	id, ok := pathUUID(c, "id")
 	if !ok {
 		return
@@ -361,6 +394,16 @@ func (h *PropertyHandler) AdminUnsuspend(c *gin.Context) {
 	if err != nil {
 		response.Fail(c, err)
 		return
+	}
+	if h.audit != nil {
+		if err := h.audit.Record(c.Request.Context(), auditapp.RecordInput{
+			ActorID: adminID, Action: audit.ActionPropertyUnsuspend,
+			TargetType: audit.TargetProperty, TargetID: id,
+			Metadata: map[string]any{"title": p.Title},
+		}); err != nil {
+			response.Fail(c, err)
+			return
+		}
 	}
 	response.OK(c, dto.FromProperty(p))
 }

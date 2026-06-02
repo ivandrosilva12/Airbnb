@@ -18,6 +18,7 @@ import (
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
+	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/domain/messagetemplate"
 	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/offer"
@@ -57,6 +58,7 @@ var (
 	_ property.CohostRepository    = (*CohostRepository)(nil)
 	_ splitpayment.Repository      = (*SplitPaymentRepository)(nil)
 	_ messagetemplate.Repository   = (*MessageTemplateRepository)(nil)
+	_ audit.Repository             = (*AuditRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -2385,4 +2387,55 @@ func (r *MessageTemplateRepository) ListByHost(_ context.Context, hostID uuid.UU
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Label) < strings.ToLower(out[j].Label) })
 	return out, nil
+}
+
+// --- Audit -------------------------------------------------------------------
+
+// AuditRepository is an in-memory audit.Repository. Append-only by
+// contract (matches the postgres path); the only writes happen via
+// Create. List filters in-memory by the optional Filter fields.
+type AuditRepository struct {
+	mu sync.RWMutex
+	m  []audit.Event
+}
+
+// NewAuditRepository builds an empty in-memory audit repository.
+func NewAuditRepository() *AuditRepository {
+	return &AuditRepository{m: []audit.Event{}}
+}
+
+func (r *AuditRepository) Create(_ context.Context, e *audit.Event) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := *e
+	r.m = append(r.m, cp)
+	return nil
+}
+
+func (r *AuditRepository) List(_ context.Context, f audit.Filter, page shared.Page) (shared.PageResult[*audit.Event], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	// Filter pass — AND of non-zero fields, matching the repo contract.
+	matches := make([]*audit.Event, 0)
+	for i := range r.m {
+		ev := r.m[i]
+		if f.ActorID != uuid.Nil && ev.ActorID != f.ActorID {
+			continue
+		}
+		if f.Action != "" && ev.Action != f.Action {
+			continue
+		}
+		if f.TargetType != "" && ev.TargetType != f.TargetType {
+			continue
+		}
+		if f.TargetID != uuid.Nil && ev.TargetID != f.TargetID {
+			continue
+		}
+		dup := ev
+		matches = append(matches, &dup)
+	}
+	// Newest first to match the postgres ORDER BY created_at DESC and
+	// what the admin UI will display.
+	sort.Slice(matches, func(i, j int) bool { return matches[i].CreatedAt.After(matches[j].CreatedAt) })
+	return paginate(matches, page), nil
 }
