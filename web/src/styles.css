@@ -363,7 +363,26 @@ main:focus { outline: none; }
 .price-rules-list li strong { color: var(--brand, #ff385c); }
 .price-rules-list li > :last-child { margin-left: auto; }
 
+/* Resolution Center: per-case detail page (S24). The classes are also used
+   read-only inside Admin.jsx — the moderator queue's evidence list shares
+   .evidence-list / .evidence-item with the two-party detail surface. */
+.dispute-detail { max-width: 760px; }
+.dispute-detail-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.dispute-detail-head h1 { margin: 0; flex: 1 1 auto; }
+.dispute-section { padding: 12px 0; border-top: 1px solid var(--border, #eee); }
+.dispute-section h2 { font-size: 1rem; margin: 0 0 8px; }
+.dispute-row { display: grid; grid-template-columns: 180px 1fr; gap: 12px; padding: 6px 0; }
+.dispute-label { color: var(--muted, #717171); font-size: .82rem; text-transform: uppercase; font-weight: 700; letter-spacing: .04em; }
+.evidence-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.evidence-item { background: var(--surface, #fafafa); border-radius: 8px; padding: 10px 12px; }
+.badge-dispute-open { background: #fff5e6; color: #b9750a; }
+.badge-dispute-under_review { background: #eaf2ff; color: #1d4ed8; }
+.badge-dispute-resolved { background: #e6f7ed; color: #1a7f47; }
+.badge-dispute-rejected { background: #fde8e8; color: #c0392b; }
+.badge-overdue { background: #fde2e2; color: #991b1b; }
+
 @media (max-width: 800px) {
   .detail-grid { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
+  .dispute-row { grid-template-columns: 1fr; gap: 2px; }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { useT } from '../i18n/I18nContext';
 
@@ -387,9 +388,18 @@ export default function MyTrips() {
                     <button className="btn btn-ghost" onClick={() => { setError(null); setDisputing(b.id); }}>{t('dispute.openCase')}</button>
                   )}
                   {disputes[b.id] && (
-                    <span className={`badge badge-dispute-${disputes[b.id].status}`}>
-                      {t(`dispute.status.${disputes[b.id].status}`)}
-                    </span>
+                    <>
+                      <Link to={`/disputes/${disputes[b.id].id}`}>
+                        <span className={`badge badge-dispute-${disputes[b.id].status}`}>
+                          {t(`dispute.status.${disputes[b.id].status}`)}
+                        </span>
+                      </Link>
+                      {disputes[b.id].overdue && (
+                        <span className="badge badge-overdue" style={{ marginLeft: '.35rem' }}>
+                          {t('dispute.detail.overdue')}
+                        </span>
+                      )}
+                    </>
                   )}
                   {disputing === b.id && (
                     <DisputeForm

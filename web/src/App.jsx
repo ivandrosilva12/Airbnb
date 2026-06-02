@@ -18,6 +18,7 @@ import Settings from './pages/Settings';
 import Admin from './pages/Admin';
 import SharedWishlist from './pages/SharedWishlist';
 import SplitPay from './pages/SplitPay';
+import DisputeDetail from './pages/DisputeDetail';
 
 function Protected({ children, requireHost, requireAdmin }) {
   const { ready, authenticated, isHost, isAdmin, login } = useAuth();
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="/host/properties/:id/bookings" element={<Protected requireHost><HostBookings /></Protected>} />
             <Route path="/host/properties/:id/photos" element={<Protected requireHost><HostPhotos /></Protected>} />
             <Route path="/splits/:id" element={<Protected><SplitPay /></Protected>} />
+            <Route path="/disputes/:id" element={<Protected><DisputeDetail /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}
