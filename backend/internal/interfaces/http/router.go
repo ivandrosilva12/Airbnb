@@ -151,6 +151,11 @@ func NewRouter(d Deps) *gin.Engine {
 	// stay. Anonymous-friendly so a UI can render the line items
 	// before the guest signs in.
 	api.GET("/properties/:id/tax-quote", h.Tax.Quote)
+	// Pricing quote (S59) — public dry-run of the full price breakdown
+	// (subtotal, fees, jurisdiction tax, total) for a stay. Mirrors what
+	// booking.Create would assemble without persisting anything, so the
+	// booking flow can preview before the guest commits.
+	api.GET("/properties/:id/pricing-quote", h.Booking.Quote)
 		// Publicly shared wishlist collection (anyone with the link).
 		api.GET("/shared/collections/:token", h.Favorite.GetShared)
 

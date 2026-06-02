@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
@@ -178,6 +179,46 @@ type previewCouponRequest struct {
 	CheckIn    string `json:"checkIn" binding:"required"`
 	CheckOut   string `json:"checkOut" binding:"required"`
 	Code       string `json:"code" binding:"required"`
+}
+
+// Quote returns the full price breakdown a Create call would assemble for the
+// same inputs, WITHOUT persisting anything (S59). Used by the booking-flow UI
+// to show subtotal/fees/jurisdiction-tax/total before the guest commits. The
+// caller need not be authenticated — pricing is public per-property data.
+//
+// Query params: checkIn, checkOut (YYYY-MM-DD); guests (int); couponCode (opt).
+func (h *BookingHandler) Quote(c *gin.Context) {
+	propertyID, ok := pathUUID(c, "id")
+	if !ok {
+		return
+	}
+	checkIn, err := time.Parse("2006-01-02", c.Query("checkIn"))
+	if err != nil {
+		response.FailMessage(c, http.StatusBadRequest, "checkIn must be YYYY-MM-DD")
+		return
+	}
+	checkOut, err := time.Parse("2006-01-02", c.Query("checkOut"))
+	if err != nil {
+		response.FailMessage(c, http.StatusBadRequest, "checkOut must be YYYY-MM-DD")
+		return
+	}
+	guests, _ := strconv.Atoi(c.Query("guests"))
+	if guests < 1 {
+		response.FailMessage(c, http.StatusBadRequest, "guests must be >= 1")
+		return
+	}
+	pricing, err := h.svc.Quote(c.Request.Context(), bookingapp.QuoteInput{
+		PropertyID: propertyID,
+		CheckIn:    checkIn,
+		CheckOut:   checkOut,
+		Guests:     guests,
+		CouponCode: c.Query("couponCode"),
+	})
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	response.OK(c, dto.FromPricing(pricing))
 }
 
 // PreviewCoupon returns the discount a promo code would yield for a stay, so the

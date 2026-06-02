@@ -632,6 +632,97 @@ func (s *Service) Modify(ctx context.Context, in ModifyInput) (*booking.Booking,
 	return b, nil
 }
 
+// QuoteInput carries the data required for a dry-run pricing preview (S59).
+// All fields except CouponCode and OverridePricePerNightCents are required.
+type QuoteInput struct {
+	PropertyID                 uuid.UUID
+	CheckIn                    time.Time
+	CheckOut                   time.Time
+	Guests                     int
+	CouponCode                 string // optional; invalid code yields ErrValidation
+	OverridePricePerNightCents int64  // optional; mirrors Create's special-offer flow
+}
+
+// Quote returns the price breakdown a Create call would assemble for the same
+// inputs WITHOUT touching the bookings table — no overlap/block check, no
+// house-rules gate, no KYC step-up, no persistence. The taxable base and tax
+// BC pass-through are identical to Create's, so the breakdown matches the
+// reservation that would actually be charged.
+//
+// Returns shared.ErrValidation when the input is malformed (dates, coupon,
+// stay rules). The booking aggregate it builds is discarded — we only need
+// its Pricing to ship back to the caller.
+func (s *Service) Quote(ctx context.Context, in QuoteInput) (booking.Pricing, error) {
+	prop, err := s.properties.FindByID(ctx, in.PropertyID)
+	if err != nil {
+		return booking.Pricing{}, err
+	}
+	if in.Guests < 1 {
+		return booking.Pricing{}, shared.NewValidationError("at least one guest is required")
+	}
+	if in.Guests > prop.MaxGuests {
+		return booking.Pricing{}, shared.NewValidationError("number of guests exceeds property capacity")
+	}
+	dates, err := booking.NewDateRange(in.CheckIn, in.CheckOut)
+	if err != nil {
+		return booking.Pricing{}, err
+	}
+	nights := dates.Nights()
+	if prop.MinNights > 0 && nights < prop.MinNights {
+		return booking.Pricing{}, shared.NewValidationError(fmt.Sprintf("this listing requires a stay of at least %d nights", prop.MinNights))
+	}
+	if prop.MaxNights > 0 && nights > prop.MaxNights {
+		return booking.Pricing{}, shared.NewValidationError(fmt.Sprintf("this listing allows a stay of at most %d nights", prop.MaxNights))
+	}
+
+	subtotal, err := s.nightlySubtotal(ctx, prop, dates, in.OverridePricePerNightCents)
+	if err != nil {
+		return booking.Pricing{}, err
+	}
+
+	couponCents := int64(0)
+	if code := coupon.NormalizeCode(in.CouponCode); code != "" {
+		cp, err := s.couponByCode(ctx, code)
+		if err != nil {
+			return booking.Pricing{}, err
+		}
+		couponCents, err = cp.DiscountFor(subtotal.AmountCents(), subtotal.Currency(), nights)
+		if err != nil {
+			return booking.Pricing{}, err
+		}
+	}
+
+	includedGuests := prop.GuestsIncluded
+	if includedGuests <= 0 {
+		includedGuests = prop.MaxGuests
+	}
+	extraGuests := in.Guests - includedGuests
+	if extraGuests < 0 {
+		extraGuests = 0
+	}
+	extraGuestFeeCents := int64(extraGuests) * prop.ExtraGuestFee.AmountCents() * int64(nights)
+
+	jurLines, jurCents := s.quoteJurisdictionTax(ctx, prop.ID, dates.CheckIn, nights, in.Guests,
+		subtotal.AmountCents()-couponCents+prop.CleaningFee.AmountCents()+extraGuestFeeCents)
+
+	// Build a throwaway booking just to reuse its pricing math — the GuestID
+	// is a synthetic zero UUID; the aggregate is never persisted or emitted.
+	b, err := booking.NewBookingFromSubtotal(prop.ID, uuid.Nil, dates, in.Guests, subtotal, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
+		WeeklyPct:            prop.PricingPolicy.WeeklyDiscountPct,
+		MonthlyPct:           prop.PricingPolicy.MonthlyDiscountPct,
+		TaxPct:               prop.PricingPolicy.TaxRatePct,
+		CouponCents:          couponCents,
+		ExtraGuestFeeCents:   extraGuestFeeCents,
+		SecurityDepositCents: prop.SecurityDeposit.AmountCents(),
+		JurisdictionTaxLines: jurLines,
+		JurisdictionTaxCents: jurCents,
+	})
+	if err != nil {
+		return booking.Pricing{}, err
+	}
+	return b.Pricing, nil
+}
+
 // couponByCode loads a coupon, mapping a missing code to a friendly validation
 // error rather than a bare not-found.
 func (s *Service) couponByCode(ctx context.Context, code string) (*coupon.Coupon, error) {

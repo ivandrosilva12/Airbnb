@@ -411,6 +411,47 @@ func FromBooking(b *booking.Booking) BookingView {
 	}
 }
 
+// PricingQuoteView is the dry-run pricing-preview response (S59). The shape
+// mirrors the per-stay subset of BookingView so the client can re-use the
+// same renderer it uses for an existing reservation. No booking is created.
+type PricingQuoteView struct {
+	Nights               int                  `json:"nights"`
+	Subtotal             MoneyView            `json:"subtotal"`
+	Discount             MoneyView            `json:"discount"`
+	CleaningFee          MoneyView            `json:"cleaningFee"`
+	ExtraGuestFee        MoneyView            `json:"extraGuestFee"`
+	ServiceFee           MoneyView            `json:"serviceFee"`
+	Tax                  MoneyView            `json:"tax"`
+	JurisdictionTaxLines []BookingTaxLineView `json:"jurisdictionTaxLines,omitempty"`
+	JurisdictionTax      MoneyView            `json:"jurisdictionTax"`
+	SecurityDeposit      MoneyView            `json:"securityDeposit"`
+	TotalPrice           MoneyView            `json:"totalPrice"`
+}
+
+// FromPricing maps a booking.Pricing value object onto its preview wire shape.
+func FromPricing(p booking.Pricing) PricingQuoteView {
+	var jurLines []BookingTaxLineView
+	if len(p.JurisdictionTaxLines) > 0 {
+		jurLines = make([]BookingTaxLineView, 0, len(p.JurisdictionTaxLines))
+		for _, l := range p.JurisdictionTaxLines {
+			jurLines = append(jurLines, BookingTaxLineView{Name: l.Name, AmountCents: l.AmountCents})
+		}
+	}
+	return PricingQuoteView{
+		Nights:               p.Nights,
+		Subtotal:             fromMoney(p.Subtotal),
+		Discount:             fromMoney(p.Discount),
+		CleaningFee:          fromMoney(p.CleaningFee),
+		ExtraGuestFee:        fromMoney(p.ExtraGuestFee),
+		ServiceFee:           fromMoney(p.ServiceFee),
+		Tax:                  fromMoney(p.Tax),
+		JurisdictionTaxLines: jurLines,
+		JurisdictionTax:      fromMoney(p.JurisdictionTax),
+		SecurityDeposit:      fromMoney(p.SecurityDeposit),
+		TotalPrice:           fromMoney(p.Total),
+	}
+}
+
 // BookedRangeView renders an occupied window in the availability response.
 type BookedRangeView struct {
 	CheckIn  string `json:"checkIn"`
