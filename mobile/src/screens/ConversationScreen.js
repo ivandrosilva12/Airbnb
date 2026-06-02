@@ -15,7 +15,7 @@ import { useApi } from '../api/useApi';
 import { useRealtime } from '../api/RealtimeContext';
 
 export default function ConversationScreen({ route, navigation }) {
-  const { id, title } = route.params;
+  const { id, title, isTeamMailbox } = route.params;
   const api = useApi();
   const { subscribe } = useRealtime();
   const [messages, setMessages] = useState([]);
@@ -168,7 +168,15 @@ export default function ConversationScreen({ route, navigation }) {
         }}
       />
       {error && <Text style={styles.error}>{error}</Text>}
-      {otherId && (
+      {isTeamMailbox && (
+        <Text style={styles.teamBanner}>
+          Replying on behalf of the host — the guest sees the host's name, not yours.
+        </Text>
+      )}
+      {/* In team-mailbox mode the cohost is a third party helping the host —
+          they should not be able to block the guest or the host they're
+          assisting, so we hide the block bar entirely. */}
+      {otherId && !isTeamMailbox && (
         <View style={styles.blockBar}>
           {isBlocked && <Text style={styles.blockNotice}>Blocked — messaging is disabled.</Text>}
           <Pressable onPress={toggleBlock}>
@@ -213,6 +221,7 @@ const styles = StyleSheet.create({
   attachLink: { marginTop: 6, textDecorationLine: 'underline' },
   empty: { textAlign: 'center', color: '#717171', marginTop: 24 },
   error: { color: '#c0392b', paddingHorizontal: 12 },
+  teamBanner: { backgroundColor: '#e6f0ff', color: '#1d4ed8', paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderColor: '#cfe0ff', fontWeight: '600', fontSize: 12 },
   blockBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, paddingHorizontal: 12, paddingVertical: 6, borderTopWidth: 1, borderColor: '#eee' },
   blockNotice: { color: '#c0392b', fontSize: 12, marginRight: 'auto' },
   blockLink: { color: '#c0392b', fontWeight: '600', fontSize: 13 },

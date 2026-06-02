@@ -16,17 +16,31 @@ export default function MessagesScreen({ navigation }) {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await api.listConversations();
-      const convos = res.items || [];
+      // Pull my own threads and the team-mailbox in parallel. The mailbox is
+      // empty when I'm not a co-host anywhere, so this is cheap (the request
+      // still goes out but returns {items:[]}).
+      const [own, mailbox] = await Promise.all([
+        api.listConversations(),
+        api.myCohostMailbox().catch(() => ({ items: [] })),
+      ]);
+      const ownItems = own.items || [];
+      const teamItems = (mailbox.items || []).map((c) => ({ ...c, isTeamMailbox: true }));
+      // The server already excludes threads where I'm a literal participant
+      // from the mailbox, so plain concat is safe.
+      const convos = [...ownItems, ...teamItems].sort((a, b) =>
+        new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0),
+      );
       setItems(convos);
-      // Enrich with property titles for friendlier rows.
+      // Enrich with property titles for friendlier rows. Same propertyId
+      // shared by own + team threads gets de-duped to a single fetch.
+      const uniquePropIds = Array.from(new Set(convos.map((c) => c.propertyId)));
       const entries = await Promise.all(
-        convos.map(async (c) => {
+        uniquePropIds.map(async (pid) => {
           try {
-            const p = await api.getProperty(c.propertyId);
-            return [c.propertyId, p.title];
+            const p = await api.getProperty(pid);
+            return [pid, p.title];
           } catch {
-            return [c.propertyId, 'Listing'];
+            return [pid, 'Listing'];
           }
         }),
       );
@@ -78,10 +92,17 @@ export default function MessagesScreen({ navigation }) {
         renderItem={({ item }) => (
           <Pressable
             style={styles.row}
-            onPress={() => navigation.navigate('Conversation', { id: item.id, title: titles[item.propertyId] || 'Conversation' })}
+            onPress={() => navigation.navigate('Conversation', {
+              id: item.id,
+              title: titles[item.propertyId] || 'Conversation',
+              isTeamMailbox: !!item.isTeamMailbox,
+            })}
           >
             <View style={{ flex: 1 }}>
-              <Text style={styles.title}>{titles[item.propertyId] || 'Conversation'}</Text>
+              <View style={styles.titleRow}>
+                <Text style={styles.title} numberOfLines={1}>{titles[item.propertyId] || 'Conversation'}</Text>
+                {item.isTeamMailbox && <Text style={styles.teamBadge}>team</Text>}
+              </View>
               <Text style={styles.meta}>Last activity {new Date(item.lastMessageAt).toLocaleDateString()}</Text>
             </View>
             {item.unreadCount > 0 && (
@@ -98,7 +119,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff', padding: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderColor: '#eee' },
-  title: { fontWeight: '600', fontSize: 16 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { fontWeight: '600', fontSize: 16, flexShrink: 1 },
+  teamBadge: { backgroundColor: '#e6f0ff', color: '#1d4ed8', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8, fontSize: 11, fontWeight: '700', overflow: 'hidden' },
   meta: { color: '#717171', marginTop: 2 },
   badge: { backgroundColor: '#ff385c', borderRadius: 999, minWidth: 22, paddingHorizontal: 6, paddingVertical: 2, alignItems: 'center' },
   badgeText: { color: '#fff', fontWeight: '700', fontSize: 12 },
