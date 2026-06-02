@@ -3,7 +3,7 @@ package notificationapp
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"github.com/airhost/backend/internal/observability/logctx"
 
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/notification"
@@ -49,7 +49,7 @@ func (s *Service) EventHandler() event.Handler {
 			if e1 := s.create(ctx, ev.GuestID, notification.TypeReviewRequested,
 				"How was your stay?",
 				fmt.Sprintf("Leave a review for %q.", ev.PropertyTitle), ev.BookingID, PushCatBookings); e1 != nil {
-				slog.Error("failed to create notification", "event", e.EventName(), "error", e1)
+				logctx.LoggerFrom(ctx).Error("failed to create notification", "event", e.EventName(), "error", e1)
 			}
 			err = s.create(ctx, ev.HostID, notification.TypeReviewRequested,
 				"Review your guest",
@@ -81,12 +81,12 @@ func (s *Service) EventHandler() event.Handler {
 			title := "Resolution Center decision"
 			body := fmt.Sprintf("A moderator %s the case on %q.", ev.Outcome, ev.PropertyTitle)
 			if e1 := s.create(ctx, ev.GuestID, notification.TypeDisputeResolved, title, body, ev.DisputeID, PushCatAccount); e1 != nil {
-				slog.Error("failed to create notification", "event", e.EventName(), "error", e1)
+				logctx.LoggerFrom(ctx).Error("failed to create notification", "event", e.EventName(), "error", e1)
 			}
 			err = s.create(ctx, ev.HostID, notification.TypeDisputeResolved, title, body, ev.DisputeID, PushCatAccount)
 		}
 		if err != nil {
-			slog.Error("failed to create notification", "event", e.EventName(), "error", err)
+			logctx.LoggerFrom(ctx).Error("failed to create notification", "event", e.EventName(), "error", err)
 		}
 	}
 }

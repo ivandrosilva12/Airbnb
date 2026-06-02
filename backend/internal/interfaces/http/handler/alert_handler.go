@@ -3,7 +3,6 @@ package handler
 import (
 	"crypto/subtle"
 	"errors"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/middleware"
 	"github.com/airhost/backend/internal/interfaces/http/response"
+	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/gin-gonic/gin"
 )
 
@@ -214,7 +214,7 @@ func failAlerting(c *gin.Context, err error) {
 	default:
 		// Most likely the upstream Alertmanager is unreachable. Log the detail
 		// server-side; return a generic 502 without leaking internals.
-		slog.Warn("alerting: upstream request failed", "error", err)
+		logctx.LoggerFrom(c.Request.Context()).Warn("alerting: upstream request failed", "error", err)
 		response.FailMessage(c, http.StatusBadGateway, "alert manager is unavailable")
 	}
 }

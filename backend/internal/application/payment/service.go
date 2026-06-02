@@ -6,7 +6,7 @@ package paymentapp
 import (
 	"context"
 	"errors"
-	"log/slog"
+	"github.com/airhost/backend/internal/observability/logctx"
 	"time"
 
 	"github.com/airhost/backend/internal/application/port"
@@ -87,7 +87,7 @@ func (s *Service) ReconcileGatewayEvent(ctx context.Context, evt port.GatewayEve
 	p, err := s.findByGatewayRef(ctx, evt.Provider, evt.Reference)
 	if err != nil {
 		if errors.Is(err, shared.ErrNotFound) {
-			slog.Warn("payment: webhook for unknown reference", "provider", evt.Provider, "ref", evt.Reference)
+			logctx.LoggerFrom(ctx).Warn("payment: webhook for unknown reference", "provider", evt.Provider, "ref", evt.Reference)
 			return false, nil
 		}
 		return false, err
@@ -195,7 +195,7 @@ func (s *Service) applyDamage(ctx context.Context, bookingID uuid.UUID, amountCe
 						// closest semantics. If the gateway doesn't support partial
 						// capture against a hold, treat it as best-effort.
 						if capErr := s.gateway.Capture(ctx, dep.GatewayRef); capErr != nil {
-							slog.Warn("deposit: gateway capture failed", "booking", bookingID, "error", capErr)
+							logctx.LoggerFrom(ctx).Warn("deposit: gateway capture failed", "booking", bookingID, "error", capErr)
 						}
 						captured += took
 						remaining -= took

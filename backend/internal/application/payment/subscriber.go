@@ -3,12 +3,12 @@ package paymentapp
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"math"
 
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/google/uuid"
 )
 
@@ -97,17 +97,17 @@ func (s *Service) placeDepositHold(ctx context.Context, ev event.BookingConfirme
 	if _, err := s.deposits.FindByBookingID(ctx, ev.BookingID); err == nil {
 		return // already placed
 	} else if !errors.Is(err, shared.ErrNotFound) {
-		slog.Error("deposit: lookup failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("deposit: lookup failed", "booking", ev.BookingID, "error", err)
 		return
 	}
 	b, err := s.bookings.FindByID(ctx, ev.BookingID)
 	if err != nil {
-		slog.Error("deposit: booking lookup failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("deposit: booking lookup failed", "booking", ev.BookingID, "error", err)
 		return
 	}
 	prop, err := s.properties.FindByID(ctx, b.PropertyID)
 	if err != nil {
-		slog.Error("deposit: property lookup failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("deposit: property lookup failed", "booking", ev.BookingID, "error", err)
 		return
 	}
 	if prop.SecurityDeposit.AmountCents() <= 0 {
@@ -115,7 +115,7 @@ func (s *Service) placeDepositHold(ctx context.Context, ev event.BookingConfirme
 	}
 	d, err := payment.NewDepositHold(b.ID, b.GuestID, prop.SecurityDeposit)
 	if err != nil {
-		slog.Error("deposit: invalid amount", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("deposit: invalid amount", "booking", ev.BookingID, "error", err)
 		return
 	}
 	ref, gErr := s.gateway.Authorize(ctx, prop.SecurityDeposit, "deposit:"+b.ID.String())
@@ -125,7 +125,7 @@ func (s *Service) placeDepositHold(ctx context.Context, ev event.BookingConfirme
 		d.Fail(err.Error())
 	}
 	if err := s.deposits.Create(ctx, d); err != nil {
-		slog.Error("deposit: persist failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("deposit: persist failed", "booking", ev.BookingID, "error", err)
 	}
 }
 
@@ -139,7 +139,7 @@ func (s *Service) releaseDepositHold(ctx context.Context, bookingID uuid.UUID) {
 	d, err := s.deposits.FindByBookingID(ctx, bookingID)
 	if err != nil {
 		if !errors.Is(err, shared.ErrNotFound) {
-			slog.Error("deposit: lookup failed on release", "booking", bookingID, "error", err)
+			logctx.LoggerFrom(ctx).Error("deposit: lookup failed on release", "booking", bookingID, "error", err)
 		}
 		return
 	}
@@ -147,16 +147,16 @@ func (s *Service) releaseDepositHold(ctx context.Context, bookingID uuid.UUID) {
 	case payment.DepositAuthorized, payment.DepositPartiallyCaptured:
 		if d.Remaining() > 0 {
 			if err := s.gateway.Refund(ctx, d.GatewayRef, d.Remaining()); err != nil {
-				slog.Error("deposit: gateway refund failed", "booking", bookingID, "error", err)
+				logctx.LoggerFrom(ctx).Error("deposit: gateway refund failed", "booking", bookingID, "error", err)
 				return
 			}
 		}
 		if err := d.Release(); err != nil {
-			slog.Error("deposit: release failed", "booking", bookingID, "error", err)
+			logctx.LoggerFrom(ctx).Error("deposit: release failed", "booking", bookingID, "error", err)
 			return
 		}
 		if err := s.deposits.Update(ctx, d); err != nil {
-			slog.Error("deposit: persist release failed", "booking", bookingID, "error", err)
+			logctx.LoggerFrom(ctx).Error("deposit: persist release failed", "booking", bookingID, "error", err)
 		}
 	}
 }
@@ -168,12 +168,12 @@ func (s *Service) authorize(ctx context.Context, ev event.BookingRequested) {
 	if _, err := s.repo.FindByBookingID(ctx, ev.BookingID); err == nil {
 		return
 	} else if !errors.Is(err, shared.ErrNotFound) {
-		slog.Error("payment: lookup failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payment: lookup failed", "booking", ev.BookingID, "error", err)
 		return
 	}
 	amount, err := shared.NewMoney(ev.TotalCents, ev.Currency)
 	if err != nil {
-		slog.Error("payment: invalid amount", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payment: invalid amount", "booking", ev.BookingID, "error", err)
 		return
 	}
 	p := payment.New(ev.BookingID, ev.GuestID, amount)
@@ -185,7 +185,7 @@ func (s *Service) authorize(ctx context.Context, ev event.BookingRequested) {
 		p.Fail(err.Error())
 	}
 	if err := s.repo.Create(ctx, p); err != nil {
-		slog.Error("payment: failed to persist authorization", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payment: failed to persist authorization", "booking", ev.BookingID, "error", err)
 	}
 }
 
@@ -202,7 +202,7 @@ func (s *Service) reauthorize(ctx context.Context, ev event.BookingModified) {
 	p, err := s.repo.FindByBookingID(ctx, ev.BookingID)
 	if err != nil {
 		if !errors.Is(err, shared.ErrNotFound) {
-			slog.Error("payment: lookup failed", "action", "reauthorize", "booking", ev.BookingID, "error", err)
+			logctx.LoggerFrom(ctx).Error("payment: lookup failed", "action", "reauthorize", "booking", ev.BookingID, "error", err)
 		}
 		return
 	}
@@ -211,14 +211,14 @@ func (s *Service) reauthorize(ctx context.Context, ev event.BookingModified) {
 	}
 	newAmount, err := shared.NewMoney(ev.TotalCents, ev.Currency)
 	if err != nil {
-		slog.Error("payment: invalid amount", "action", "reauthorize", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payment: invalid amount", "action", "reauthorize", "booking", ev.BookingID, "error", err)
 		return
 	}
 	if newAmount.AmountCents() == p.Amount.AmountCents() {
 		return // total unchanged (or a redelivery already applied it)
 	}
 	if err := s.gateway.Refund(ctx, p.GatewayRef, p.Amount.AmountCents()); err != nil {
-		slog.Error("payment: releasing old hold failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payment: releasing old hold failed", "booking", ev.BookingID, "error", err)
 		return
 	}
 	ref, err := s.gateway.Authorize(ctx, newAmount, ev.BookingID.String())
@@ -228,7 +228,7 @@ func (s *Service) reauthorize(ctx context.Context, ev event.BookingModified) {
 		p.Fail(err.Error())
 	}
 	if err := s.repo.Update(ctx, p); err != nil {
-		slog.Error("payment: persist re-authorization failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payment: persist re-authorization failed", "booking", ev.BookingID, "error", err)
 	}
 }
 
@@ -236,15 +236,15 @@ func (s *Service) transition(ctx context.Context, bookingID uuid.UUID, action st
 	p, err := s.repo.FindByBookingID(ctx, bookingID)
 	if err != nil {
 		if !errors.Is(err, shared.ErrNotFound) {
-			slog.Error("payment: lookup failed", "action", action, "booking", bookingID, "error", err)
+			logctx.LoggerFrom(ctx).Error("payment: lookup failed", "action", action, "booking", bookingID, "error", err)
 		}
 		return
 	}
 	if err := apply(p); err != nil {
-		slog.Error("payment: "+action+" failed", "booking", bookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payment: "+action+" failed", "booking", bookingID, "error", err)
 		return
 	}
 	if err := s.repo.Update(ctx, p); err != nil {
-		slog.Error("payment: persist failed", "action", action, "booking", bookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payment: persist failed", "action", action, "booking", bookingID, "error", err)
 	}
 }

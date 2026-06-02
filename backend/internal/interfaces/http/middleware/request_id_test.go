@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -20,7 +21,7 @@ func TestRequestID_GeneratesWhenAbsent(t *testing.T) {
 	var gotGin, gotCtx string
 	r.GET("/x", func(c *gin.Context) {
 		gotGin = RequestIDGin(c)
-		gotCtx = RequestIDFrom(c.Request.Context())
+		gotCtx = logctx.RequestIDFrom(c.Request.Context())
 		c.Status(http.StatusOK)
 	})
 
@@ -100,7 +101,7 @@ func TestLoggerFrom_TagsWithRequestID(t *testing.T) {
 	r.Use(RequestID())
 	var loggerHasID bool
 	r.GET("/x", func(c *gin.Context) {
-		l := LoggerFrom(c.Request.Context())
+		l := logctx.LoggerFrom(c.Request.Context())
 		// We can't easily inspect a *slog.Logger's attrs without a custom
 		// handler. Sanity: the logger should be different from the default
 		// (the With call returns a fresh logger), and the helper should

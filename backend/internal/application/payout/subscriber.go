@@ -2,7 +2,7 @@ package payoutapp
 
 import (
 	"context"
-	"log/slog"
+	"github.com/airhost/backend/internal/observability/logctx"
 	"math"
 
 	"github.com/airhost/backend/internal/application/event"
@@ -31,28 +31,28 @@ func (s *Service) recordEarning(ctx context.Context, ev event.BookingConfirmed) 
 	// outbox). Recording the earning twice would inflate the host's balance, so
 	// skip if one already exists for this booking.
 	if has, err := s.payouts.HasEarningForBooking(ctx, ev.BookingID); err != nil {
-		slog.Error("payout: earning lookup failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payout: earning lookup failed", "booking", ev.BookingID, "error", err)
 		return
 	} else if has {
 		return
 	}
 	prop, err := s.properties.FindByID(ctx, ev.PropertyID)
 	if err != nil {
-		slog.Error("payout: property lookup failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payout: property lookup failed", "booking", ev.BookingID, "error", err)
 		return
 	}
 	b, err := s.bookings.FindByID(ctx, ev.BookingID)
 	if err != nil {
-		slog.Error("payout: booking lookup failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payout: booking lookup failed", "booking", ev.BookingID, "error", err)
 		return
 	}
 	net, err := hostNet(b)
 	if err != nil {
-		slog.Error("payout: invalid net amount", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payout: invalid net amount", "booking", ev.BookingID, "error", err)
 		return
 	}
 	if err := s.payouts.Create(ctx, payout.NewEarning(prop.HostID, b.ID, prop.ID, net)); err != nil {
-		slog.Error("payout: persist earning failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payout: persist earning failed", "booking", ev.BookingID, "error", err)
 	}
 }
 
@@ -61,7 +61,7 @@ func (s *Service) recordRefund(ctx context.Context, ev event.BookingCancelled) {
 	// confirmation never credited the host.
 	has, err := s.payouts.HasEarningForBooking(ctx, ev.BookingID)
 	if err != nil {
-		slog.Error("payout: earning lookup failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payout: earning lookup failed", "booking", ev.BookingID, "error", err)
 		return
 	}
 	if !has {
@@ -79,12 +79,12 @@ func (s *Service) recordRefund(ctx context.Context, ev event.BookingCancelled) {
 	// relative to what that party paid/earned.
 	b, err := s.bookings.FindByID(ctx, ev.BookingID)
 	if err != nil {
-		slog.Error("payout: booking lookup failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payout: booking lookup failed", "booking", ev.BookingID, "error", err)
 		return
 	}
 	net, err := hostNet(b)
 	if err != nil {
-		slog.Error("payout: invalid net amount", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payout: invalid net amount", "booking", ev.BookingID, "error", err)
 		return
 	}
 	refundCents := int64(math.Round(float64(net.AmountCents()) * fraction))
@@ -93,7 +93,7 @@ func (s *Service) recordRefund(ctx context.Context, ev event.BookingCancelled) {
 	}
 	amount, err := shared.NewMoney(refundCents, net.Currency())
 	if err != nil {
-		slog.Error("payout: invalid refund amount", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payout: invalid refund amount", "booking", ev.BookingID, "error", err)
 		return
 	}
 	hostID := ev.HostID
@@ -103,7 +103,7 @@ func (s *Service) recordRefund(ctx context.Context, ev event.BookingCancelled) {
 		}
 	}
 	if err := s.payouts.Create(ctx, payout.NewRefund(hostID, ev.BookingID, ev.PropertyID, amount)); err != nil {
-		slog.Error("payout: persist refund failed", "booking", ev.BookingID, "error", err)
+		logctx.LoggerFrom(ctx).Error("payout: persist refund failed", "booking", ev.BookingID, "error", err)
 	}
 }
 

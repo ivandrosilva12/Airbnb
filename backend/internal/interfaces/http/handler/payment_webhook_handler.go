@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/response"
+	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/gin-gonic/gin"
 )
 
@@ -65,7 +65,7 @@ func (h *PaymentWebhookHandler) Handle(c *gin.Context) {
 	if err != nil {
 		// Signature/parse failures are client errors; do not leak detail.
 		h.observe(provider, "rejected")
-		slog.Warn("payment webhook: verification failed", "provider", provider, "error", err)
+		logctx.LoggerFrom(c.Request.Context()).Warn("payment webhook: verification failed", "provider", provider, "error", err)
 		response.FailMessage(c, http.StatusBadRequest, "invalid webhook signature or payload")
 		return
 	}
@@ -108,7 +108,7 @@ func (h *PaymentWebhookHandler) Handle(c *gin.Context) {
 	// window where a concurrent duplicate also reconciles is harmless.
 	if h.dedupe != nil {
 		if err := h.dedupe.Record(c.Request.Context(), provider, eventID); err != nil {
-			slog.Warn("payment webhook: failed to record dedupe key", "provider", provider, "error", err)
+			logctx.LoggerFrom(c.Request.Context()).Warn("payment webhook: failed to record dedupe key", "provider", provider, "error", err)
 		}
 	}
 	if changed {

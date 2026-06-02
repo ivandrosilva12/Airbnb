@@ -4,13 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
-	"log/slog"
 	"net/http"
 
 	payoutapp "github.com/airhost/backend/internal/application/payout"
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/response"
+	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/gin-gonic/gin"
 )
 
@@ -61,7 +61,7 @@ func (h *ConnectWebhookHandler) Handle(c *gin.Context) {
 	evt, actionable, err := verifier.Verify(c.Request.Header, body)
 	if err != nil {
 		h.observe(provider, "rejected")
-		slog.Warn("connect webhook: verification failed", "provider", provider, "error", err)
+		logctx.LoggerFrom(c.Request.Context()).Warn("connect webhook: verification failed", "provider", provider, "error", err)
 		response.FailMessage(c, http.StatusBadRequest, "invalid webhook signature or payload")
 		return
 	}
@@ -98,7 +98,7 @@ func (h *ConnectWebhookHandler) Handle(c *gin.Context) {
 	}
 	if h.dedupe != nil {
 		if err := h.dedupe.Record(c.Request.Context(), provider, eventID); err != nil {
-			slog.Warn("connect webhook: failed to record dedupe key", "provider", provider, "error", err)
+			logctx.LoggerFrom(c.Request.Context()).Warn("connect webhook: failed to record dedupe key", "provider", provider, "error", err)
 		}
 	}
 	if changed {

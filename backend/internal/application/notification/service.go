@@ -4,7 +4,7 @@ package notificationapp
 
 import (
 	"context"
-	"log/slog"
+	"github.com/airhost/backend/internal/observability/logctx"
 
 	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -102,7 +102,7 @@ func (s *Service) create(ctx context.Context, userID uuid.UUID, t notification.T
 			data["relatedId"] = relatedID.String()
 		}
 		if err := s.push.Push(ctx, userID, string(cat), title, body, data); err != nil {
-			slog.Warn("notification: push delivery failed", "user", userID, "type", t, "error", err)
+			logctx.LoggerFrom(ctx).Warn("notification: push delivery failed", "user", userID, "type", t, "error", err)
 		}
 	}
 	return nil
