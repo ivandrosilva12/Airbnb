@@ -80,6 +80,7 @@ type harness struct {
 	paymentGateway  *paymentgw.FakeGateway
 	propertyRepo    *memory.PropertyRepository
 	bookingRepo     *memory.BookingRepository
+	disputeRepo     *memory.DisputeRepository
 	mailer          *email.RecordingMailer
 	silencer        *memSilencer
 	pusher          *recordingPushSender
@@ -256,7 +257,7 @@ func newHarness(t *testing.T) *harness {
 		t: t, router: router, userRepo: userRepo, paymentRepo: paymentRepo,
 		depositRepo:    depositRepo,
 		paymentGateway: paymentGateway,
-		propertyRepo:   propertyRepo, bookingRepo: bookingRepo, mailer: mailer,
+		propertyRepo:   propertyRepo, bookingRepo: bookingRepo, disputeRepo: disputeRepo, mailer: mailer,
 		silencer: silencer, pusher: pusher, notificationSvc: notificationSvc,
 	}
 }

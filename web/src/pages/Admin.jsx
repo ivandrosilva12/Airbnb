@@ -97,6 +97,11 @@ function DisputeQueue() {
               <div className="admin-item-head">
                 <strong>{t(`dispute.kind.${d.kind}`)}</strong>
                 <span className={`badge badge-dispute-${d.status}`}>{t(`dispute.status.${d.status}`)}</span>
+                {d.overdue && (
+                  <span className="badge badge-overdue" title={d.dueAt ? new Date(d.dueAt).toLocaleString() : ''}>
+                    {t('admin.dispute.overdue')}
+                  </span>
+                )}
                 {d.requestedAmountCents > 0 && (
                   <span className="muted">
                     {(d.requestedAmountCents / 100).toFixed(2)} {d.currency}

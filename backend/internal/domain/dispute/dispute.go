@@ -52,6 +52,13 @@ func (s Status) IsTerminal() bool {
 	return s == StatusResolved || s == StatusRejected
 }
 
+// SLAWindow is the deadline platform moderators have to decide an open
+// dispute. A dispute that sits in open/under_review past OpenedAt + SLAWindow
+// is "overdue" and the admin queue surfaces it first. The window is a
+// rolling 7 days; this is a platform-policy constant rather than a tunable
+// so the UX (badge, sort) stays predictable.
+const SLAWindow = 7 * 24 * time.Hour
+
 // Evidence is a single piece of supporting material attached to a dispute.
 // URL is optional (uploads happen out-of-band via the storage port; we keep
 // only the public URL); Note carries free text from the contributor.
@@ -230,3 +237,22 @@ func (d *Dispute) decide(adminID uuid.UUID, resolution string, target Status) er
 }
 
 func (d *Dispute) touch() { d.UpdatedAt = time.Now().UTC() }
+
+// DueAt is the SLA deadline (OpenedAt + SLAWindow). A terminal dispute still
+// returns a deadline so the historical view can show "decided within SLA"
+// or "decided after SLA" — the IsOverdueAt check is what gates the badge in
+// the live queue.
+func (d *Dispute) DueAt() time.Time {
+	return d.OpenedAt.Add(SLAWindow)
+}
+
+// IsOverdueAt reports whether the dispute is still pending (open or
+// under_review) AND `now` has passed the SLA deadline. A terminal dispute
+// is never "overdue" — once decided the moderator's clock stops, even if
+// the decision came late.
+func (d *Dispute) IsOverdueAt(now time.Time) bool {
+	if d.Status.IsTerminal() {
+		return false
+	}
+	return now.After(d.DueAt())
+}

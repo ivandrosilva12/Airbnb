@@ -2,10 +2,43 @@ package dispute_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/airhost/backend/internal/domain/dispute"
 	"github.com/google/uuid"
 )
+
+func TestDueAtAndIsOverdue(t *testing.T) {
+	d, err := dispute.New(uuid.New(), uuid.New(), dispute.KindRefund, "x", 100, "EUR")
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	want := d.OpenedAt.Add(dispute.SLAWindow)
+	if !d.DueAt().Equal(want) {
+		t.Fatalf("DueAt = %v, want %v", d.DueAt(), want)
+	}
+	// Fresh dispute is not overdue.
+	if d.IsOverdueAt(d.OpenedAt.Add(1 * time.Minute)) {
+		t.Fatalf("fresh dispute reported overdue")
+	}
+	// Right at the deadline is NOT yet overdue (strictly-after semantics).
+	if d.IsOverdueAt(d.DueAt()) {
+		t.Fatalf("at-the-deadline reported overdue, want strictly-after")
+	}
+	// One second past is overdue.
+	if !d.IsOverdueAt(d.DueAt().Add(1 * time.Second)) {
+		t.Fatalf("past-deadline not reported overdue")
+	}
+	// Terminal disputes are never overdue — the moderator's clock stopped
+	// at the decision (even a late decision doesn't keep ticking).
+	admin := uuid.New()
+	if err := d.AdminResolve(admin, "decided"); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if d.IsOverdueAt(d.DueAt().Add(30 * 24 * time.Hour)) {
+		t.Fatalf("terminal dispute reported overdue")
+	}
+}
 
 func TestNew_HappyPath(t *testing.T) {
 	booking := uuid.New()

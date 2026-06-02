@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"sort"
+
 	disputeapp "github.com/airhost/backend/internal/application/dispute"
 	domaindispute "github.com/airhost/backend/internal/domain/dispute"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
@@ -144,7 +146,11 @@ func (h *DisputeHandler) HostRespond(c *gin.Context) {
 	response.OK(c, dto.FromDispute(d))
 }
 
-// AdminListOpen returns the moderation queue.
+// AdminListOpen returns the moderation queue, sorted so overdue cases
+// (past the SLA deadline) bubble to the top in oldest-overdue-first order.
+// The repo already returns the open set; the SLA re-sort is a transport
+// concern (kept here to avoid plumbing an SLA-aware ListOpen variant
+// through the application layer for the same data).
 func (h *DisputeHandler) AdminListOpen(c *gin.Context) {
 	if _, ok := requireUser(c); !ok {
 		return
@@ -158,6 +164,14 @@ func (h *DisputeHandler) AdminListOpen(c *gin.Context) {
 	for _, d := range res.Items {
 		out = append(out, dto.FromDispute(d))
 	}
+	// Stable sort: overdue first; within each bucket, oldest OpenedAt first
+	// (so the case that's been waiting longest is at the top).
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Overdue != out[j].Overdue {
+			return out[i].Overdue
+		}
+		return out[i].OpenedAt.Before(out[j].OpenedAt)
+	})
 	response.OK(c, gin.H{"items": out, "total": res.Total})
 }
 

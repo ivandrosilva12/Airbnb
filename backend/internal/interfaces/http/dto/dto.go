@@ -90,7 +90,10 @@ type DisputeEvidenceView struct {
 	AddedAt time.Time `json:"addedAt"`
 }
 
-// DisputeView renders a Resolution Center case.
+// DisputeView renders a Resolution Center case. DueAt is the SLA deadline
+// (OpenedAt + 7 days); Overdue is true when the case is still pending and
+// `now` has passed DueAt — the admin queue surfaces those first so
+// moderators triage them ahead of fresh cases.
 type DisputeView struct {
 	ID                   uuid.UUID             `json:"id"`
 	BookingID            uuid.UUID             `json:"bookingId"`
@@ -104,12 +107,16 @@ type DisputeView struct {
 	Resolution           string                `json:"resolution,omitempty"`
 	AdminID              uuid.UUID             `json:"adminId,omitempty"`
 	OpenedAt             time.Time             `json:"openedAt"`
+	DueAt                time.Time             `json:"dueAt"`
+	Overdue              bool                  `json:"overdue"`
 	DecidedAt            *time.Time            `json:"decidedAt,omitempty"`
 	UpdatedAt            time.Time             `json:"updatedAt"`
 	Evidence             []DisputeEvidenceView `json:"evidence"`
 }
 
-// FromDispute maps a dispute aggregate to its view.
+// FromDispute maps a dispute aggregate to its view, stamping the SLA fields
+// from the current wall clock. Computing Overdue at presentation time keeps
+// the queue accurate without a scheduled job mutating the aggregate.
 func FromDispute(d *dispute.Dispute) DisputeView {
 	evs := make([]DisputeEvidenceView, 0, len(d.Evidence))
 	for _, e := range d.Evidence {
@@ -117,6 +124,7 @@ func FromDispute(d *dispute.Dispute) DisputeView {
 			ID: e.ID, URL: e.URL, Note: e.Note, AddedBy: e.AddedBy, AddedAt: e.AddedAt,
 		})
 	}
+	now := time.Now().UTC()
 	return DisputeView{
 		ID:                   d.ID,
 		BookingID:            d.BookingID,
@@ -130,6 +138,8 @@ func FromDispute(d *dispute.Dispute) DisputeView {
 		Resolution:           d.Resolution,
 		AdminID:              d.AdminID,
 		OpenedAt:             d.OpenedAt,
+		DueAt:                d.DueAt(),
+		Overdue:              d.IsOverdueAt(now),
 		DecidedAt:            d.DecidedAt,
 		UpdatedAt:            d.UpdatedAt,
 		Evidence:             evs,
