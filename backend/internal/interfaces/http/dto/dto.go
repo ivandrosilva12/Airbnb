@@ -347,48 +347,67 @@ func FromProperty(p *property.Property) PropertyView {
 	}
 }
 
+// BookingTaxLineView is one row in the jurisdiction-tax breakdown
+// (S49). Minimal-by-design — name + cents — the rich Rule.ID / Kind
+// stay in the tax BC, the booking only ships what the UI renders.
+type BookingTaxLineView struct {
+	Name        string `json:"name"`
+	AmountCents int64  `json:"amountCents"`
+}
+
 // BookingView is the public representation of a reservation, including the
 // full price breakdown.
 type BookingView struct {
-	ID              uuid.UUID `json:"id"`
-	PropertyID      uuid.UUID `json:"propertyId"`
-	GuestID         uuid.UUID `json:"guestId"`
-	CheckIn         string    `json:"checkIn"`
-	CheckOut        string    `json:"checkOut"`
-	Nights          int       `json:"nights"`
-	Guests          int       `json:"guests"`
-	Subtotal        MoneyView `json:"subtotal"`
-	Discount        MoneyView `json:"discount"`
-	CleaningFee     MoneyView `json:"cleaningFee"`
-	ExtraGuestFee   MoneyView `json:"extraGuestFee"`
-	ServiceFee      MoneyView `json:"serviceFee"`
-	Tax             MoneyView `json:"tax"`
-	SecurityDeposit MoneyView `json:"securityDeposit"`
-	TotalPrice      MoneyView `json:"totalPrice"`
-	Status          string    `json:"status"`
-	CreatedAt       time.Time `json:"createdAt"`
+	ID                   uuid.UUID            `json:"id"`
+	PropertyID           uuid.UUID            `json:"propertyId"`
+	GuestID              uuid.UUID            `json:"guestId"`
+	CheckIn              string               `json:"checkIn"`
+	CheckOut             string               `json:"checkOut"`
+	Nights               int                  `json:"nights"`
+	Guests               int                  `json:"guests"`
+	Subtotal             MoneyView            `json:"subtotal"`
+	Discount             MoneyView            `json:"discount"`
+	CleaningFee          MoneyView            `json:"cleaningFee"`
+	ExtraGuestFee        MoneyView            `json:"extraGuestFee"`
+	ServiceFee           MoneyView            `json:"serviceFee"`
+	Tax                  MoneyView            `json:"tax"`
+	JurisdictionTaxLines []BookingTaxLineView `json:"jurisdictionTaxLines,omitempty"`
+	JurisdictionTax      MoneyView            `json:"jurisdictionTax"`
+	SecurityDeposit      MoneyView            `json:"securityDeposit"`
+	TotalPrice           MoneyView            `json:"totalPrice"`
+	Status               string               `json:"status"`
+	CreatedAt            time.Time            `json:"createdAt"`
 }
 
 // FromBooking maps a booking aggregate to its view.
 func FromBooking(b *booking.Booking) BookingView {
+	var jurLines []BookingTaxLineView
+	if len(b.Pricing.JurisdictionTaxLines) > 0 {
+		jurLines = make([]BookingTaxLineView, 0, len(b.Pricing.JurisdictionTaxLines))
+		for _, l := range b.Pricing.JurisdictionTaxLines {
+			jurLines = append(jurLines, BookingTaxLineView{Name: l.Name, AmountCents: l.AmountCents})
+		}
+	}
 	return BookingView{
-		ID:              b.ID,
-		PropertyID:      b.PropertyID,
-		GuestID:         b.GuestID,
-		CheckIn:         b.Dates.CheckIn.Format("2006-01-02"),
-		CheckOut:        b.Dates.CheckOut.Format("2006-01-02"),
-		Nights:          b.Dates.Nights(),
-		Guests:          b.Guests,
-		Subtotal:        fromMoney(b.Pricing.Subtotal),
-		Discount:        fromMoney(b.Pricing.Discount),
-		CleaningFee:     fromMoney(b.Pricing.CleaningFee),
-		ExtraGuestFee:   fromMoney(b.Pricing.ExtraGuestFee),
-		ServiceFee:      fromMoney(b.Pricing.ServiceFee),
-		Tax:             fromMoney(b.Pricing.Tax),
-		SecurityDeposit: fromMoney(b.Pricing.SecurityDeposit),
-		TotalPrice:      fromMoney(b.Pricing.Total),
-		Status:          string(b.Status),
-		CreatedAt:       b.CreatedAt,
+		ID:                   b.ID,
+		PropertyID:           b.PropertyID,
+		GuestID:              b.GuestID,
+		CheckIn:              b.Dates.CheckIn.Format("2006-01-02"),
+		CheckOut:             b.Dates.CheckOut.Format("2006-01-02"),
+		Nights:               b.Dates.Nights(),
+		Guests:               b.Guests,
+		Subtotal:             fromMoney(b.Pricing.Subtotal),
+		Discount:             fromMoney(b.Pricing.Discount),
+		CleaningFee:          fromMoney(b.Pricing.CleaningFee),
+		ExtraGuestFee:        fromMoney(b.Pricing.ExtraGuestFee),
+		ServiceFee:           fromMoney(b.Pricing.ServiceFee),
+		Tax:                  fromMoney(b.Pricing.Tax),
+		JurisdictionTaxLines: jurLines,
+		JurisdictionTax:      fromMoney(b.Pricing.JurisdictionTax),
+		SecurityDeposit:      fromMoney(b.Pricing.SecurityDeposit),
+		TotalPrice:           fromMoney(b.Pricing.Total),
+		Status:               string(b.Status),
+		CreatedAt:            b.CreatedAt,
 	}
 }
 

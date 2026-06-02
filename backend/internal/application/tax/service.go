@@ -108,3 +108,53 @@ func (s *Service) QuoteForProperty(ctx context.Context, in QuoteInput) (tax.Quot
 		Currency:      prop.PricePerNight.Currency(),
 	}, rules)
 }
+
+// BookingQuoteInput mirrors bookingapp.TaxQuoteInput field-by-field
+// so the adapter in main.go can translate without importing bookingapp
+// (which would risk a circular dep through subscribers).
+type BookingQuoteInput struct {
+	PropertyID    uuid.UUID
+	CheckIn       time.Time
+	Nights        int
+	Guests        int
+	SubtotalCents int64
+}
+
+// BookingTaxLine is the slim shape bookingapp's TaxQuoter port returns.
+// Keeping it here (rather than reusing tax.Line) means bookingapp
+// never imports tax.* and stays free of the BC.
+type BookingTaxLine struct {
+	Name        string
+	AmountCents int64
+}
+
+// BookingQuoteResult is the per-stay payload bookingapp consumes.
+type BookingQuoteResult struct {
+	Lines      []BookingTaxLine
+	TotalCents int64
+	Currency   string
+}
+
+// QuoteForBooking is the booking-friendly projection of
+// QuoteForProperty: it runs the same calculator and squashes the
+// per-rule Lines into the slim BookingTaxLine shape. The booking
+// service's TaxQuoter port wraps this method via a one-line adapter
+// in the composition root (cmd/api/main.go + the e2e harness).
+func (s *Service) QuoteForBooking(ctx context.Context, in BookingQuoteInput) (BookingQuoteResult, error) {
+	q, err := s.QuoteForProperty(ctx, QuoteInput{
+		PropertyID:    in.PropertyID,
+		CheckIn:       in.CheckIn,
+		Nights:        in.Nights,
+		Guests:        in.Guests,
+		SubtotalCents: in.SubtotalCents,
+	})
+	if err != nil {
+		return BookingQuoteResult{}, err
+	}
+	out := BookingQuoteResult{TotalCents: q.TotalCents, Currency: q.Currency}
+	out.Lines = make([]BookingTaxLine, 0, len(q.Lines))
+	for _, l := range q.Lines {
+		out.Lines = append(out.Lines, BookingTaxLine{Name: l.Name, AmountCents: l.AmountCents})
+	}
+	return out, nil
+}

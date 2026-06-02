@@ -12,6 +12,17 @@ const (
 	monthlyDiscountMinNights = 28
 )
 
+// TaxLine is one itemised tax row on a booking's price breakdown
+// (S49). The domain keeps the shape minimal — just a human-readable
+// label and the amount in cents — so booking stays free of any
+// dependency on the tax BC's richer Rule/Line types. The application
+// layer translates from tax.Line → booking.TaxLine before passing
+// into NewBookingFromSubtotal.
+type TaxLine struct {
+	Name        string
+	AmountCents int64
+}
+
 // Pricing is a value object describing the full cost breakdown of a stay:
 // the nightly subtotal, any discount, the host's cleaning fee, the platform
 // service fee, occupancy tax and the resulting total. Computing this in the
@@ -23,15 +34,27 @@ type Pricing struct {
 	CleaningFee     shared.Money
 	ExtraGuestFee   shared.Money // per-extra-guest fee for the whole stay
 	ServiceFee      shared.Money // round((subtotal - discount + cleaning + extraGuest) * serviceFeeRate)
-	Tax             shared.Money // round((subtotal - discount + cleaning + extraGuest) * taxRate)
-	SecurityDeposit shared.Money // refundable hold added to the total (no fee/tax)
-	Total           shared.Money
+	Tax             shared.Money // round((subtotal - discount + cleaning + extraGuest) * taxRate) — legacy listing rate (PricingPolicy.TaxRatePct)
+	// JurisdictionTaxLines is the per-rule breakdown from the tax BC
+	// (S49). Empty when the listing has no matching jurisdiction
+	// rules. Distinct from the legacy Tax field so a future migration
+	// can phase the legacy rate out without churning the wire shape.
+	JurisdictionTaxLines []TaxLine
+	JurisdictionTax      shared.Money // sum of JurisdictionTaxLines
+	SecurityDeposit      shared.Money // refundable hold added to the total (no fee/tax)
+	Total                shared.Money
 }
 
 // Discounts carries the pricing modifiers a listing applies: length-of-stay
 // discount and tax fractions (in [0,1]), an absolute promo-code discount, the
 // per-stay extra-guest fee, and a refundable security deposit — all absolute
 // amounts in the nightly price's currency.
+//
+// JurisdictionTaxLines + JurisdictionTaxCents are the booking-service's
+// pre-computed tax BC result (S49). The domain doesn't recompute them
+// — it just adds them into the breakdown and the total. The two are
+// separate so an empty result (no rules matched) doesn't allocate a
+// zero-cents Money on the hot path.
 type Discounts struct {
 	WeeklyPct            float64
 	MonthlyPct           float64
@@ -39,6 +62,8 @@ type Discounts struct {
 	CouponCents          int64
 	ExtraGuestFeeCents   int64
 	SecurityDepositCents int64
+	JurisdictionTaxLines []TaxLine
+	JurisdictionTaxCents int64
 }
 
 // discountPctForNights picks the best qualifying length-of-stay discount.
@@ -126,21 +151,37 @@ func ComputePricingFromSubtotal(subtotal, cleaningFee shared.Money, nights int, 
 		return Pricing{}, err
 	}
 
+	// Jurisdiction tax (S49) — the per-rule lines the booking service
+	// pre-computed from the tax BC. We trust the caller's currency
+	// match (the tax BC's calculator skips mismatched-currency rules),
+	// so the line amounts are already in `currency`.
+	jurTaxCents := discounts.JurisdictionTaxCents
+	if jurTaxCents < 0 {
+		jurTaxCents = 0
+	}
+	jurTax, err := shared.NewMoney(jurTaxCents, currency)
+	if err != nil {
+		return Pricing{}, err
+	}
+	jurLines := append([]TaxLine(nil), discounts.JurisdictionTaxLines...) // defensive copy so the booking is independent of the caller's slice
+
 	// The refundable deposit is collected on top (no platform fee or tax on it).
-	total, err := shared.NewMoney(baseCents+serviceCents+taxCents+depositCents, currency)
+	total, err := shared.NewMoney(baseCents+serviceCents+taxCents+jurTaxCents+depositCents, currency)
 	if err != nil {
 		return Pricing{}, err
 	}
 
 	return Pricing{
-		Nights:          nights,
-		Subtotal:        subtotal,
-		Discount:        discount,
-		CleaningFee:     cleaningFee,
-		ExtraGuestFee:   extraGuestFee,
-		ServiceFee:      serviceFee,
-		Tax:             tax,
-		SecurityDeposit: deposit,
-		Total:           total,
+		Nights:               nights,
+		Subtotal:             subtotal,
+		Discount:             discount,
+		CleaningFee:          cleaningFee,
+		ExtraGuestFee:        extraGuestFee,
+		ServiceFee:           serviceFee,
+		Tax:                  tax,
+		JurisdictionTaxLines: jurLines,
+		JurisdictionTax:      jurTax,
+		SecurityDeposit:      deposit,
+		Total:                total,
 	}, nil
 }

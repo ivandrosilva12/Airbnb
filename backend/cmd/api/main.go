@@ -49,6 +49,7 @@ import (
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
+	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	domainuser "github.com/airhost/backend/internal/domain/user"
 	infraalerting "github.com/airhost/backend/internal/infrastructure/alerting"
@@ -198,6 +199,9 @@ func run() error {
 	auditSvc := auditapp.NewService(auditRepo)
 	houseRulesSvc := houserulesapp.NewService(houseRulesRepo, propertyRepo)
 	taxSvc := taxapp.NewService(taxRepo, propertyRepo)
+	// S49 — plug the tax BC into the booking pricing flow so every
+	// reservation lands with itemised jurisdiction lines + total.
+	bookingSvc.WithTaxQuoter(taxQuoterAdapter{svc: taxSvc})
 	// Plug the verifier into the booking service so Create enforces the
 	// guest acknowledged the listing's current rules version (S47). The
 	// BookingHandler below records the per-booking acceptance row right
@@ -395,4 +399,29 @@ func (r userEmailResolver) EmailByID(ctx context.Context, id uuid.UUID) (string,
 		return "", err
 	}
 	return u.Email, nil
+}
+
+// taxQuoterAdapter bridges bookingapp.TaxQuoter onto taxapp.Service so
+// the booking package stays free of any tax import (S49). Mirrors the
+// testTaxQuoter wired in the e2e harness.
+type taxQuoterAdapter struct {
+	svc *taxapp.Service
+}
+
+func (a taxQuoterAdapter) QuoteForBooking(ctx context.Context, in bookingapp.TaxQuoteInput) (bookingapp.TaxQuoteResult, error) {
+	q, err := a.svc.QuoteForBooking(ctx, taxapp.BookingQuoteInput{
+		PropertyID:    in.PropertyID,
+		CheckIn:       in.CheckIn,
+		Nights:        in.Nights,
+		Guests:        in.Guests,
+		SubtotalCents: in.SubtotalCents,
+	})
+	if err != nil {
+		return bookingapp.TaxQuoteResult{}, err
+	}
+	lines := make([]booking.TaxLine, 0, len(q.Lines))
+	for _, l := range q.Lines {
+		lines = append(lines, booking.TaxLine{Name: l.Name, AmountCents: l.AmountCents})
+	}
+	return bookingapp.TaxQuoteResult{Lines: lines, TotalCents: q.TotalCents, Currency: q.Currency}, nil
 }

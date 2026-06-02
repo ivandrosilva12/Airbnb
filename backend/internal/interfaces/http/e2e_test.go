@@ -45,6 +45,7 @@ import (
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
+	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/pushtoken"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	domainuser "github.com/airhost/backend/internal/domain/user"
@@ -186,6 +187,9 @@ func newHarness(t *testing.T) *harness {
 	houseRulesRepo := memory.NewHouseRulesRepository()
 	houseRulesSvc := houserulesapp.NewService(houseRulesRepo, propertyRepo)
 	taxSvc := taxapp.NewService(memory.NewTaxRepository(), propertyRepo)
+	// Plug the tax BC into the booking pricing flow (S49) so every
+	// Create lands with itemised jurisdiction lines + total.
+	bookingSvc.WithTaxQuoter(testTaxQuoter{svc: taxSvc})
 	// Plug the verifier into the booking service so the gate fires when a
 	// listing has rules; the BookingHandler below records the per-booking
 	// acceptance row right after Create succeeds (S47).
@@ -825,6 +829,33 @@ func (a testSplitterAdapter) CreateInTx(ctx context.Context, tx port.Tx, in book
 		Shares:         shares,
 	})
 	return err
+}
+
+// testTaxQuoter bridges bookingapp.TaxQuoter onto taxapp.Service in the
+// test harness (mirrors taxQuoterAdapter in cmd/api/main.go). The
+// shape conversion is mechanical — booking-local TaxLine vs
+// taxapp.BookingTaxLine — but kept here so bookingapp never imports
+// taxapp directly.
+type testTaxQuoter struct {
+	svc *taxapp.Service
+}
+
+func (a testTaxQuoter) QuoteForBooking(ctx context.Context, in bookingapp.TaxQuoteInput) (bookingapp.TaxQuoteResult, error) {
+	q, err := a.svc.QuoteForBooking(ctx, taxapp.BookingQuoteInput{
+		PropertyID:    in.PropertyID,
+		CheckIn:       in.CheckIn,
+		Nights:        in.Nights,
+		Guests:        in.Guests,
+		SubtotalCents: in.SubtotalCents,
+	})
+	if err != nil {
+		return bookingapp.TaxQuoteResult{}, err
+	}
+	lines := make([]booking.TaxLine, 0, len(q.Lines))
+	for _, l := range q.Lines {
+		lines = append(lines, booking.TaxLine{Name: l.Name, AmountCents: l.AmountCents})
+	}
+	return bookingapp.TaxQuoteResult{Lines: lines, TotalCents: q.TotalCents, Currency: q.Currency}, nil
 }
 
 // testUserEmailResolver satisfies bookingapp.OrganizerResolver via the

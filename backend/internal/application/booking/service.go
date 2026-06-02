@@ -35,6 +35,36 @@ type HouseRulesVerifier interface {
 	RequiresAcceptanceFor(ctx context.Context, propertyID uuid.UUID) (int, error)
 }
 
+// TaxQuoteInput is what the booking service sends to a TaxQuoter to
+// resolve the per-jurisdiction tax lines a stay is subject to (S49).
+// The shape mirrors what the tax BC's calculator needs without
+// pulling its types into bookingapp.
+type TaxQuoteInput struct {
+	PropertyID    uuid.UUID
+	CheckIn       time.Time
+	Nights        int
+	Guests        int
+	SubtotalCents int64 // taxable base (subtotal net of discount + cleaning + extra-guest)
+}
+
+// TaxQuoteResult is the slim projection bookingapp consumes —
+// labelled lines + their sum. Currency is informational; the booking
+// service trusts the caller's wiring to match it to the listing.
+type TaxQuoteResult struct {
+	Lines      []booking.TaxLine
+	TotalCents int64
+	Currency   string
+}
+
+// TaxQuoter is the port to the tax BC (S49). Nil means "no jurisdiction
+// rules in this deployment" — the booking pricing falls back to the
+// legacy PricingPolicy.TaxRatePct alone. When wired, the legacy rate
+// continues to apply alongside; hosts adopting the per-jurisdiction
+// flow set their listing rate to 0 to avoid double-tax.
+type TaxQuoter interface {
+	QuoteForBooking(ctx context.Context, in TaxQuoteInput) (TaxQuoteResult, error)
+}
+
 // SplitShareInput mirrors splitpayment.ShareInput at the booking API boundary
 // so callers (HTTP handler, web) don't have to import the splitpayment package.
 type SplitShareInput struct {
@@ -92,7 +122,11 @@ type Service struct {
 	// (S47). nil disables it — the booking service then ignores any
 	// AcceptedHouseRulesVersion on the input and never asks the verifier.
 	houseRules HouseRulesVerifier
-	uow        port.UnitOfWork
+	// taxQuoter, when wired, surfaces per-jurisdiction tax lines on
+	// every booking's price breakdown (S49). nil = legacy listing
+	// rate only.
+	taxQuoter TaxQuoter
+	uow       port.UnitOfWork
 }
 
 // NewService wires the booking application service. serviceFeeRate is the
@@ -119,6 +153,13 @@ func (s *Service) WithSplitter(splitter Splitter, users OrganizerResolver) *Serv
 // leaves the gate off (legacy/test paths that don't need it).
 func (s *Service) WithHouseRules(v HouseRulesVerifier) *Service {
 	s.houseRules = v
+	return s
+}
+
+// WithTaxQuoter wires the tax BC into the booking pricing flow (S49).
+// A nil quoter keeps the legacy listing-rate-only path.
+func (s *Service) WithTaxQuoter(q TaxQuoter) *Service {
+	s.taxQuoter = q
 	return s
 }
 
@@ -362,6 +403,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	}
 	extraGuestFeeCents := int64(extraGuests) * prop.ExtraGuestFee.AmountCents() * int64(nights)
 
+	// Per-jurisdiction tax lines from the tax BC (S49). Computed on the
+	// taxable subtotal — net of discount, plus cleaning + extra-guest
+	// fees — to align with what the calculator's per-cent rules expect.
+	// Nil quoter (or no rules matching) yields a zero result and the
+	// booking falls back to PricingPolicy.TaxRatePct alone.
+	jurLines, jurCents := s.quoteJurisdictionTax(ctx, prop.ID, dates.CheckIn, nights, in.Guests,
+		subtotal.AmountCents()-couponCents+prop.CleaningFee.AmountCents()+extraGuestFeeCents)
+
 	b, err := booking.NewBookingFromSubtotal(in.PropertyID, in.GuestID, dates, in.Guests, subtotal, prop.CleaningFee, s.serviceFeeRate, booking.Discounts{
 		WeeklyPct:            prop.PricingPolicy.WeeklyDiscountPct,
 		MonthlyPct:           prop.PricingPolicy.MonthlyDiscountPct,
@@ -369,6 +418,8 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		CouponCents:          couponCents,
 		ExtraGuestFeeCents:   extraGuestFeeCents,
 		SecurityDepositCents: prop.SecurityDeposit.AmountCents(),
+		JurisdictionTaxLines: jurLines,
+		JurisdictionTaxCents: jurCents,
 	})
 	if err != nil {
 		return nil, err
@@ -884,4 +935,28 @@ func (s *Service) bookingWithProperty(ctx context.Context, bookingID uuid.UUID) 
 		return nil, nil, err
 	}
 	return b, prop, nil
+}
+
+// quoteJurisdictionTax asks the tax BC (via the TaxQuoter port) for
+// the per-rule lines applicable to a stay (S49). Returns (nil, 0)
+// when no quoter is wired or the lookup fails — tax should never
+// abort a booking, the legacy listing rate is the safe fallback.
+// A quoter error is intentionally swallowed (and logged at debug),
+// not returned: the booking flow stays robust against tax-rule
+// repo outages while the BC is being phased in.
+func (s *Service) quoteJurisdictionTax(ctx context.Context, propertyID uuid.UUID, checkIn time.Time, nights, guests int, subtotalCents int64) ([]booking.TaxLine, int64) {
+	if s.taxQuoter == nil {
+		return nil, 0
+	}
+	res, err := s.taxQuoter.QuoteForBooking(ctx, TaxQuoteInput{
+		PropertyID:    propertyID,
+		CheckIn:       checkIn,
+		Nights:        nights,
+		Guests:        guests,
+		SubtotalCents: subtotalCents,
+	})
+	if err != nil {
+		return nil, 0
+	}
+	return res.Lines, res.TotalCents
 }
