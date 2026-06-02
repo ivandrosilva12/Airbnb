@@ -26,6 +26,11 @@ export default function PropertyScreen({ route, navigation }) {
   const [message, setMessage] = useState(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
+  // stepUp holds the structured details when the backend rejects a high-value
+  // booking with code=kyc_step_up_required. We render a dedicated panel with
+  // the threshold + a CTA to the Verification screen instead of dumping the
+  // generic error string — same UX contract as the web PropertyDetail.
+  const [stepUp, setStepUp] = useState(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState('inappropriate');
   const [reportNote, setReportNote] = useState('');
@@ -184,6 +189,7 @@ export default function PropertyScreen({ route, navigation }) {
   async function book() {
     setError(null);
     setMessage(null);
+    setStepUp(null);
     if (!authenticated) {
       login();
       return;
@@ -195,6 +201,13 @@ export default function PropertyScreen({ route, navigation }) {
       });
       setMessage(`Booked ${b.nights} night(s) for ${b.totalPrice.display}. Status: ${b.status}.`);
     } catch (e) {
+      // High-value step-up: surface a dedicated verify-and-retry panel using
+      // the structured details the backend ships in the response envelope,
+      // instead of the raw error string.
+      if (e.code === 'kyc_step_up_required') {
+        setStepUp(e.details || {});
+        return;
+      }
       setError(e.message);
     }
   }
@@ -239,6 +252,17 @@ export default function PropertyScreen({ route, navigation }) {
             <Text style={styles.btnText}>{!authenticated ? 'Sign in to reserve' : property.instantBook ? '⚡ Book instantly' : 'Reserve'}</Text>
           </Pressable>
           {message && <Text style={styles.success}>{message}</Text>}
+          {stepUp && (
+            <View style={styles.kycPanel}>
+              <Text style={styles.kycTitle}>Identity verification needed</Text>
+              <Text style={styles.kycHint}>
+                Bookings of {((stepUp.thresholdCents || 0) / 100).toFixed(0)} {stepUp.currency || ''} or more require a verified identity. Verify once and you can complete this reservation right after.
+              </Text>
+              <Pressable style={styles.btn} onPress={() => navigation.navigate('Verification')}>
+                <Text style={styles.btnText}>Verify my identity</Text>
+              </Pressable>
+            </View>
+          )}
           {error && <Text style={styles.error}>{error}</Text>}
         </View>
 
@@ -447,6 +471,9 @@ const styles = StyleSheet.create({
   btnText: { color: '#fff', fontWeight: '700' },
   success: { color: '#1a7f47', marginTop: 10 },
   error: { color: '#c0392b', marginTop: 10 },
+  kycPanel: { marginTop: 12, backgroundColor: '#fff5e6', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#f5c97a' },
+  kycTitle: { fontWeight: '800', color: '#8a5d00', marginBottom: 6 },
+  kycHint: { color: '#5a3f00', lineHeight: 19, marginBottom: 10 },
   secondaryActions: { flexDirection: 'row', gap: 10, marginTop: 12, alignItems: 'center' },
   starRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
   starOn: { color: '#ff385c', fontSize: 26 },
