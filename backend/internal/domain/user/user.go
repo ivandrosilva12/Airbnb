@@ -209,6 +209,35 @@ func (u *User) Deactivate() {
 	u.touch()
 }
 
+// Suspend disables the account as an admin moderation action (S61). Same flag
+// the auth middleware checks as Deactivate, but semantically distinct: a
+// suspended user can be reinstated with Unsuspend; an anonymised/erased user
+// cannot. Returns true when state changed (so the caller can skip the write).
+func (u *User) Suspend() bool {
+	if !u.IsActive {
+		return false
+	}
+	u.IsActive = false
+	u.touch()
+	return true
+}
+
+// Unsuspend reinstates a previously suspended account (S61). Returns true when
+// state changed. Refuses to reactivate accounts whose Keycloak subject has the
+// "deleted-" sentinel prefix (anonymised by GDPR erasure) — those are
+// terminally inactive and reactivating would leak a placeholder identity.
+func (u *User) Unsuspend() bool {
+	if u.IsActive {
+		return false
+	}
+	if strings.HasPrefix(u.KeycloakSub, "deleted-") {
+		return false
+	}
+	u.IsActive = true
+	u.touch()
+	return true
+}
+
 // Anonymize scrubs personal data for a GDPR erasure request: the email, name
 // and avatar are replaced with non-identifying placeholders, the external
 // identity link is severed (so a future login provisions a fresh account rather

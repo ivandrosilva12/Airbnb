@@ -39,6 +39,14 @@ const (
 	// regulator + accountant readiness.
 	ActionTaxRuleCreate Action = "tax_rule.create"
 	ActionTaxRuleDelete Action = "tax_rule.delete"
+	// S61 — user moderation. Suspending an account locks out the user
+	// (auth middleware refuses inactive bearers with 403); unsuspend
+	// reinstates them. Both events are high-impact for the user (they
+	// lose/regain platform access), so an immutable trail is required
+	// for support escalations and regulator queries about "why was X
+	// locked out on day Y".
+	ActionUserSuspend   Action = "user.suspend"
+	ActionUserUnsuspend Action = "user.unsuspend"
 )
 
 // Valid reports whether a is one of the recognised actions. The zero
@@ -50,7 +58,8 @@ func (a Action) Valid() bool {
 		ActionReportResolve, ActionReportDismiss,
 		ActionDisputeResolve, ActionDisputeReject,
 		ActionCouponDeactivate,
-		ActionTaxRuleCreate, ActionTaxRuleDelete:
+		ActionTaxRuleCreate, ActionTaxRuleDelete,
+		ActionUserSuspend, ActionUserUnsuspend:
 		return true
 	}
 	return false
@@ -69,6 +78,7 @@ const (
 	TargetDispute  TargetType = "dispute"
 	TargetCoupon   TargetType = "coupon"
 	TargetTaxRule  TargetType = "tax_rule" // S54
+	TargetUser     TargetType = "user"     // S61
 )
 
 // Event is one entry in the audit trail. Immutable by convention: the

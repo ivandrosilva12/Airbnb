@@ -229,6 +229,13 @@ func newHarness(t *testing.T) *harness {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unknown user"})
 			return
 		}
+		// Mirror the production auth middleware (middleware/auth.go): an
+		// inactive account is refused with 403 so e2e tests for S61 user
+		// suspension can prove the lockout takes effect.
+		if !u.IsActive {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "account is disabled"})
+			return
+		}
 		middleware.SetCurrentUser(c, u)
 		c.Next()
 	}
@@ -244,7 +251,7 @@ func newHarness(t *testing.T) *harness {
 		Auth:     authMW,
 		Handlers: apphttp.Handlers{
 			Health:         handler.NewHealthHandler(nil),
-			User:           handler.NewUserHandler(userSvc),
+			User:           handler.NewUserHandler(userSvc).WithAudit(auditSvc),
 			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc).WithCache(cache.NewMemory(), 60*time.Second),
 			Booking:        handler.NewBookingHandler(bookingSvc, metrics).WithHouseRules(houseRulesSvc),
 			Review:         handler.NewReviewHandler(reviewSvc),

@@ -56,6 +56,11 @@ type UserView struct {
 	FullName         string               `json:"fullName"`
 	Role             string               `json:"role"`
 	AvatarURL        string               `json:"avatarUrl"`
+	// IsActive reflects whether the account can act on the platform.
+	// Surfaced so admin UIs (S61) can distinguish suspended users; an
+	// account responding with isActive=false has been suspended (or
+	// erased) and the auth middleware will reject its bearer.
+	IsActive         bool                 `json:"isActive"`
 	EmailPreferences EmailPreferencesView `json:"emailPreferences"`
 	PushPreferences  PushPreferencesView  `json:"pushPreferences"`
 	CreatedAt        time.Time            `json:"createdAt"`
@@ -69,6 +74,7 @@ func FromUser(u *user.User) UserView {
 		FullName:  u.FullName,
 		Role:      string(u.Role),
 		AvatarURL: u.AvatarURL,
+		IsActive:  u.IsActive,
 		EmailPreferences: EmailPreferencesView{
 			Bookings: u.EmailPrefs.Bookings,
 			Messages: u.EmailPrefs.Messages,

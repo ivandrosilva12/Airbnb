@@ -318,7 +318,7 @@ func run() error {
 		Auth:     authMW,
 		Handlers: apphttp.Handlers{
 			Health:         handler.NewHealthHandler(pool),
-			User:           handler.NewUserHandler(userSvc),
+			User:           handler.NewUserHandler(userSvc).WithAudit(auditSvc),
 			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc).WithCache(cacheBackend, cfg.Cache.PropertyTTL),
 			Booking:        handler.NewBookingHandler(bookingSvc, metrics).WithHouseRules(houseRulesSvc),
 			Review:         handler.NewReviewHandler(reviewSvc),

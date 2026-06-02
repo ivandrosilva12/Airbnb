@@ -398,6 +398,11 @@ func NewRouter(d Deps) *gin.Engine {
 		{
 			admin.POST("/properties/:id/suspend", h.Property.AdminSuspend)
 			admin.POST("/properties/:id/unsuspend", h.Property.AdminUnsuspend)
+			// User moderation (S61) — suspend/unsuspend locks a user out
+			// of the platform (auth middleware refuses inactive bearers).
+			// Both record an audit row on success.
+			admin.POST("/users/:id/suspend", h.User.AdminSuspend)
+			admin.POST("/users/:id/unsuspend", h.User.AdminUnsuspend)
 
 			// KYC review queue.
 			admin.GET("/verifications", h.Identity.ListPending)

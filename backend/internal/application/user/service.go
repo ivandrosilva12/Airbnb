@@ -134,6 +134,45 @@ func (s *Service) UpdatePushPreferences(ctx context.Context, id uuid.UUID, prefs
 	return u, nil
 }
 
+// Suspend disables a user account (S61). Admin-only — the route gate enforces
+// that; this service just performs the state change. Returns the updated user.
+// A no-op (already inactive) returns the current state without error so a
+// retry doesn't fail; the audit hook in the handler is keyed on a successful
+// admin call rather than a state transition.
+func (s *Service) Suspend(ctx context.Context, id uuid.UUID) (*user.User, error) {
+	u, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !u.Suspend() {
+		return u, nil
+	}
+	if err := s.repo.Update(ctx, u); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// Unsuspend reinstates a previously suspended account (S61). Refuses
+// anonymised accounts (sentinel KeycloakSub) — returns ErrValidation so the
+// admin sees why instead of a silent success.
+func (s *Service) Unsuspend(ctx context.Context, id uuid.UUID) (*user.User, error) {
+	u, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if u.IsActive {
+		return u, nil
+	}
+	if !u.Unsuspend() {
+		return nil, shared.NewValidationError("account cannot be reactivated (anonymised by data-erasure)")
+	}
+	if err := s.repo.Update(ctx, u); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
 // BecomeHost promotes the user to host.
 func (s *Service) BecomeHost(ctx context.Context, id uuid.UUID) (*user.User, error) {
 	u, err := s.repo.FindByID(ctx, id)
