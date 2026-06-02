@@ -17,7 +17,188 @@ export default function Admin() {
       <CouponsPanel />
       <SilencesPanel />
       <UsersPanel />
+      <TaxRemittancePanel />
     </div>
+  );
+}
+
+// TaxRemittancePanel (S66) — calendar-month tax remittance breakdown that
+// closes the loop on the S62 backend. The operator picks a year + month, hits
+// Generate, and gets the per-(country, city, currency) bucket with line
+// totals + booking counts. A CSV export button serialises whatever is on
+// screen so it can be fed straight into a regulator template.
+function TaxRemittancePanel() {
+  const { t } = useT();
+  // Default to the previous calendar month — remittance is always retrospective
+  // (you can't report a month that hasn't closed). Hard-coded fallback because
+  // Date.now() isn't deterministic; the user can pick anything else.
+  const now = new Date();
+  const defaultMonth = now.getMonth() === 0 ? 12 : now.getMonth();
+  const defaultYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const [year, setYear] = useState(defaultYear);
+  const [month, setMonth] = useState(defaultMonth);
+  const [items, setItems] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function generate(e) {
+    if (e) e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.adminTaxRemittance(year, Number(month));
+      setItems(res.items || []);
+      setLoaded(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Format a cents integer as "12.34" for human display + CSV export. The
+  // currency is rendered separately so the locale doesn't shuffle it.
+  function fmtAmount(cents) {
+    return (cents / 100).toFixed(2);
+  }
+
+  // exportCsv builds a regulator-friendly CSV with one row per (jurisdiction,
+  // rule) pair plus a totals row per jurisdiction. CRLF + quoted fields are
+  // belt-and-braces for spreadsheet imports.
+  function exportCsv() {
+    const rows = [
+      ['period', 'country', 'city', 'currency', 'tax_rule', 'amount', 'booking_count'],
+    ];
+    for (const r of items) {
+      for (const line of r.lines || []) {
+        rows.push([
+          r.period,
+          r.country,
+          r.city || '',
+          r.currency,
+          line.name,
+          fmtAmount(line.amountCents),
+          String(line.bookingCount),
+        ]);
+      }
+      rows.push([
+        r.period,
+        r.country,
+        r.city || '',
+        r.currency,
+        '__TOTAL__',
+        fmtAmount(r.totalCents),
+        String(r.bookingCount),
+      ]);
+    }
+    const csv = rows
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `airhost-tax-remittance-${year}-${String(month).padStart(2, '0')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // Build a year list spanning the last 5 calendar years — remittance for
+  // anything older is a historical curiosity at best.
+  const years = [];
+  for (let y = defaultYear; y >= defaultYear - 4; y--) years.push(y);
+
+  return (
+    <section className="admin-panel" aria-label={t('admin.tax.title')}>
+      <h2>{t('admin.tax.title')}</h2>
+      <p className="muted">{t('admin.tax.hint')}</p>
+      <form
+        className="admin-filters"
+        onSubmit={generate}
+        aria-label={t('admin.tax.filterLabel')}
+      >
+        <label>
+          {t('admin.tax.year')}
+          <select
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            aria-label={t('admin.tax.year')}
+          >
+            {years.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {t('admin.tax.month')}
+          <select
+            value={month}
+            onChange={(e) => setMonth(Number(e.target.value))}
+            aria-label={t('admin.tax.month')}
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <option key={m} value={m}>{t(`admin.tax.months.${m}`)}</option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" className="btn btn-primary" disabled={loading}>
+          {loading ? t('common.loading') : t('admin.tax.generate')}
+        </button>
+        {loaded && items.length > 0 && (
+          <button type="button" className="btn btn-ghost" onClick={exportCsv}>
+            {t('admin.tax.exportCsv')}
+          </button>
+        )}
+      </form>
+      {error && <p className="error" role="alert">{error}</p>}
+      {!loaded ? (
+        <p className="muted">{t('admin.tax.runHint')}</p>
+      ) : items.length === 0 ? (
+        <p className="muted">{t('admin.tax.empty')}</p>
+      ) : (
+        <ul className="admin-list">
+          {items.map((r, idx) => (
+            <li key={`${r.period}-${r.country}-${r.city}-${r.currency}-${idx}`} className="admin-item">
+              <div className="admin-item-head">
+                <strong>
+                  {r.country}{r.city ? ` · ${r.city}` : ''} <span className="muted">({r.currency})</span>
+                </strong>
+                <span className="muted">{r.period}</span>
+                <span className="muted">
+                  {t('admin.tax.bookingCount', { n: r.bookingCount })}
+                </span>
+              </div>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>{t('admin.tax.colRule')}</th>
+                    <th>{t('admin.tax.colAmount')}</th>
+                    <th>{t('admin.tax.colBookings')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(r.lines || []).map((line) => (
+                    <tr key={line.name}>
+                      <td>{line.name}</td>
+                      <td>{fmtAmount(line.amountCents)} {r.currency}</td>
+                      <td>{line.bookingCount}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td><strong>{t('admin.tax.total')}</strong></td>
+                    <td><strong>{fmtAmount(r.totalCents)} {r.currency}</strong></td>
+                    <td>{r.bookingCount}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

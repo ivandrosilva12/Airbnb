@@ -183,6 +183,12 @@ export const api = {
   },
   adminSuspendUser: (id) => request('POST', `/admin/users/${id}/suspend`, { auth: true }),
   adminUnsuspendUser: (id) => request('POST', `/admin/users/${id}/unsuspend`, { auth: true }),
+  // S66 — admin tax remittance (read-only report). Takes a calendar month
+  // (year + 1..12) and returns the per-(jurisdiction, currency) breakdown
+  // shipped by S62. Empty months return `{items: []}`, not 404, so the
+  // operator can tell "no tax owed" from "I forgot to run the report".
+  adminTaxRemittance: (year, month) =>
+    request('GET', `/admin/tax/remittance?year=${year}&month=${month}`, { auth: true }),
 
   // Promo codes (admin)
   adminListCoupons: () => request('GET', '/admin/coupons', { auth: true }),
