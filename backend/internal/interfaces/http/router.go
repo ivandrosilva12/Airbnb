@@ -92,6 +92,23 @@ func NewRouter(d Deps) *gin.Engine {
 		))
 	}
 
+	// writeRateLimit builds a per-IP token-bucket limiter for an individual
+	// write-endpoint family (S30). The global limit above keeps the API surface
+	// safe in aggregate; these stricter, family-scoped limits stop a single
+	// caller from spamming cohort invites / dispute evidence / share authorize
+	// inside that global quota. The defaults (3 rps, burst 10) are generous
+	// for any human flow but cap scripted abuse before it can dominate the
+	// global allowance. Disabled in tests via APIRateRPS<=0 so the e2e suite
+	// can fire its bursts unimpeded.
+	writeRateLimit := func(route string) gin.HandlerFunc {
+		if d.Config.Security.APIRateRPS <= 0 {
+			return func(c *gin.Context) { c.Next() }
+		}
+		return middleware.RateLimit(3, 10, func() {
+			d.Metrics.RateLimitedTotal.WithLabelValues(route).Inc()
+		})
+	}
+
 	// Public listing & review reads.
 	api.GET("/amenities", h.Property.Amenities)
 	api.GET("/properties", h.Property.Search)
@@ -227,16 +244,20 @@ func NewRouter(d Deps) *gin.Engine {
 
 		// Saved-reply playbook (composer chips, host-authored). Owner-only
 		// CRUD; the composer reads via List, mutations via the other three.
+		// Writes are rate-limited per-IP (S30) so a script can't burst-create
+		// thousands of empty templates inside the global allowance.
 		auth.GET("/me/message-templates", h.MessageTemplate.List)
-		auth.POST("/me/message-templates", h.MessageTemplate.Create)
-		auth.PATCH("/me/message-templates/:id", h.MessageTemplate.Update)
-		auth.DELETE("/me/message-templates/:id", h.MessageTemplate.Delete)
+		auth.POST("/me/message-templates", writeRateLimit("template_create"), h.MessageTemplate.Create)
+		auth.PATCH("/me/message-templates/:id", writeRateLimit("template_update"), h.MessageTemplate.Update)
+		auth.DELETE("/me/message-templates/:id", writeRateLimit("template_delete"), h.MessageTemplate.Delete)
 
 		// Split payment: per-payer authorize + organizer cancel + reads.
+		// Authorize is a sensitive state mutation (drives booking confirmation)
+		// — capped per-IP to keep retry-storms and idempotency probes bounded.
 		auth.GET("/me/splits", h.SplitPayment.ListMine)
 		auth.GET("/splits/:id", h.SplitPayment.Get)
-		auth.POST("/splits/:id/shares/:shareId/authorize", h.SplitPayment.AuthorizeShare)
-		auth.POST("/splits/:id/cancel", h.SplitPayment.Cancel)
+		auth.POST("/splits/:id/shares/:shareId/authorize", writeRateLimit("split_authorize"), h.SplitPayment.AuthorizeShare)
+		auth.POST("/splits/:id/cancel", writeRateLimit("split_cancel"), h.SplitPayment.Cancel)
 		auth.GET("/bookings/:id/split", h.SplitPayment.GetForBooking)
 
 		// Calendar blocks and seasonal price rules: the per-listing gate
@@ -254,12 +275,16 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.DELETE("/properties/:id/price-rules/:ruleId", h.PriceRule.Delete)
 
 		// Resolution Center — guests/hosts open and participate in post-stay
-		// cases; admins decide them (separate route group below).
-		auth.POST("/bookings/:id/disputes", h.Dispute.Open)
+		// cases; admins decide them (separate route group below). All four
+		// write paths are per-IP rate-limited (S30) to stop a malicious
+		// reporter from spamming evidence or host-response within the global
+		// allowance — an attack that would otherwise let one IP dominate a
+		// case thread.
+		auth.POST("/bookings/:id/disputes", writeRateLimit("dispute_open"), h.Dispute.Open)
 		auth.GET("/me/disputes", h.Dispute.ListMine)
 		auth.GET("/disputes/:id", h.Dispute.Get)
-		auth.POST("/disputes/:id/evidence", h.Dispute.AddEvidence)
-		auth.POST("/disputes/:id/host-response", h.Dispute.HostRespond)
+		auth.POST("/disputes/:id/evidence", writeRateLimit("dispute_evidence"), h.Dispute.AddEvidence)
+		auth.POST("/disputes/:id/host-response", writeRateLimit("dispute_host_response"), h.Dispute.HostRespond)
 
 		// Payments (guest-facing reads).
 		auth.GET("/payments/me", h.Payment.ListMine)
@@ -309,9 +334,9 @@ func NewRouter(d Deps) *gin.Engine {
 			// enforces ownership; the route group sits on the host gate to
 			// keep accidental access out).
 			host.GET("/host/properties/:id/cohosts", h.Cohost.List)
-			host.POST("/host/properties/:id/cohosts", h.Cohost.Invite)
-			host.PATCH("/host/properties/:id/cohosts/:cohostId", h.Cohost.UpdatePermissions)
-			host.DELETE("/host/properties/:id/cohosts/:cohostId", h.Cohost.Revoke)
+			host.POST("/host/properties/:id/cohosts", writeRateLimit("cohost_invite"), h.Cohost.Invite)
+			host.PATCH("/host/properties/:id/cohosts/:cohostId", writeRateLimit("cohost_update"), h.Cohost.UpdatePermissions)
+			host.DELETE("/host/properties/:id/cohosts/:cohostId", writeRateLimit("cohost_revoke"), h.Cohost.Revoke)
 		}
 
 		// Admin-only moderation.
