@@ -165,8 +165,12 @@ function SavedRepliesPanel() {
     <section className="saved-replies-panel">
       <h2>{t('savedReplies.title')}</h2>
       <p className="muted">{t('savedReplies.hint')}</p>
-      {error && <p className="error">{error}</p>}
-      <form className="form-grid" onSubmit={save}>
+      {error && <p className="error" role="alert">{error}</p>}
+      <form
+        className="form-grid"
+        onSubmit={save}
+        aria-label={editingId ? t('savedReplies.save') : t('savedReplies.add')}
+      >
         <label>{t('savedReplies.fLabel')}
           <input
             required
@@ -187,7 +191,13 @@ function SavedRepliesPanel() {
           />
         </label>
         <div className="full">
-          <button type="submit" className="btn btn-primary" disabled={busy}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={busy}
+            aria-busy={busy}
+            aria-label={editingId ? t('savedReplies.save') : t('savedReplies.add')}
+          >
             {busy ? '…' : editingId ? t('savedReplies.save') : t('savedReplies.add')}
           </button>
           {editingId && (
@@ -199,7 +209,7 @@ function SavedRepliesPanel() {
       {items.length === 0 ? (
         <p className="muted">{t('savedReplies.empty')}</p>
       ) : (
-        <ul className="saved-replies-list">
+        <ul className="saved-replies-list" aria-label={t('savedReplies.title')}>
           {items.map((it) => (
             <li key={it.id} className={editingId === it.id ? 'editing' : ''}>
               <div>
@@ -207,8 +217,18 @@ function SavedRepliesPanel() {
                 <small className="muted">{it.body}</small>
               </div>
               <div>
-                <button type="button" className="btn-link" onClick={() => startEdit(it)}>{t('savedReplies.edit')}</button>
-                <button type="button" className="btn-link-danger" onClick={() => remove(it.id)}>{t('savedReplies.delete')}</button>
+                <button
+                  type="button"
+                  className="btn-link"
+                  onClick={() => startEdit(it)}
+                  aria-label={`${t('savedReplies.edit')}: ${it.label}`}
+                >{t('savedReplies.edit')}</button>
+                <button
+                  type="button"
+                  className="btn-link-danger"
+                  onClick={() => remove(it.id)}
+                  aria-label={`${t('savedReplies.delete')}: ${it.label}`}
+                >{t('savedReplies.delete')}</button>
               </div>
             </li>
           ))}

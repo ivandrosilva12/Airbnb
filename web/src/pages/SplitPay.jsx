@@ -70,12 +70,12 @@ export default function SplitPay() {
   }
 
   return (
-    <div className="container split-pay">
+    <main className="container split-pay" aria-label={t('split.title')}>
       <h1>{t('split.title')}</h1>
       <p className="muted">{t('split.hint')}</p>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
 
-      <section className="split-summary">
+      <section className="split-summary" aria-label={t('split.title')}>
         <div><strong>{t('split.status')}:</strong> {t(`split.s.${split.status}`)}</div>
         <div><strong>{t('split.total')}:</strong> {fmt(split.totalCents)}</div>
         <div>
@@ -83,11 +83,15 @@ export default function SplitPay() {
         </div>
       </section>
 
-      <ul className="split-shares">
+      <ul className="split-shares" aria-label="Payers">
         {split.shares.map((s) => {
           const mine = s.payerEmail === myEmail;
           return (
-            <li key={s.id} className={`split-share ${s.status}${mine ? ' mine' : ''}`}>
+            <li
+              key={s.id}
+              className={`split-share ${s.status}${mine ? ' mine' : ''}`}
+              aria-label={`${s.payerEmail}${mine ? `, ${t('split.you')}` : ''}: ${fmt(s.amountCents)}, ${t(`split.share.${s.status}`)}`}
+            >
               <span className="share-email">{s.payerEmail}{mine ? ` (${t('split.you')})` : ''}</span>
               <span className="share-amount">{fmt(s.amountCents)}</span>
               <span className="share-status">{t(`split.share.${s.status}`)}</span>
@@ -97,15 +101,28 @@ export default function SplitPay() {
       </ul>
 
       {myShare && myShare.status === 'pending' && split.status === 'pending' && (
-        <button className="btn btn-primary" type="button" disabled={busy} onClick={authorize}>
+        <button
+          className="btn btn-primary"
+          type="button"
+          disabled={busy}
+          onClick={authorize}
+          aria-busy={busy}
+          aria-label={busy ? t('split.authorising') : t('split.authorize', { amount: fmt(myShare.amountCents) })}
+        >
           {busy ? t('split.authorising') : t('split.authorize', { amount: fmt(myShare.amountCents) })}
         </button>
       )}
       {isOrganizer && split.status === 'pending' && (
-        <button className="btn btn-ghost" type="button" disabled={busy} onClick={cancel}>
+        <button
+          className="btn btn-ghost"
+          type="button"
+          disabled={busy}
+          onClick={cancel}
+          aria-busy={busy}
+        >
           {t('split.cancel')}
         </button>
       )}
-    </div>
+    </main>
   );
 }

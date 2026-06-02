@@ -264,11 +264,21 @@ export default function Messages() {
                   key={c.id}
                   className={`conv-item${c.id === activeId ? ' active' : ''}`}
                   onClick={() => setActiveId(c.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setActiveId(c.id);
+                    }
+                  }}
+                  aria-pressed={c.id === activeId}
+                  aria-label={`${role}${c.isTeamMailbox ? `, ${t('msg.teamMailbox')}` : ''}${c.unreadCount > 0 ? `, ${c.unreadCount} unread` : ''}`}
                 >
                   <div className="conv-row">
                     <span>{role}</span>
-                    {c.isTeamMailbox && <span className="team-badge">{t('msg.teamTag')}</span>}
-                    {c.unreadCount > 0 && <span className="count-badge">{c.unreadCount}</span>}
+                    {c.isTeamMailbox && <span className="team-badge" aria-hidden="true">{t('msg.teamTag')}</span>}
+                    {c.unreadCount > 0 && <span className="count-badge" aria-hidden="true">{c.unreadCount}</span>}
                   </div>
                   <small>{c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleString() : ''}</small>
                 </div>
@@ -285,27 +295,33 @@ export default function Messages() {
               const isBlocked = blocked.includes(otherId);
               return (
                 <div className="thread-header">
-                  {isBlocked && <span className="thread-blocked">{t('msg.blockedNotice')}</span>}
+                  {isBlocked && <span className="thread-blocked" role="alert">{t('msg.blockedNotice')}</span>}
                   {isHost && <OfferComposer conv={conv} onError={setError} />}
-                  <button className="btn-link-danger" onClick={() => toggleBlock(otherId)}>
+                  <button
+                    className="btn-link-danger"
+                    onClick={() => toggleBlock(otherId)}
+                    aria-label={isBlocked ? t('msg.unblock') : t('msg.block')}
+                    aria-pressed={isBlocked}
+                  >
                     {isBlocked ? t('msg.unblock') : t('msg.block')}
                   </button>
                 </div>
               );
             })()}
-            <div className="thread-messages">
+            <div className="thread-messages" role="log" aria-live="polite" aria-relevant="additions">
               {messages.map((m) => (
                 <MessageBubble key={m.id} message={m} mine={m.senderId === profile?.id} />
               ))}
               <div ref={endRef} />
             </div>
-            <div className="quick-replies">
+            <div className="quick-replies" aria-label="Quick replies">
               {QUICK_REPLY_KEYS.map((k) => (
                 <button
                   key={k}
                   type="button"
                   className="quick-reply-chip"
                   onClick={() => setDraft(t(`msg.qr.${k}`))}
+                  aria-label={`Insert quick reply: ${t(`msg.qr.${k}`)}`}
                 >
                   {t(`msg.qr.${k}`)}
                 </button>
@@ -317,6 +333,7 @@ export default function Messages() {
                   className="quick-reply-chip saved"
                   title={tpl.body}
                   onClick={() => setDraft(tpl.body)}
+                  aria-label={`Insert saved reply: ${tpl.label}`}
                 >
                   {tpl.label}
                 </button>

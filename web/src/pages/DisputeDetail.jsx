@@ -86,18 +86,25 @@ export default function DisputeDetail() {
     : '—';
 
   return (
-    <div className="container dispute-detail">
+    <main className="container dispute-detail" aria-label={t('dispute.detail.title', { kind: t(`dispute.kind.${d.kind}`) })}>
       <header className="dispute-detail-head">
         <h1>{t('dispute.detail.title', { kind: t(`dispute.kind.${d.kind}`) })}</h1>
-        <span className={`badge badge-dispute-${d.status}`}>{t(`dispute.status.${d.status}`)}</span>
+        <span
+          className={`badge badge-dispute-${d.status}`}
+          aria-label={`Status: ${t(`dispute.status.${d.status}`)}${d.overdue ? `, ${t('dispute.detail.overdue')}` : ''}`}
+        >{t(`dispute.status.${d.status}`)}</span>
         {d.overdue && (
-          <span className="badge badge-overdue" title={d.dueAt ? new Date(d.dueAt).toLocaleString() : ''}>
+          <span
+            className="badge badge-overdue"
+            title={d.dueAt ? new Date(d.dueAt).toLocaleString() : ''}
+            aria-hidden="true"
+          >
             {t('dispute.detail.overdue')}
           </span>
         )}
       </header>
 
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
 
       <section className="dispute-section">
         <div className="dispute-row">
@@ -156,42 +163,58 @@ export default function DisputeDetail() {
       </section>
 
       {canAddEvidence && (
-        <form className="dispute-section inline-modify" onSubmit={submitEvidence}>
+        <form className="dispute-section inline-modify" onSubmit={submitEvidence} aria-label={t('dispute.detail.addEvidence')}>
           <h2>{t('dispute.detail.addEvidence')}</h2>
           <label>
+            <span className="visually-hidden">{t('dispute.detail.urlPlaceholder')}</span>
             <input
               type="url"
               placeholder={t('dispute.detail.urlPlaceholder')}
               value={evDraft.url}
               onChange={(e) => setEvDraft((s) => ({ ...s, url: e.target.value }))}
+              aria-label={t('dispute.detail.urlPlaceholder')}
             />
           </label>
           <label>
+            <span className="visually-hidden">{t('dispute.detail.notePlaceholder')}</span>
             <textarea
               placeholder={t('dispute.detail.notePlaceholder')}
               value={evDraft.note}
               maxLength={2000}
               onChange={(e) => setEvDraft((s) => ({ ...s, note: e.target.value }))}
+              aria-label={t('dispute.detail.notePlaceholder')}
             />
           </label>
-          <button className="btn btn-primary btn-sm" type="submit" disabled={busy}>
+          <button
+            className="btn btn-primary btn-sm"
+            type="submit"
+            disabled={busy}
+            aria-busy={busy}
+          >
             {busy ? t('dispute.detail.saving') : t('dispute.detail.addEvidence')}
           </button>
         </form>
       )}
 
       {canHostRespond && (
-        <form className="dispute-section inline-modify" onSubmit={submitHostResponse}>
+        <form className="dispute-section inline-modify" onSubmit={submitHostResponse} aria-label={t('dispute.detail.postHostResponse')}>
           <h2>{t('dispute.detail.postHostResponse')}</h2>
           <label>
+            <span className="visually-hidden">{t('dispute.detail.hostResponsePlaceholder')}</span>
             <textarea
               placeholder={t('dispute.detail.hostResponsePlaceholder')}
               value={hostDraft}
               maxLength={2000}
               onChange={(e) => setHostDraft(e.target.value)}
+              aria-label={t('dispute.detail.hostResponsePlaceholder')}
             />
           </label>
-          <button className="btn btn-primary btn-sm" type="submit" disabled={busy}>
+          <button
+            className="btn btn-primary btn-sm"
+            type="submit"
+            disabled={busy}
+            aria-busy={busy}
+          >
             {busy ? t('dispute.detail.saving') : t('dispute.detail.postHostResponse')}
           </button>
         </form>
@@ -200,6 +223,6 @@ export default function DisputeDetail() {
       <p>
         <Link to="/trips" className="btn-link">{t('dispute.detail.back')}</Link>
       </p>
-    </div>
+    </main>
   );
 }
