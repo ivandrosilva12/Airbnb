@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useApi } from '../api/useApi';
 
 export default function HostListingsScreen({ navigation }) {
@@ -9,6 +9,9 @@ export default function HostListingsScreen({ navigation }) {
   const [earnings, setEarnings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Track which row is currently mid-duplicate so the user can't double-tap
+  // and clone the same listing twice. Scoped per id so other rows stay live.
+  const [duplicating, setDuplicating] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -32,6 +35,37 @@ export default function HostListingsScreen({ navigation }) {
     const unsub = navigation.addListener('focus', load);
     return unsub;
   }, [navigation, load]);
+
+  // confirmDuplicate fires the iOS/Android native alert so accidental taps
+  // can be cancelled. The backend returns the new draft id; we navigate
+  // straight into the edit form (mirrors the web UX from S60).
+  function confirmDuplicate(item) {
+    Alert.alert(
+      'Duplicate listing',
+      `Create a copy of "${item.title}" as a draft? Photos and arrival info won't carry over.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Duplicate',
+          onPress: async () => {
+            setDuplicating(item.id);
+            setError(null);
+            try {
+              const res = await api.duplicateProperty(item.id);
+              await load();
+              if (res && res.id) {
+                navigation.navigate('HostListingForm', { id: res.id });
+              }
+            } catch (e) {
+              setError(e.message);
+            } finally {
+              setDuplicating(null);
+            }
+          },
+        },
+      ],
+    );
+  }
 
   if (loading) return <ActivityIndicator style={{ flex: 1 }} color="#ff385c" />;
 
@@ -67,6 +101,17 @@ export default function HostListingsScreen({ navigation }) {
             <Pressable style={styles.editBtn} onPress={() => navigation.navigate('HostListingForm', { id: item.id })}>
               <Text style={styles.editText}>Edit</Text>
             </Pressable>
+            <Pressable
+              style={styles.dupBtn}
+              onPress={() => confirmDuplicate(item)}
+              disabled={duplicating === item.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Duplicate ${item.title}`}
+            >
+              <Text style={styles.dupText}>
+                {duplicating === item.id ? '…' : 'Duplicate'}
+              </Text>
+            </Pressable>
           </View>
         )}
       />
@@ -93,6 +138,8 @@ const styles = StyleSheet.create({
   newBtnText: { color: '#fff', fontWeight: '700' },
   editBtn: { marginLeft: 10, paddingHorizontal: 10, paddingVertical: 6 },
   editText: { color: '#ff385c', fontWeight: '700' },
+  dupBtn: { marginLeft: 6, paddingHorizontal: 10, paddingVertical: 6 },
+  dupText: { color: '#717171', fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderColor: '#eee' },
   title: { fontWeight: '600', fontSize: 16 },
   meta: { color: '#717171', marginTop: 2 },

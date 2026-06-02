@@ -146,6 +146,10 @@ export function createApi(getAccessToken) {
     updateProperty: (id, body) => request('PATCH', `/properties/${id}`, { body, auth: true }),
     publishProperty: (id) => request('POST', `/properties/${id}/publish`, { auth: true }),
     deleteProperty: (id) => request('DELETE', `/properties/${id}`, { auth: true }),
+    // duplicateProperty (S60 backend, S67 mobile parity) — clones an owned
+    // listing into a fresh draft. Photos and arrival info don't carry over;
+    // the new id is returned so the caller can navigate to its edit form.
+    duplicateProperty: (id) => request('POST', `/properties/${id}/duplicate`, { auth: true }),
     uploadPhoto: (id, file) => upload(`/properties/${id}/photos`, 'photo', file),
     deletePhoto: (id, photoId) => request('DELETE', `/properties/${id}/photos/${photoId}`, { auth: true }),
 
