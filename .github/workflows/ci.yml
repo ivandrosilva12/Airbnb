@@ -63,6 +63,44 @@ jobs:
           KEYCLOAK_ISSUER: http://localhost:8080/realms/airhost
         run: go test -tags=integration ./internal/interfaces/http/ -run Integration -v
 
+  postgres-integration:
+    name: Postgres integration (UoW rollback + split atomicity)
+    runs-on: ubuntu-latest
+    # Exercises the S41 tests in internal/infrastructure/persistence/postgres
+    # — they skip when POSTGRES_TEST_DSN is unset (the dev-machine default),
+    # so without this job nothing would actually run them in CI. The DSN
+    # below matches the service container booted right next to the job.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: airhost
+          POSTGRES_PASSWORD: airhost
+          POSTGRES_DB: airhost
+        ports:
+          - 5432:5432
+        # Healthcheck guarantees the container is ready before the test step;
+        # otherwise the first pgxpool.Ping in withTestDB races the boot.
+        options: >-
+          --health-cmd "pg_isready -U airhost"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: backend/go.sum
+      - name: Run postgres integration tests
+        working-directory: backend
+        env:
+          # Migrations + truncate run on this DSN in withTestDB. Same shape
+          # as the docker-compose dev stack so devs can copy-paste the
+          # command from the test file header.
+          POSTGRES_TEST_DSN: postgres://airhost:airhost@localhost:5432/airhost?sslmode=disable
+        run: go test ./internal/infrastructure/persistence/postgres/... -run Integration -v
+
   web:
     name: Web (React)
     runs-on: ubuntu-latest
