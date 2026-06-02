@@ -2215,6 +2215,23 @@ func (r *CohostRepository) ListPropertiesForUser(_ context.Context, userID uuid.
 	return out, nil
 }
 
+// ListByUser returns every grant a user holds; the application layer filters
+// by permission in memory. CreatedAt-ascending so callers see the oldest
+// grant first (stable for tests).
+func (r *CohostRepository) ListByUser(_ context.Context, userID uuid.UUID) ([]*property.Cohost, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*property.Cohost, 0)
+	for _, c := range r.m {
+		if c.UserID == userID {
+			dup := cloneCohost(&c)
+			out = append(out, &dup)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
 // --- Split payments ----------------------------------------------------------
 
 // SplitPaymentRepository is an in-memory splitpayment.Repository.

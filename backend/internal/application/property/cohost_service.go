@@ -141,22 +141,21 @@ func (s *CohostService) ListMine(ctx context.Context, userID uuid.UUID) ([]*prop
 // has a co-host grant containing the given permission. Used by sibling
 // services (e.g. messaging) to scope a "team mailbox" view to listings the
 // co-host is actually allowed to act on.
+//
+// Performance contract: one query. The previous implementation fetched
+// property IDs then did FindByPropertyAndUser per id (N+1 over the user's
+// portfolio of grants). ListByUser returns every grant in a single query and
+// we filter by Permission in memory — the per-user grant count is small by
+// design (a user typically co-hosts a handful of listings, not hundreds).
 func (s *CohostService) ListPropertyIDsWithPermission(ctx context.Context, userID uuid.UUID, required property.CohostPermission) ([]uuid.UUID, error) {
-	ids, err := s.cohosts.ListPropertiesForUser(ctx, userID)
+	grants, err := s.cohosts.ListByUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]uuid.UUID, 0, len(ids))
-	for _, pid := range ids {
-		grant, err := s.cohosts.FindByPropertyAndUser(ctx, pid, userID)
-		if err != nil {
-			if errors.Is(err, shared.ErrNotFound) {
-				continue
-			}
-			return nil, err
-		}
-		if grant.Has(required) {
-			out = append(out, pid)
+	out := make([]uuid.UUID, 0, len(grants))
+	for _, g := range grants {
+		if g.Has(required) {
+			out = append(out, g.PropertyID)
 		}
 	}
 	return out, nil

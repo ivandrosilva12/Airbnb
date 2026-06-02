@@ -28,4 +28,10 @@ type CohostRepository interface {
 	// ListPropertiesForUser returns the property IDs on which the user has a
 	// grant. Used to surface "listings I help manage" without an N+1.
 	ListPropertiesForUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	// ListByUser returns every grant a user holds across all listings, in a
+	// single query. Callers that need to filter by permission (e.g. the
+	// messaging "team mailbox" scoped to reply_messages) iterate the result
+	// in memory rather than re-querying per property — the number of
+	// listings a single user co-hosts is small by design.
+	ListByUser(ctx context.Context, userID uuid.UUID) ([]*Cohost, error)
 }

@@ -122,6 +122,28 @@ func (r *CohostRepository) ListByProperty(ctx context.Context, propertyID uuid.U
 	return out, mapError(rows.Err())
 }
 
+// ListByUser returns every cohost grant held by a user across all listings
+// in a single query — the permission-aware caller filters in memory.
+func (r *CohostRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]*property.Cohost, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+cohostColumns+` FROM cohosts WHERE user_id=$1 ORDER BY created_at`,
+		userID,
+	)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+	out := make([]*property.Cohost, 0)
+	for rows.Next() {
+		c, err := scanCohostRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, mapError(rows.Err())
+}
+
 func (r *CohostRepository) ListPropertiesForUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT DISTINCT property_id FROM cohosts WHERE user_id=$1`,

@@ -172,6 +172,12 @@ func (s *Service) HostRespond(ctx context.Context, hostID, disputeID uuid.UUID, 
 
 // ListMine returns disputes a user opened plus disputes filed against any of
 // their properties (host respondent view). Newest-first; deduped by id.
+//
+// Performance contract: three queries regardless of how many listings the
+// host owns. The previous implementation iterated bookings.ListByProperty
+// per property, which scaled linearly with portfolio size (host with N
+// listings → N+2 queries). We now batch the host's properties into a
+// single bookings.ListByPropertyIDs call, then a single disputes.ListByBookings.
 func (s *Service) ListMine(ctx context.Context, userID uuid.UUID, page shared.Page) ([]*dispute.Dispute, error) {
 	opened, err := s.repo.ListByOpener(ctx, userID, page)
 	if err != nil {
@@ -181,21 +187,25 @@ func (s *Service) ListMine(ctx context.Context, userID uuid.UUID, page shared.Pa
 	if err != nil {
 		return nil, err
 	}
-	var bookingIDs []uuid.UUID
-	for _, p := range props.Items {
-		bs, err := s.bookings.ListByProperty(ctx, p.ID, shared.Page{Limit: 500})
-		if err != nil {
-			return nil, err
-		}
-		for _, b := range bs.Items {
-			bookingIDs = append(bookingIDs, b.ID)
-		}
-	}
 	var asHost shared.PageResult[*dispute.Dispute]
-	if len(bookingIDs) > 0 {
-		asHost, err = s.repo.ListByBookings(ctx, bookingIDs, shared.Page{Limit: 200})
+	if len(props.Items) > 0 {
+		propertyIDs := make([]uuid.UUID, 0, len(props.Items))
+		for _, p := range props.Items {
+			propertyIDs = append(propertyIDs, p.ID)
+		}
+		bs, err := s.bookings.ListByPropertyIDs(ctx, propertyIDs, shared.Page{Limit: 5000})
 		if err != nil {
 			return nil, err
+		}
+		if len(bs.Items) > 0 {
+			bookingIDs := make([]uuid.UUID, 0, len(bs.Items))
+			for _, b := range bs.Items {
+				bookingIDs = append(bookingIDs, b.ID)
+			}
+			asHost, err = s.repo.ListByBookings(ctx, bookingIDs, shared.Page{Limit: 200})
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	seen := map[uuid.UUID]bool{}
