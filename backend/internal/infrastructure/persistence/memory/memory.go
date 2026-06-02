@@ -331,6 +331,21 @@ func sortProperties(items []*property.Property, sort property.Sort) {
 		})
 	case property.SortRating:
 		byField(items, func(a, b *property.Property) bool { return a.AverageRating > b.AverageRating })
+	case property.SortRanked:
+		// S63 — composite score. Compute once per item to amortise the
+		// log call, then sort by the cached score with created_at DESC
+		// as the tiebreaker for deterministic pagination.
+		now := time.Now().UTC()
+		scores := make(map[uuid.UUID]float64, len(items))
+		for _, p := range items {
+			scores[p.ID] = property.RankScore(p, now)
+		}
+		byField(items, func(a, b *property.Property) bool {
+			if scores[a.ID] != scores[b.ID] {
+				return scores[a.ID] > scores[b.ID]
+			}
+			return a.CreatedAt.After(b.CreatedAt)
+		})
 	default: // newest
 		byField(items, func(a, b *property.Property) bool { return a.CreatedAt.After(b.CreatedAt) })
 	}

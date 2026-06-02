@@ -36,7 +36,12 @@ export default function Home() {
   const [view, setView] = useState('list');
   const [saved, setSaved] = useState([]);
   const [amenityOptions, setAmenityOptions] = useState(AMENITY_CODES);
-  const [filters, setFilters] = useState({ q: '', city: '', type: '', minGuests: '', minPrice: '', maxPrice: '', bedrooms: '', instantBook: false, checkIn: '', checkOut: '', sort: '', amenities: [] });
+  // sort default: "ranked" surfaces the composite-score ordering (S63) —
+  // rating volume-weighted, superhost boost, photo richness, cold-start
+  // bonus. Explicit "" still works (server falls back to newest) so users
+  // can revert. Persisted in component state, not in the URL, on purpose:
+  // the URL stays cleaner and the ranking is the default people expect.
+  const [filters, setFilters] = useState({ q: '', city: '', type: '', minGuests: '', minPrice: '', maxPrice: '', bedrooms: '', instantBook: false, checkIn: '', checkOut: '', sort: 'ranked', amenities: [] });
   const [showMore, setShowMore] = useState(false);
   const [geo, setGeo] = useState(null); // { lat, lng, radiusKm } | null
   const [results, setResults] = useState({ items: [], total: 0 });
@@ -210,6 +215,7 @@ export default function Home() {
             onChange={(e) => setFilters({ ...filters, checkOut: e.target.value })}
           />
           <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })} aria-label={t('home.sortLabel')}>
+            <option value="ranked">{t('home.sort.ranked')}</option>
             <option value="">{t('home.sort.newest')}</option>
             <option value="price_asc">{t('home.sort.priceAsc')}</option>
             <option value="price_desc">{t('home.sort.priceDesc')}</option>

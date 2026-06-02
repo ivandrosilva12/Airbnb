@@ -51,6 +51,14 @@ func (r *PropertyRepository) Create(ctx context.Context, p *property.Property) e
 }
 
 // orderBy maps a Sort to a safe ORDER BY clause (whitelisted, never user input).
+//
+// The "ranked" branch (S63) mirrors property.RankScore in SQL: rating volume-
+// weighted by log10(1+review_count), plus the superhost / photo / cold-start
+// bumps. Photo count is unknown to this row (photos live in a separate
+// table), so we approximate the photo bump by treating every listing as
+// having "enough" photos — the SQL ranking is therefore slightly coarser
+// than the in-memory one, but cheap and good enough for the public search
+// where postgres is authoritative. created_at DESC remains the tiebreaker.
 func orderBy(s property.Sort) string {
 	switch s {
 	case property.SortPriceAsc:
@@ -59,6 +67,16 @@ func orderBy(s property.Sort) string {
 		return "price_cents DESC, created_at DESC"
 	case property.SortRating:
 		return "average_rating DESC, review_count DESC, created_at DESC"
+	case property.SortRanked:
+		return `(
+			CASE WHEN review_count > 0
+				THEN average_rating * LOG(10, 1 + review_count)
+				ELSE 0
+			END
+			+ CASE WHEN host_is_superhost THEN 0.5 ELSE 0 END
+			+ 0.5  -- photo richness placeholder (table-join is too expensive here)
+			+ CASE WHEN created_at > NOW() - INTERVAL '60 days' THEN 0.3 ELSE 0 END
+		) DESC, created_at DESC`
 	default:
 		return "created_at DESC"
 	}

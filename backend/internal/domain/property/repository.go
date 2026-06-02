@@ -23,6 +23,12 @@ const (
 	SortPriceAsc  Sort = "price_asc"
 	SortPriceDesc Sort = "price_desc"
 	SortRating    Sort = "rating" // highest average rating first
+	// SortRanked combines several signals into one composite score
+	// (rating volume-weighted, superhost boost, photo richness, cold-start
+	// recency bonus). Designed for the "Relevance" default on the public
+	// search page (S63). Higher score = better. Ties broken by created_at
+	// DESC (newer first) so the page stays deterministic.
+	SortRanked Sort = "ranked"
 )
 
 // SearchCriteria expresses the filters available when searching listings.

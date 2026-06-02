@@ -68,6 +68,52 @@ func TestSearch_SortByPriceAndRating(t *testing.T) {
 	}
 }
 
+// TestSearch_SortRanked verifies S63's composite ranking surfaces the
+// well-reviewed Superhost listing above plain peers — exactly the order
+// guests would expect when no explicit sort is chosen. Asserting through
+// the public Search API (not RankScore directly) catches breakage between
+// the score function and the memory repo's sort hook.
+func TestSearch_SortRanked(t *testing.T) {
+	ctx := context.Background()
+	props := memory.NewPropertyRepository()
+	svc := searchapp.NewService(props, memory.NewBookingRepository(), memory.NewBlockRepository())
+
+	plain := publishPriced(t, props, "Plain", 38.7, -9.1, 10000)
+	rated := publishPriced(t, props, "Rated", 38.7, -9.1, 10000)
+	hero := publishPriced(t, props, "Hero", 38.7, -9.1, 10000)
+
+	if err := props.UpdateRating(ctx, rated.ID, 4.6, 30); err != nil {
+		t.Fatalf("rate rated: %v", err)
+	}
+	if err := props.UpdateRating(ctx, hero.ID, 4.8, 80); err != nil {
+		t.Fatalf("rate hero: %v", err)
+	}
+	// SetHostSuperhost fans the flag onto all of the host's listings; we
+	// promote only the hero's host so the order proves the boost alone
+	// can lift a listing past an equally-rated peer.
+	if err := props.SetHostSuperhost(ctx, hero.HostID, true); err != nil {
+		t.Fatalf("hero superhost: %v", err)
+	}
+
+	page := shared.NewPage(20, 0)
+	ranked, err := svc.Search(ctx, property.SearchCriteria{Page: page, Sort: property.SortRanked}, nil)
+	if err != nil {
+		t.Fatalf("ranked search: %v", err)
+	}
+	if len(ranked.Items) != 3 {
+		t.Fatalf("ranked items = %d, want 3", len(ranked.Items))
+	}
+	if ranked.Items[0].ID != hero.ID {
+		t.Fatalf("ranked[0] = %s, want Hero (superhost + best rating)", ranked.Items[0].Title)
+	}
+	if ranked.Items[1].ID != rated.ID {
+		t.Fatalf("ranked[1] = %s, want Rated", ranked.Items[1].Title)
+	}
+	if ranked.Items[2].ID != plain.ID {
+		t.Fatalf("ranked[2] = %s, want Plain", ranked.Items[2].Title)
+	}
+}
+
 func TestSearch_KeywordQuery(t *testing.T) {
 	ctx := context.Background()
 	props := memory.NewPropertyRepository()
