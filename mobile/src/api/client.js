@@ -154,6 +154,12 @@ export function createApi(getAccessToken) {
     authorizeShare: (splitId, shareId) =>
       request('POST', `/splits/${splitId}/shares/${shareId}/authorize`, { auth: true }),
 
+    // Saved-reply templates (host playbook surfaced in the composer).
+    listMessageTemplates: () => request('GET', '/me/message-templates', { auth: true }),
+    createMessageTemplate: (body) => request('POST', '/me/message-templates', { body, auth: true }),
+    updateMessageTemplate: (id, body) => request('PATCH', `/me/message-templates/${id}`, { body, auth: true }),
+    deleteMessageTemplate: (id) => request('DELETE', `/me/message-templates/${id}`, { auth: true }),
+
     confirmBooking: (id) => request('POST', `/bookings/${id}/confirm`, { auth: true }),
     completeBooking: (id) => request('POST', `/bookings/${id}/complete`, { auth: true }),
 

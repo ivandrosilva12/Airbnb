@@ -20,6 +20,7 @@ import (
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
+	"github.com/airhost/backend/internal/domain/messagetemplate"
 	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/offer"
 	"github.com/airhost/backend/internal/domain/payment"
@@ -1197,6 +1198,26 @@ func FromSilence(s port.Silence) SilenceView {
 		CreatedBy: s.CreatedBy,
 		Comment:   s.Comment,
 		Status:    s.Status,
+	}
+}
+
+// MessageTemplateView is the wire shape for a host's saved reply template.
+type MessageTemplateView struct {
+	ID        uuid.UUID `json:"id"`
+	Label     string    `json:"label"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// FromMessageTemplate maps the aggregate to its wire shape.
+func FromMessageTemplate(t *messagetemplate.Template) MessageTemplateView {
+	return MessageTemplateView{
+		ID:        t.ID,
+		Label:     t.Label,
+		Body:      t.Body,
+		CreatedAt: t.CreatedAt,
+		UpdatedAt: t.UpdatedAt,
 	}
 }
 

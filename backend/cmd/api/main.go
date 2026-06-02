@@ -27,6 +27,7 @@ import (
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
 	identityapp "github.com/airhost/backend/internal/application/identity"
 	messageapp "github.com/airhost/backend/internal/application/message"
+	messagetemplateapp "github.com/airhost/backend/internal/application/messagetemplate"
 	notificationapp "github.com/airhost/backend/internal/application/notification"
 	offerapp "github.com/airhost/backend/internal/application/offer"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
@@ -133,6 +134,7 @@ func run() error {
 	disputeRepo := postgres.NewDisputeRepository(pool)
 	cohostRepo := postgres.NewCohostRepository(pool)
 	splitPaymentRepo := postgres.NewSplitPaymentRepository(pool)
+	messageTemplateRepo := postgres.NewMessageTemplateRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers,
@@ -178,6 +180,7 @@ func run() error {
 	splitPaymentSvc := splitpaymentapp.NewService(splitPaymentRepo, userRepo, eventPublisher)
 	bookingSvc.WithSplitter(splitterAdapter{svc: splitPaymentSvc}, userEmailResolver{users: userRepo})
 	dispatcher.Subscribe(bookingSvc.EventHandler())
+	messageTemplateSvc := messagetemplateapp.NewService(messageTemplateRepo)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment))
 	privacySvc := privacyapp.NewService(userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo)
@@ -250,8 +253,9 @@ func run() error {
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
 			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
 			Dispute:        handler.NewDisputeHandler(disputeSvc),
-			Cohost:         handler.NewCohostHandler(cohostSvc, userRepo),
-			SplitPayment:   handler.NewSplitPaymentHandler(splitPaymentSvc),
+			Cohost:          handler.NewCohostHandler(cohostSvc, userRepo),
+			SplitPayment:    handler.NewSplitPaymentHandler(splitPaymentSvc),
+			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),
 		},
 	})
 

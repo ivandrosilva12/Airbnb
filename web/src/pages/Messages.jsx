@@ -98,6 +98,11 @@ export default function Messages() {
   const [uploading, setUploading] = useState(false);
   const [blocked, setBlocked] = useState([]);
   const [error, setError] = useState(null);
+  // savedTemplates is the host's personal playbook (S20b). The composer
+  // renders these as chips after the built-in canned replies. An empty
+  // array (the default) hides the section entirely so a guest who never
+  // saves anything sees no clutter.
+  const [savedTemplates, setSavedTemplates] = useState([]);
   const endRef = useRef(null);
   const fileRef = useRef(null);
   const activeIdRef = useRef(activeId);
@@ -142,6 +147,13 @@ export default function Messages() {
   useEffect(() => {
     loadConversations();
     api.listUserBlocks().then((r) => setBlocked(r.blocked || [])).catch(() => {});
+    // The saved-reply playbook is per-user; a guest with no entries gets an
+    // empty list (we just don't render the section). Silent failure on 401
+    // keeps the existing messaging UI usable if the endpoint hiccups.
+    api
+      .listMessageTemplates()
+      .then((r) => setSavedTemplates(r.items || []))
+      .catch(() => {});
   }, []);
 
   async function toggleBlock(otherId) {
@@ -296,6 +308,17 @@ export default function Messages() {
                   onClick={() => setDraft(t(`msg.qr.${k}`))}
                 >
                   {t(`msg.qr.${k}`)}
+                </button>
+              ))}
+              {savedTemplates.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  className="quick-reply-chip saved"
+                  title={tpl.body}
+                  onClick={() => setDraft(tpl.body)}
+                >
+                  {tpl.label}
                 </button>
               ))}
             </div>

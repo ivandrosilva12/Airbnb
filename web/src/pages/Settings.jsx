@@ -90,7 +90,131 @@ export default function Settings() {
       <VerificationPanel />
       <SecurityPanel />
       <PrivacyPanel />
+      <SavedRepliesPanel />
     </div>
+  );
+}
+
+// SavedRepliesPanel is the host's playbook editor: add, rename, edit body,
+// delete. The composer in Messages.jsx reads the same list and renders chips.
+// Empty by default — the section disappears visually for users who don't
+// bother saving anything (the header still shows so they discover the feature).
+function SavedRepliesPanel() {
+  const { t } = useT();
+  const [items, setItems] = useState([]);
+  const [draft, setDraft] = useState({ label: '', body: '' });
+  const [editingId, setEditingId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  function reload() {
+    setError(null);
+    api
+      .listMessageTemplates()
+      .then((r) => setItems(r.items || []))
+      .catch((e) => setError(e.message));
+  }
+
+  useEffect(() => {
+    reload();
+  }, []);
+
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      if (editingId) {
+        await api.updateMessageTemplate(editingId, draft);
+      } else {
+        await api.createMessageTemplate(draft);
+      }
+      setDraft({ label: '', body: '' });
+      setEditingId(null);
+      reload();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEdit(it) {
+    setEditingId(it.id);
+    setDraft({ label: it.label, body: it.body });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setDraft({ label: '', body: '' });
+  }
+
+  async function remove(id) {
+    if (!confirm(t('savedReplies.confirmDelete'))) return;
+    setError(null);
+    try {
+      await api.deleteMessageTemplate(id);
+      if (editingId === id) cancelEdit();
+      reload();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <section className="saved-replies-panel">
+      <h2>{t('savedReplies.title')}</h2>
+      <p className="muted">{t('savedReplies.hint')}</p>
+      {error && <p className="error">{error}</p>}
+      <form className="form-grid" onSubmit={save}>
+        <label>{t('savedReplies.fLabel')}
+          <input
+            required
+            maxLength={60}
+            value={draft.label}
+            onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+            placeholder={t('savedReplies.fLabelPlaceholder')}
+          />
+        </label>
+        <label className="full">{t('savedReplies.fBody')}
+          <textarea
+            required
+            maxLength={4000}
+            rows={3}
+            value={draft.body}
+            onChange={(e) => setDraft({ ...draft, body: e.target.value })}
+            placeholder={t('savedReplies.fBodyPlaceholder')}
+          />
+        </label>
+        <div className="full">
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? '…' : editingId ? t('savedReplies.save') : t('savedReplies.add')}
+          </button>
+          {editingId && (
+            <button type="button" className="btn btn-ghost" onClick={cancelEdit}>{t('common.cancel')}</button>
+          )}
+        </div>
+      </form>
+
+      {items.length === 0 ? (
+        <p className="muted">{t('savedReplies.empty')}</p>
+      ) : (
+        <ul className="saved-replies-list">
+          {items.map((it) => (
+            <li key={it.id} className={editingId === it.id ? 'editing' : ''}>
+              <div>
+                <strong>{it.label}</strong>
+                <small className="muted">{it.body}</small>
+              </div>
+              <div>
+                <button type="button" className="btn-link" onClick={() => startEdit(it)}>{t('savedReplies.edit')}</button>
+                <button type="button" className="btn-link-danger" onClick={() => remove(it.id)}>{t('savedReplies.delete')}</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

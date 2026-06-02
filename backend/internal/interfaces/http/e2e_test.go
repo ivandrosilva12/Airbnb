@@ -24,6 +24,7 @@ import (
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
 	identityapp "github.com/airhost/backend/internal/application/identity"
 	messageapp "github.com/airhost/backend/internal/application/message"
+	messagetemplateapp "github.com/airhost/backend/internal/application/messagetemplate"
 	notificationapp "github.com/airhost/backend/internal/application/notification"
 	offerapp "github.com/airhost/backend/internal/application/offer"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
@@ -171,6 +172,7 @@ func newHarness(t *testing.T) *harness {
 	splitPaymentSvc := splitpaymentapp.NewService(splitPaymentRepo, userRepo, relay)
 	bookingSvc.WithSplitter(testSplitterAdapter{svc: splitPaymentSvc}, testUserEmailResolver{users: userRepo})
 	dispatcher.Subscribe(bookingSvc.EventHandler())
+	messageTemplateSvc := messagetemplateapp.NewService(memory.NewMessageTemplateRepository())
 	mailer := email.NewRecordingMailer()
 	emailSvc := emailapp.NewService(userRepo, mailer)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewFakeDisburser(), paymentgw.NewFakeConnectGateway())
@@ -244,8 +246,9 @@ func newHarness(t *testing.T) *harness {
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
 			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
 			Dispute:        handler.NewDisputeHandler(disputeSvc),
-			Cohost:         handler.NewCohostHandler(cohostSvc, userRepo),
-			SplitPayment:   handler.NewSplitPaymentHandler(splitPaymentSvc),
+			Cohost:          handler.NewCohostHandler(cohostSvc, userRepo),
+			SplitPayment:    handler.NewSplitPaymentHandler(splitPaymentSvc),
+			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),
 		},
 	})
 

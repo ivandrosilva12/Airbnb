@@ -18,6 +18,7 @@ import (
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
+	"github.com/airhost/backend/internal/domain/messagetemplate"
 	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/offer"
 	"github.com/airhost/backend/internal/domain/payment"
@@ -55,6 +56,7 @@ var (
 	_ dispute.Repository      = (*DisputeRepository)(nil)
 	_ property.CohostRepository    = (*CohostRepository)(nil)
 	_ splitpayment.Repository      = (*SplitPaymentRepository)(nil)
+	_ messagetemplate.Repository   = (*MessageTemplateRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -2301,5 +2303,69 @@ func (r *SplitPaymentRepository) ListForUser(_ context.Context, userID uuid.UUID
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out, nil
+}
+
+// --- Message templates -------------------------------------------------------
+
+// MessageTemplateRepository is an in-memory messagetemplate.Repository.
+type MessageTemplateRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]messagetemplate.Template
+}
+
+// NewMessageTemplateRepository builds an empty in-memory template repository.
+func NewMessageTemplateRepository() *MessageTemplateRepository {
+	return &MessageTemplateRepository{m: map[uuid.UUID]messagetemplate.Template{}}
+}
+
+func (r *MessageTemplateRepository) Create(_ context.Context, t *messagetemplate.Template) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.m[t.ID] = *t
+	return nil
+}
+
+func (r *MessageTemplateRepository) Update(_ context.Context, t *messagetemplate.Template) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[t.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[t.ID] = *t
+	return nil
+}
+
+func (r *MessageTemplateRepository) Delete(_ context.Context, id uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[id]; !ok {
+		return shared.ErrNotFound
+	}
+	delete(r.m, id)
+	return nil
+}
+
+func (r *MessageTemplateRepository) FindByID(_ context.Context, id uuid.UUID) (*messagetemplate.Template, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if t, ok := r.m[id]; ok {
+		dup := t
+		return &dup, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+func (r *MessageTemplateRepository) ListByHost(_ context.Context, hostID uuid.UUID) ([]*messagetemplate.Template, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*messagetemplate.Template, 0)
+	for _, t := range r.m {
+		if t.HostID == hostID {
+			dup := t
+			out = append(out, &dup)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Label) < strings.ToLower(out[j].Label) })
 	return out, nil
 }

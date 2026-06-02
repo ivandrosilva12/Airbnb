@@ -39,8 +39,9 @@ type Handlers struct {
 	PriceRule      *handler.PriceRuleHandler
 	PushToken      *handler.PushTokenHandler
 	Dispute        *handler.DisputeHandler
-	Cohost         *handler.CohostHandler
-	SplitPayment   *handler.SplitPaymentHandler
+	Cohost          *handler.CohostHandler
+	SplitPayment    *handler.SplitPaymentHandler
+	MessageTemplate *handler.MessageTemplateHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -223,6 +224,13 @@ func NewRouter(d Deps) *gin.Engine {
 		// whether the caller has the host role (a co-host is a regular user
 		// the primary host invited; they don't need to be a host themselves).
 		auth.GET("/me/cohost-listings", h.Cohost.ListMine)
+
+		// Saved-reply playbook (composer chips, host-authored). Owner-only
+		// CRUD; the composer reads via List, mutations via the other three.
+		auth.GET("/me/message-templates", h.MessageTemplate.List)
+		auth.POST("/me/message-templates", h.MessageTemplate.Create)
+		auth.PATCH("/me/message-templates/:id", h.MessageTemplate.Update)
+		auth.DELETE("/me/message-templates/:id", h.MessageTemplate.Delete)
 
 		// Split payment: per-payer authorize + organizer cancel + reads.
 		auth.GET("/me/splits", h.SplitPayment.ListMine)

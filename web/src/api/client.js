@@ -252,6 +252,12 @@ export const api = {
     request('POST', `/splits/${splitId}/shares/${shareId}/authorize`, { auth: true }),
   cancelSplit: (splitId) => request('POST', `/splits/${splitId}/cancel`, { auth: true }),
 
+  // Saved-reply templates (per-user playbook surfaced in the messaging composer).
+  listMessageTemplates: () => request('GET', '/me/message-templates', { auth: true }),
+  createMessageTemplate: (body) => request('POST', '/me/message-templates', { body, auth: true }),
+  updateMessageTemplate: (id, body) => request('PATCH', `/me/message-templates/${id}`, { body, auth: true }),
+  deleteMessageTemplate: (id) => request('DELETE', `/me/message-templates/${id}`, { auth: true }),
+
   // Availability (public)
   availability: (id, params = {}) => {
     const qs = new URLSearchParams(params).toString();
