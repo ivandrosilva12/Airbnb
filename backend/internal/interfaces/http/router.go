@@ -75,6 +75,14 @@ func NewRouter(d Deps) *gin.Engine {
 	// on the stdlib context (RequestIDFrom / LoggerFrom). The response also
 	// carries X-Request-ID so a client or upstream proxy can correlate.
 	r.Use(middleware.RequestID())
+	// Tracing must run AFTER RequestID (so the request-id logger exists when
+	// TracingLoggerEnrich enriches it with trace/span IDs) and BEFORE the
+	// business middleware so every handler executes inside the root span.
+	// When TRACING_EXPORTER=noop (the default), otelgin still creates a
+	// span on a noop tracer — cheap and keeps the propagation path warm
+	// for downstream services that DO export.
+	r.Use(middleware.Tracing(d.Config.App.Name))
+	r.Use(middleware.TracingLoggerEnrich())
 	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.Metrics(d.Metrics))
 	r.Use(middleware.MaxBody(d.Config.Security.MaxRequestBodyBytes))

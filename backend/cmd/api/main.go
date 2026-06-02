@@ -57,6 +57,7 @@ import (
 	"github.com/airhost/backend/internal/infrastructure/email"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/observability/logctx"
+	"github.com/airhost/backend/internal/observability/tracing"
 	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/postgres"
 	infrapush "github.com/airhost/backend/internal/infrastructure/push"
@@ -109,6 +110,31 @@ func run() error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// --- Tracing (S52) -----------------------------------------------------
+	// Init returns a shutdown function that flushes the last in-flight
+	// span batch on process exit — required for OTLP correctness; a
+	// no-op for the noop exporter.
+	traceShutdown, err := tracing.Init(ctx, tracing.Config{
+		Exporter:       cfg.Tracing.Exporter,
+		ServiceName:    cfg.App.Name,
+		Environment:    cfg.App.Environment,
+		OTLPEndpoint:   cfg.Tracing.OTLPEndpoint,
+		SampleRatio:    cfg.Tracing.SampleRatio,
+	})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		// Bounded timeout so a hung OTLP endpoint can't block shutdown
+		// forever.
+		shutdownCtx, c := context.WithTimeout(context.Background(), 5*time.Second)
+		defer c()
+		if err := traceShutdown(shutdownCtx); err != nil {
+			slog.Warn("tracing shutdown error", "err", err)
+		}
+	}()
+	slog.Info("tracing initialised", "exporter", cfg.Tracing.Exporter)
 
 	// --- Infrastructure adapters -------------------------------------------
 	pool, err := postgres.NewPool(ctx, cfg.Database)

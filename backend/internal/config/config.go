@@ -24,6 +24,23 @@ type Config struct {
 	Alerting AlertingConfig
 	Identity IdentityConfig
 	Push     PushConfig
+	Tracing  TracingConfig
+}
+
+// TracingConfig configures the OpenTelemetry tracer (S52). The
+// exporter knob lets a deployment pick between three backends:
+//
+//   - "noop"   — zero runtime cost; default
+//   - "stdout" — pretty-print spans into the API's own logs
+//   - "otlp"   — push to an OTLP/HTTP collector (Tempo, Honeycomb)
+//
+// SampleRatio is in [0, 1]. Production typically picks 0.05–0.10
+// to keep the trace volume manageable; dev defaults to 1 so every
+// request produces a trace.
+type TracingConfig struct {
+	Exporter     string
+	OTLPEndpoint string
+	SampleRatio  float64
 }
 
 // PushConfig configures the native push notifications channel. When no
@@ -309,6 +326,11 @@ func Load() (*Config, error) {
 			APNsPrivateKeyPEM:     getEnv("APNS_PRIVATE_KEY", ""),
 			APNsBundleID:          getEnv("APNS_BUNDLE_ID", ""),
 			APNsUseSandbox:        getBool("APNS_USE_SANDBOX", false),
+		},
+		Tracing: TracingConfig{
+			Exporter:     getEnv("TRACING_EXPORTER", "noop"),
+			OTLPEndpoint: getEnv("TRACING_OTLP_ENDPOINT", ""),
+			SampleRatio:  getFloat("TRACING_SAMPLE_RATIO", 1.0),
 		},
 	}
 
