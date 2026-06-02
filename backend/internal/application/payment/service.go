@@ -250,21 +250,26 @@ func (s *Service) findByGatewayRef(ctx context.Context, provider, ref string) (*
 }
 
 // ReceiptData is the read-model rendered into a payment receipt.
+//
+// JurisdictionTaxLines is the per-rule breakdown the booking carries (S49)
+// — the interface layer renders these as itemised lines on the PDF (S58).
+// The Tax field stays for bookings written before S49 where no rules matched.
 type ReceiptData struct {
-	ReceiptNo     string
-	IssuedAt      time.Time
-	Status        payment.Status
-	PropertyTitle string
-	CheckIn       time.Time
-	CheckOut      time.Time
-	Nights        int
-	Guests        int
-	Subtotal      shared.Money
-	Discount      shared.Money
-	CleaningFee   shared.Money
-	ServiceFee    shared.Money
-	Tax           shared.Money
-	Total         shared.Money
+	ReceiptNo            string
+	IssuedAt             time.Time
+	Status               payment.Status
+	PropertyTitle        string
+	CheckIn              time.Time
+	CheckOut             time.Time
+	Nights               int
+	Guests               int
+	Subtotal             shared.Money
+	Discount             shared.Money
+	CleaningFee          shared.Money
+	ServiceFee           shared.Money
+	Tax                  shared.Money
+	JurisdictionTaxLines []booking.TaxLine
+	Total                shared.Money
 }
 
 // Receipt assembles the data for a booking's payment receipt. Only the guest who
@@ -285,20 +290,27 @@ func (s *Service) Receipt(ctx context.Context, actorID, bookingID uuid.UUID) (Re
 	if err != nil {
 		return ReceiptData{}, err
 	}
+	// Defensive copy so the receipt is independent of the booking's slice.
+	var taxLines []booking.TaxLine
+	if n := len(b.Pricing.JurisdictionTaxLines); n > 0 {
+		taxLines = make([]booking.TaxLine, n)
+		copy(taxLines, b.Pricing.JurisdictionTaxLines)
+	}
 	return ReceiptData{
-		ReceiptNo:     p.ID.String(),
-		IssuedAt:      time.Now().UTC(),
-		Status:        p.Status,
-		PropertyTitle: prop.Title,
-		CheckIn:       b.Dates.CheckIn,
-		CheckOut:      b.Dates.CheckOut,
-		Nights:        b.Dates.Nights(),
-		Guests:        b.Guests,
-		Subtotal:      b.Pricing.Subtotal,
-		Discount:      b.Pricing.Discount,
-		CleaningFee:   b.Pricing.CleaningFee,
-		ServiceFee:    b.Pricing.ServiceFee,
-		Tax:           b.Pricing.Tax,
-		Total:         b.Pricing.Total,
+		ReceiptNo:            p.ID.String(),
+		IssuedAt:             time.Now().UTC(),
+		Status:               p.Status,
+		PropertyTitle:        prop.Title,
+		CheckIn:              b.Dates.CheckIn,
+		CheckOut:             b.Dates.CheckOut,
+		Nights:               b.Dates.Nights(),
+		Guests:               b.Guests,
+		Subtotal:             b.Pricing.Subtotal,
+		Discount:             b.Pricing.Discount,
+		CleaningFee:          b.Pricing.CleaningFee,
+		ServiceFee:            b.Pricing.ServiceFee,
+		Tax:                  b.Pricing.Tax,
+		JurisdictionTaxLines: taxLines,
+		Total:                b.Pricing.Total,
 	}, nil
 }

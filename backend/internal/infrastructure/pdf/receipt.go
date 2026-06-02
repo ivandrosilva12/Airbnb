@@ -8,6 +8,15 @@ import (
 	"github.com/go-pdf/fpdf"
 )
 
+// TaxLineRow is one row in the receipt's per-jurisdiction tax breakdown
+// (S58). The PDF package keeps this plain-string-shaped so no domain
+// type leaks across the rendering boundary — the interface layer maps
+// booking.TaxLine → TaxLineRow before passing it in.
+type TaxLineRow struct {
+	Name  string
+	Value string
+}
+
 // Receipt is the plain-data input to the receipt renderer. The interface layer
 // maps the application read-model onto it, keeping this package free of any
 // domain/application dependency.
@@ -24,8 +33,12 @@ type Receipt struct {
 	Discount      string // empty when there is no discount
 	CleaningFee   string
 	ServiceFee    string
-	Tax           string // empty when there is no tax
-	Total         string
+	Tax           string // empty when there is no tax (legacy listing-level rate)
+	// TaxLines is the per-jurisdiction breakdown from the tax BC (S58).
+	// When non-empty it REPLACES the single Tax line in the PDF output —
+	// the legacy Tax field stays as a fallback for bookings predating S49.
+	TaxLines []TaxLineRow
+	Total    string
 }
 
 // RenderReceipt produces an A4 PDF receipt and returns its bytes.
@@ -83,7 +96,16 @@ func RenderReceipt(r Receipt) ([]byte, error) {
 	}
 	line("Cleaning fee", r.CleaningFee, false)
 	line("Service fee", r.ServiceFee, false)
-	if r.Tax != "" {
+	switch {
+	case len(r.TaxLines) > 0:
+		for _, tl := range r.TaxLines {
+			label := "Tax"
+			if tl.Name != "" {
+				label = "Tax — " + tl.Name
+			}
+			line(label, tl.Value, false)
+		}
+	case r.Tax != "":
 		line("Tax", r.Tax, false)
 	}
 	pdf.SetDrawColor(200, 200, 200)

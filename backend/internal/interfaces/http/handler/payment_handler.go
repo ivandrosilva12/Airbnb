@@ -89,6 +89,21 @@ func (h *PaymentHandler) Receipt(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	// Per-jurisdiction tax breakdown (S58). Reuses the booking's currency so
+	// the receipt's tax rows match the rest of the price column.
+	var taxLines []pdf.TaxLineRow
+	if n := len(data.JurisdictionTaxLines); n > 0 {
+		currency := data.Subtotal.Currency()
+		taxLines = make([]pdf.TaxLineRow, 0, n)
+		for _, tl := range data.JurisdictionTaxLines {
+			m, mErr := shared.NewMoney(tl.AmountCents, currency)
+			if mErr != nil {
+				response.FailMessage(c, http.StatusInternalServerError, "could not render receipt")
+				return
+			}
+			taxLines = append(taxLines, pdf.TaxLineRow{Name: tl.Name, Value: m.String()})
+		}
+	}
 	body, err := pdf.RenderReceipt(pdf.Receipt{
 		ReceiptNo:     data.ReceiptNo,
 		IssuedAt:      data.IssuedAt.Format("2006-01-02 15:04 UTC"),
@@ -103,6 +118,7 @@ func (h *PaymentHandler) Receipt(c *gin.Context) {
 		CleaningFee:   data.CleaningFee.String(),
 		ServiceFee:    data.ServiceFee.String(),
 		Tax:           moneyOrEmpty(data.Tax),
+		TaxLines:      taxLines,
 		Total:         data.Total.String(),
 	})
 	if err != nil {
