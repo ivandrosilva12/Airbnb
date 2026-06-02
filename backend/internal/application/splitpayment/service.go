@@ -53,15 +53,31 @@ type CreateInput struct {
 	Shares         []splitpayment.ShareInput
 }
 
-// Create persists a new split-payment plan. The aggregate enforces the
-// invariants (sum matches, organizer included, etc); this method just
-// translates the booking-context inputs and saves.
+// Create persists a new split-payment plan via the service's own splits
+// repository (no caller-supplied transaction). Kept for test paths and
+// future callers that don't have an outer UoW; the booking-initiated path
+// uses CreateInTx so the split row commits atomically with the booking.
 func (s *Service) Create(ctx context.Context, in CreateInput) (*splitpayment.SplitPayment, error) {
 	sp, err := splitpayment.New(in.BookingID, in.OrganizerID, in.OrganizerEmail, in.Currency, in.TotalCents, in.Shares)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.splits.Create(ctx, sp); err != nil {
+		return nil, err
+	}
+	return sp, nil
+}
+
+// CreateInTx persists a new split-payment plan through the caller's
+// transaction. Used by bookingapp.Create so the booking row, the
+// BookingRequested outbox event, and the split row all commit atomically
+// or roll back together — S35.
+func (s *Service) CreateInTx(ctx context.Context, tx port.Tx, in CreateInput) (*splitpayment.SplitPayment, error) {
+	sp, err := splitpayment.New(in.BookingID, in.OrganizerID, in.OrganizerEmail, in.Currency, in.TotalCents, in.Shares)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.SplitPayments.Create(ctx, sp); err != nil {
 		return nil, err
 	}
 	return sp, nil

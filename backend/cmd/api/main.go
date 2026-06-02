@@ -24,6 +24,7 @@ import (
 	disputeapp "github.com/airhost/backend/internal/application/dispute"
 	emailapp "github.com/airhost/backend/internal/application/email"
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/application/port"
 	favoriteapp "github.com/airhost/backend/internal/application/favorite"
 	identityapp "github.com/airhost/backend/internal/application/identity"
 	messageapp "github.com/airhost/backend/internal/application/message"
@@ -342,12 +343,12 @@ type splitterAdapter struct {
 	svc *splitpaymentapp.Service
 }
 
-func (a splitterAdapter) Create(ctx context.Context, in bookingapp.SplitterCreateInput) error {
+func (a splitterAdapter) CreateInTx(ctx context.Context, tx port.Tx, in bookingapp.SplitterCreateInput) error {
 	shares := make([]splitpayment.ShareInput, 0, len(in.Shares))
 	for _, s := range in.Shares {
 		shares = append(shares, splitpayment.ShareInput{Email: s.Email, AmountCents: s.AmountCents})
 	}
-	_, err := a.svc.Create(ctx, splitpaymentapp.CreateInput{
+	_, err := a.svc.CreateInTx(ctx, tx, splitpaymentapp.CreateInput{
 		BookingID:      in.BookingID,
 		OrganizerID:    in.OrganizerID,
 		OrganizerEmail: in.OrganizerEmail,

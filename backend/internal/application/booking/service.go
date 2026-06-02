@@ -44,9 +44,12 @@ type SplitterCreateInput struct {
 	Shares         []SplitShareInput
 }
 
-// Splitter is the port to the split-payment context.
+// Splitter is the port to the split-payment context. CreateInTx writes the
+// split-payment aggregate inside the same transaction as the booking, so a
+// crash between the booking commit and the split commit cannot leave a
+// booking with Split=true and no split row (S35).
 type Splitter interface {
-	Create(ctx context.Context, in SplitterCreateInput) error
+	CreateInTx(ctx context.Context, tx port.Tx, in SplitterCreateInput) error
 }
 
 // OrganizerResolver looks up a user's email by id. The booking service uses
@@ -387,27 +390,31 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 			GuestID:       in.GuestID,
 		})
 	}
+	// S35 — when this is a split booking, the split-payment aggregate is
+	// written inside the SAME unit of work as the booking and its events.
+	// All three (booking row + split row + outbox events) commit atomically
+	// or roll back together, so a crash mid-flow can no longer leave a
+	// booking flagged Split=true with no corresponding split row.
 	if err := s.emit(ctx,
-		func(tx port.Tx) error { return tx.Bookings.Create(ctx, b) },
+		func(tx port.Tx) error {
+			if err := tx.Bookings.Create(ctx, b); err != nil {
+				return err
+			}
+			if useSplit {
+				return s.splitter.CreateInTx(ctx, tx, SplitterCreateInput{
+					BookingID:      b.ID,
+					OrganizerID:    in.GuestID,
+					OrganizerEmail: organizerEmail,
+					Currency:       b.Pricing.Total.Currency(),
+					TotalCents:     b.Pricing.Total.AmountCents(),
+					Shares:         in.SplitShares,
+				})
+			}
+			return nil
+		},
 		events...,
 	); err != nil {
 		return nil, err
-	}
-	// With the booking persisted, seed the split (if requested). A failure
-	// here leaves a pending booking with no split — the caller can retry by
-	// cancelling and re-booking; the gateway hasn't been touched (Split=true
-	// short-circuited the payment subscriber).
-	if useSplit {
-		if err := s.splitter.Create(ctx, SplitterCreateInput{
-			BookingID:      b.ID,
-			OrganizerID:    in.GuestID,
-			OrganizerEmail: organizerEmail,
-			Currency:       b.Pricing.Total.Currency(),
-			TotalCents:     b.Pricing.Total.AmountCents(),
-			Shares:         in.SplitShares,
-		}); err != nil {
-			return nil, err
-		}
 	}
 	// Record the redemption once the booking is safely persisted. Best-effort: a
 	// failure here must not undo a confirmed reservation. (Under heavy concurrency
