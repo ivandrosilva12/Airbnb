@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -54,6 +55,7 @@ import (
 	domainuser "github.com/airhost/backend/internal/domain/user"
 	infraalerting "github.com/airhost/backend/internal/infrastructure/alerting"
 	"github.com/airhost/backend/internal/infrastructure/auth"
+	"github.com/airhost/backend/internal/infrastructure/cache"
 	"github.com/airhost/backend/internal/infrastructure/email"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/observability/logctx"
@@ -135,6 +137,29 @@ func run() error {
 		}
 	}()
 	slog.Info("tracing initialised", "exporter", cfg.Tracing.Exporter)
+
+	// --- Cache (S53) -------------------------------------------------------
+	// Pick the port.Cache adapter from config. Unknown backend defaults to
+	// noop with a warning rather than failing the boot — a typo on a
+	// nonessential infra knob shouldn't down the API.
+	var cacheBackend port.Cache
+	switch strings.ToLower(cfg.Cache.Backend) {
+	case "redis":
+		redisCache, err := cache.NewRedis(cfg.Cache.RedisURL)
+		if err != nil {
+			return err
+		}
+		defer redisCache.Close()
+		cacheBackend = redisCache
+	case "memory":
+		cacheBackend = cache.NewMemory()
+	case "", "noop":
+		cacheBackend = cache.NewNoop()
+	default:
+		slog.Warn("unknown CACHE_BACKEND, falling back to noop", "value", cfg.Cache.Backend)
+		cacheBackend = cache.NewNoop()
+	}
+	slog.Info("cache initialised", "backend", cfg.Cache.Backend)
 
 	// --- Infrastructure adapters -------------------------------------------
 	pool, err := postgres.NewPool(ctx, cfg.Database)
@@ -294,7 +319,7 @@ func run() error {
 		Handlers: apphttp.Handlers{
 			Health:         handler.NewHealthHandler(pool),
 			User:           handler.NewUserHandler(userSvc),
-			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc),
+			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc).WithCache(cacheBackend, cfg.Cache.PropertyTTL),
 			Booking:        handler.NewBookingHandler(bookingSvc, metrics).WithHouseRules(houseRulesSvc),
 			Review:         handler.NewReviewHandler(reviewSvc),
 			Message:        handler.NewMessageHandler(messageSvc),

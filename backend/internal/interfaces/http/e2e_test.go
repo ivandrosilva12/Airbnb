@@ -49,6 +49,7 @@ import (
 	"github.com/airhost/backend/internal/domain/pushtoken"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	domainuser "github.com/airhost/backend/internal/domain/user"
+	"github.com/airhost/backend/internal/infrastructure/cache"
 	"github.com/airhost/backend/internal/infrastructure/email"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
@@ -244,7 +245,7 @@ func newHarness(t *testing.T) *harness {
 		Handlers: apphttp.Handlers{
 			Health:         handler.NewHealthHandler(nil),
 			User:           handler.NewUserHandler(userSvc),
-			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc),
+			Property:       handler.NewPropertyHandler(propertySvc, searchSvc, metrics).WithAudit(auditSvc).WithCache(cache.NewMemory(), 60*time.Second),
 			Booking:        handler.NewBookingHandler(bookingSvc, metrics).WithHouseRules(houseRulesSvc),
 			Review:         handler.NewReviewHandler(reviewSvc),
 			Message:        handler.NewMessageHandler(messageSvc),

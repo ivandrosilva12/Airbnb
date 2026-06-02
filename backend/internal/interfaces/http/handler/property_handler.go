@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	auditapp "github.com/airhost/backend/internal/application/audit"
+	"github.com/airhost/backend/internal/application/port"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	searchapp "github.com/airhost/backend/internal/application/search"
 	"github.com/airhost/backend/internal/domain/audit"
@@ -16,6 +18,7 @@ import (
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
+	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -36,12 +39,25 @@ var allowedPhotoContentTypes = map[string]bool{
 // nil (e.g. older callers in tests) the admin suspend/unsuspend paths
 // still work but no audit row is written. Production wires it via
 // WithAudit.
+//
+// cache is optional too (defaults to nil). When wired via WithCache,
+// the Get path is read-through cached for cachePropertyTTL, and every
+// mutation invalidates the affected listing's key. A nil cache means
+// the handler behaves exactly as it did pre-S53 — useful for tests
+// that want to assert against fresh-from-repo data on every call.
 type PropertyHandler struct {
-	svc     *propertyapp.Service
-	search  *searchapp.Service
-	metrics *observability.Metrics
-	audit   *auditapp.Service
+	svc            *propertyapp.Service
+	search         *searchapp.Service
+	metrics        *observability.Metrics
+	audit          *auditapp.Service
+	cache          port.Cache
+	cachePropTTL   time.Duration
 }
+
+// propertyCacheKey is the canonical key for a single-listing public
+// GET. Keep the prefix stable: cache invalidation across deployments
+// relies on this format never silently changing.
+func propertyCacheKey(id uuid.UUID) string { return "property:v1:" + id.String() }
 
 // NewPropertyHandler builds a PropertyHandler.
 func NewPropertyHandler(svc *propertyapp.Service, search *searchapp.Service, m *observability.Metrics) *PropertyHandler {
@@ -53,6 +69,32 @@ func NewPropertyHandler(svc *propertyapp.Service, search *searchapp.Service, m *
 func (h *PropertyHandler) WithAudit(a *auditapp.Service) *PropertyHandler {
 	h.audit = a
 	return h
+}
+
+// WithCache plugs in the port.Cache adapter (S53). ttl is the
+// per-listing TTL for the public GET; 0 falls back to 60s. Wiring
+// at the composition root keeps the handler test-friendly — tests
+// pass NewNoop or NewMemory to assert with/without caching.
+func (h *PropertyHandler) WithCache(c port.Cache, ttl time.Duration) *PropertyHandler {
+	if ttl <= 0 {
+		ttl = 60 * time.Second
+	}
+	h.cache = c
+	h.cachePropTTL = ttl
+	return h
+}
+
+// invalidateProperty drops the per-listing cache entry. Best-effort:
+// a cache backend error is logged but does NOT fail the mutation —
+// the underlying write already succeeded and we'd rather serve a
+// briefly-stale read than 5xx a successful update.
+func (h *PropertyHandler) invalidateProperty(c *gin.Context, id uuid.UUID) {
+	if h.cache == nil {
+		return
+	}
+	if err := h.cache.Delete(c.Request.Context(), propertyCacheKey(id)); err != nil {
+		logctx.LoggerFrom(c.Request.Context()).Warn("property cache invalidation failed", "id", id, "err", err)
+	}
 }
 
 type createPropertyRequest struct {
@@ -214,12 +256,32 @@ func (h *PropertyHandler) Get(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// Read-through cache (S53). Wire format = the same JSON the
+	// non-cached path produces — we serve the bytes verbatim with
+	// the right content type and skip a re-marshal. A cache-backend
+	// error is treated as a miss so an unhealthy Redis degrades to
+	// "uncached", never to 5xx.
+	cacheKey := propertyCacheKey(id)
+	if h.cache != nil {
+		if b, ok, _ := h.cache.Get(c.Request.Context(), cacheKey); ok {
+			c.Data(http.StatusOK, "application/json; charset=utf-8", b)
+			return
+		}
+	}
 	p, err := h.svc.GetByID(c.Request.Context(), id)
 	if err != nil {
 		response.Fail(c, err)
 		return
 	}
-	response.OK(c, dto.FromProperty(p))
+	view := dto.FromProperty(p)
+	if h.cache != nil {
+		if payload, err := json.Marshal(view); err == nil {
+			// Best-effort populate. A Set error is logged via the
+			// cache adapter; we still return the response.
+			_ = h.cache.Set(c.Request.Context(), cacheKey, payload, h.cachePropTTL)
+		}
+	}
+	response.OK(c, view)
 }
 
 // GetForHost returns a single listing with the host-only arrival block. The
@@ -310,6 +372,7 @@ func (h *PropertyHandler) Update(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	h.invalidateProperty(c, id)
 	// The caller is verified to be the host (svc.Update enforced it) — send
 	// back the host-only view so the edit form has the latest arrival info.
 	response.OK(c, dto.FromPropertyForHost(p))
@@ -330,6 +393,7 @@ func (h *PropertyHandler) Publish(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	h.invalidateProperty(c, id)
 	response.OK(c, dto.FromProperty(p))
 }
 
@@ -347,6 +411,7 @@ func (h *PropertyHandler) Delete(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	h.invalidateProperty(c, id)
 	response.NoContent(c)
 }
 
@@ -377,6 +442,7 @@ func (h *PropertyHandler) AdminSuspend(c *gin.Context) {
 			return
 		}
 	}
+	h.invalidateProperty(c, id)
 	response.OK(c, dto.FromProperty(p))
 }
 
@@ -405,6 +471,7 @@ func (h *PropertyHandler) AdminUnsuspend(c *gin.Context) {
 			return
 		}
 	}
+	h.invalidateProperty(c, id)
 	response.OK(c, dto.FromProperty(p))
 }
 
@@ -479,6 +546,7 @@ func (h *PropertyHandler) UploadPhoto(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	h.invalidateProperty(c, id)
 	response.OK(c, dto.FromProperty(p))
 }
 
@@ -501,6 +569,7 @@ func (h *PropertyHandler) DeletePhoto(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	h.invalidateProperty(c, id)
 	response.OK(c, dto.FromProperty(p))
 }
 
@@ -536,5 +605,6 @@ func (h *PropertyHandler) ReorderPhotos(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	h.invalidateProperty(c, id)
 	response.OK(c, dto.FromProperty(p))
 }

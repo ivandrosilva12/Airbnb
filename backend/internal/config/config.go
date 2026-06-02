@@ -25,6 +25,21 @@ type Config struct {
 	Identity IdentityConfig
 	Push     PushConfig
 	Tracing  TracingConfig
+	Cache    CacheConfig
+}
+
+// CacheConfig configures the port.Cache adapter (S53). Backend
+// choices are "noop" (default — no caching, useful in tests and
+// single-instance debugging), "memory" (in-process TTL store —
+// fine for single-node deployments), and "redis" (multi-node).
+//
+// PropertyTTL is the per-listing GET cache TTL. Default 60s keeps
+// stale reads bounded while still absorbing the bulk of property-
+// detail traffic on a hot listing.
+type CacheConfig struct {
+	Backend     string
+	RedisURL    string
+	PropertyTTL time.Duration
 }
 
 // TracingConfig configures the OpenTelemetry tracer (S52). The
@@ -331,6 +346,11 @@ func Load() (*Config, error) {
 			Exporter:     getEnv("TRACING_EXPORTER", "noop"),
 			OTLPEndpoint: getEnv("TRACING_OTLP_ENDPOINT", ""),
 			SampleRatio:  getFloat("TRACING_SAMPLE_RATIO", 1.0),
+		},
+		Cache: CacheConfig{
+			Backend:     getEnv("CACHE_BACKEND", "noop"),
+			RedisURL:    getEnv("CACHE_REDIS_URL", ""),
+			PropertyTTL: getDuration("CACHE_PROPERTY_TTL", 60*time.Second),
 		},
 	}
 

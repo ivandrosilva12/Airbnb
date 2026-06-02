@@ -83,6 +83,22 @@ services:
       - "1025:1025" # SMTP
       - "8025:8025" # web UI — inspect captured emails at http://localhost:8025
 
+  redis:
+    # S53 — read-through cache for hot listing/search paths. Optional:
+    # the API picks the adapter via CACHE_BACKEND (noop / memory / redis).
+    # Keeping the service in the default compose so a developer just
+    # has to flip CACHE_BACKEND=redis to exercise the cluster-equivalent
+    # behaviour locally.
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build:
       context: ./backend
