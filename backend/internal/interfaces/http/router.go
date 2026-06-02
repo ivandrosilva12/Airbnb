@@ -48,6 +48,7 @@ type Handlers struct {
 	MessageTemplate *handler.MessageTemplateHandler
 	HouseRules      *handler.HouseRulesHandler
 	Tax             *handler.TaxHandler
+	TaxRemittance   *handler.TaxRemittanceHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -447,6 +448,12 @@ func NewRouter(d Deps) *gin.Engine {
 			admin.GET("/tax-rules", h.Tax.AdminList)
 			admin.POST("/tax-rules", h.Tax.AdminCreate)
 			admin.DELETE("/tax-rules/:id", h.Tax.AdminDelete)
+
+			// Tax remittance (S62) — per-jurisdiction monthly report of
+			// tax captured on confirmed/completed bookings. Read-only,
+			// no state machine; the operator hands the output to the
+			// tax authority. ?year=YYYY&month=1..12.
+			admin.GET("/tax/remittance", h.TaxRemittance.AdminPeriod)
 		}
 	}
 

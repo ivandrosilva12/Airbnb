@@ -42,6 +42,7 @@ import (
 	searchapp "github.com/airhost/backend/internal/application/search"
 	splitpaymentapp "github.com/airhost/backend/internal/application/splitpayment"
 	taxapp "github.com/airhost/backend/internal/application/tax"
+	taxremittanceapp "github.com/airhost/backend/internal/application/taxremittance"
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
@@ -191,6 +192,8 @@ func newHarness(t *testing.T) *harness {
 	// Plug the tax BC into the booking pricing flow (S49) so every
 	// Create lands with itemised jurisdiction lines + total.
 	bookingSvc.WithTaxQuoter(testTaxQuoter{svc: taxSvc})
+	// S62 — remittance read-model over the same booking + property repos.
+	taxRemittanceSvc := taxremittanceapp.NewService(bookingRepo, propertyRepo)
 	// Plug the verifier into the booking service so the gate fires when a
 	// listing has rules; the BookingHandler below records the per-booking
 	// acceptance row right after Create succeeds (S47).
@@ -281,6 +284,7 @@ func newHarness(t *testing.T) *harness {
 			Audit:           handler.NewAuditHandler(auditSvc),
 			HouseRules:      handler.NewHouseRulesHandler(houseRulesSvc),
 			Tax:             handler.NewTaxHandler(taxSvc).WithAudit(auditSvc),
+			TaxRemittance:   handler.NewTaxRemittanceHandler(taxRemittanceSvc),
 		},
 	})
 

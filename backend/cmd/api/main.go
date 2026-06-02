@@ -47,6 +47,7 @@ import (
 	searchapp "github.com/airhost/backend/internal/application/search"
 	splitpaymentapp "github.com/airhost/backend/internal/application/splitpayment"
 	taxapp "github.com/airhost/backend/internal/application/tax"
+	taxremittanceapp "github.com/airhost/backend/internal/application/taxremittance"
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
@@ -266,6 +267,8 @@ func run() error {
 	// S49 — plug the tax BC into the booking pricing flow so every
 	// reservation lands with itemised jurisdiction lines + total.
 	bookingSvc.WithTaxQuoter(taxQuoterAdapter{svc: taxSvc})
+	// S62 — read-only remittance aggregator over the same booking data.
+	taxRemittanceSvc := taxremittanceapp.NewService(bookingRepo, propertyRepo)
 	// Plug the verifier into the booking service so Create enforces the
 	// guest acknowledged the listing's current rules version (S47). The
 	// BookingHandler below records the per-booking acceptance row right
@@ -349,6 +352,7 @@ func run() error {
 			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),
 			HouseRules:      handler.NewHouseRulesHandler(houseRulesSvc),
 			Tax:             handler.NewTaxHandler(taxSvc).WithAudit(auditSvc),
+			TaxRemittance:   handler.NewTaxRemittanceHandler(taxRemittanceSvc),
 		},
 	})
 

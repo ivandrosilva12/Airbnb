@@ -145,6 +145,35 @@ func (r *BookingRepository) BookedPropertyIDs(ctx context.Context, from, to time
 	return ids, mapError(rows.Err())
 }
 
+// ListSettledInPeriod returns bookings whose check-out date falls in
+// [from, to) and whose status is confirmed or completed (S62). Used by the
+// tax-remittance read-model to aggregate per-jurisdiction tax collected in
+// a period. Sorted by check_out so a paginated UI can stream rows in order.
+func (r *BookingRepository) ListSettledInPeriod(ctx context.Context, from, to time.Time) ([]*booking.Booking, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+bookingColumns+` FROM bookings
+		WHERE status IN ('confirmed','completed')
+		  AND check_out >= $1
+		  AND check_out < $2
+		ORDER BY check_out ASC`,
+		from, to,
+	)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+
+	var items []*booking.Booking
+	for rows.Next() {
+		b, err := scanBooking(rows)
+		if err != nil {
+			return nil, mapError(err)
+		}
+		items = append(items, b)
+	}
+	return items, mapError(rows.Err())
+}
+
 func (r *BookingRepository) HasOverlap(ctx context.Context, propertyID uuid.UUID, dates booking.DateRange) (bool, error) {
 	var exists bool
 	// Half-open overlap: existing.check_in < new.check_out AND new.check_in < existing.check_out.

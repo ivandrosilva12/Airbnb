@@ -1,9 +1,11 @@
 package dto
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/airhost/backend/internal/domain/tax"
+	"github.com/airhost/backend/internal/domain/taxremittance"
 	"github.com/google/uuid"
 )
 
@@ -69,4 +71,44 @@ func FromTaxQuote(q tax.Quote) TaxQuoteView {
 		})
 	}
 	return TaxQuoteView{Lines: lines, TotalCents: q.TotalCents, Currency: q.Currency}
+}
+
+// TaxRemittanceLineView is one tax-rule row inside a remittance report (S62).
+type TaxRemittanceLineView struct {
+	Name         string `json:"name"`
+	AmountCents  int64  `json:"amountCents"`
+	BookingCount int    `json:"bookingCount"`
+}
+
+// TaxRemittanceReportView is one (period, jurisdiction, currency) bucket
+// in a remittance run. The wire shape is intentionally regulator-friendly:
+// period as YYYY-MM, country/city explicit, lines pre-sorted, total at the
+// top level.
+type TaxRemittanceReportView struct {
+	Period       string                  `json:"period"` // YYYY-MM
+	Country      string                  `json:"country"`
+	City         string                  `json:"city"`
+	Currency     string                  `json:"currency"`
+	Lines        []TaxRemittanceLineView `json:"lines"`
+	TotalCents   int64                   `json:"totalCents"`
+	BookingCount int                     `json:"bookingCount"`
+}
+
+// FromTaxRemittanceReport maps a domain Report to the wire shape.
+func FromTaxRemittanceReport(r taxremittance.Report) TaxRemittanceReportView {
+	lines := make([]TaxRemittanceLineView, 0, len(r.Lines))
+	for _, l := range r.Lines {
+		lines = append(lines, TaxRemittanceLineView{
+			Name: l.Name, AmountCents: l.AmountCents, BookingCount: l.BookingCount,
+		})
+	}
+	return TaxRemittanceReportView{
+		Period:       fmt.Sprintf("%04d-%02d", r.Period.Year, int(r.Period.Month)),
+		Country:      r.Jurisdiction.Country,
+		City:         r.Jurisdiction.City,
+		Currency:     r.Currency,
+		Lines:        lines,
+		TotalCents:   r.TotalCents,
+		BookingCount: r.BookingCount,
+	}
 }

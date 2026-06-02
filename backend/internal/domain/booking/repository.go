@@ -30,4 +30,11 @@ type Repository interface {
 	// booking overlapping the [from, to) window. Used by date-aware search to
 	// exclude unavailable listings.
 	BookedPropertyIDs(ctx context.Context, from, to time.Time) ([]uuid.UUID, error)
+	// ListSettledInPeriod returns bookings whose check-out date falls inside
+	// [from, to) AND whose status is confirmed or completed — i.e. the
+	// stay has been realised for tax-remittance purposes (S62). Cancelled
+	// and pending bookings are excluded because no tax has been captured
+	// yet. The caller groups by property jurisdiction and aggregates the
+	// JurisdictionTaxLines slice into a per-rule remittance report.
+	ListSettledInPeriod(ctx context.Context, from, to time.Time) ([]*Booking, error)
 }

@@ -450,6 +450,27 @@ func (r *BookingRepository) BookedPropertyIDs(_ context.Context, from, to time.T
 	return ids, nil
 }
 
+// ListSettledInPeriod returns bookings whose check-out falls in [from, to)
+// and whose status is confirmed or completed (S62). Cancelled/pending are
+// excluded since no tax was captured.
+func (r *BookingRepository) ListSettledInPeriod(_ context.Context, from, to time.Time) ([]*booking.Booking, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []*booking.Booking
+	for _, b := range r.m {
+		if b.Status != booking.StatusConfirmed && b.Status != booking.StatusCompleted {
+			continue
+		}
+		if !b.Dates.CheckOut.Before(to) || b.Dates.CheckOut.Before(from) {
+			continue
+		}
+		c := b
+		out = append(out, &c)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Dates.CheckOut.Before(out[j].Dates.CheckOut) })
+	return out, nil
+}
+
 func (r *BookingRepository) ListActiveInRange(_ context.Context, propertyID uuid.UUID, from, to time.Time) ([]*booking.Booking, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
