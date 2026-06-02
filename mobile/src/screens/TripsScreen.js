@@ -9,7 +9,7 @@ const CATEGORY_LABELS = {
   location: 'Location', checkIn: 'Check-in', value: 'Value',
 };
 
-export default function TripsScreen() {
+export default function TripsScreen({ navigation }) {
   const api = useApi();
   const { authenticated, login } = useAuth();
   const [items, setItems] = useState([]);
@@ -25,18 +25,20 @@ export default function TripsScreen() {
   const [disputing, setDisputing] = useState(null);
   const [disputeDraft, setDisputeDraft] = useState({ kind: 'refund', reason: '', amount: '' });
   const [disputes, setDisputes] = useState({}); // bookingId -> dispute view
+  const [splits, setSplits] = useState({}); // bookingId -> split view
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [bookingsRes, paymentsRes, pendingRes, offersRes, disputesRes] = await Promise.all([
+      const [bookingsRes, paymentsRes, pendingRes, offersRes, disputesRes, splitsRes] = await Promise.all([
         api.myBookings(),
         api.listPayments(),
         api.pendingReviews(),
         api.myOffers().catch(() => ({ items: [] })),
         api.listMyDisputes().catch(() => []),
+        api.mySplits().catch(() => ({ items: [] })),
       ]);
       setItems(bookingsRes.items || []);
       const byBooking = {};
@@ -49,6 +51,9 @@ export default function TripsScreen() {
       const dByB = {};
       for (const d of disputesRes || []) dByB[d.bookingId] = d;
       setDisputes(dByB);
+      const sByB = {};
+      for (const s of (splitsRes && splitsRes.items) || []) sByB[s.bookingId] = s;
+      setSplits(sByB);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -362,7 +367,17 @@ export default function TripsScreen() {
               {disputes[item.id] && (
                 <Text style={styles.disputeBadge}>
                   Case: {disputes[item.id].status}
+                  {disputes[item.id].overdue ? ' · overdue' : ''}
                 </Text>
+              )}
+
+              {splits[item.id] && (
+                <Pressable onPress={() => navigation.navigate('Splits', { splitId: splits[item.id].id })}>
+                  <Text style={styles.splitCta}>
+                    Split payment: {splits[item.id].status}
+                    {splits[item.id].status === 'pending' ? ' · view to authorise your share' : ''}
+                  </Text>
+                </Pressable>
               )}
             </View>
           );
@@ -432,4 +447,5 @@ const styles = StyleSheet.create({
   kindOption: { color: '#717171', textTransform: 'capitalize' },
   kindPicked: { color: '#ff385c', fontWeight: '700', textTransform: 'capitalize' },
   disputeBadge: { color: '#a05a00', fontWeight: '700', marginTop: 8 },
+  splitCta: { color: '#ff385c', fontWeight: '700', marginTop: 8 },
 });

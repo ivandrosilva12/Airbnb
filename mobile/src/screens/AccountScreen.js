@@ -8,6 +8,7 @@ const LINKS = [
   { screen: 'Saved', label: 'Saved listings', icon: '♥' },
   { screen: 'Messages', label: 'Messages', icon: '💬' },
   { screen: 'Notifications', label: 'Notifications', icon: '🔔' },
+  { screen: 'Splits', label: 'Split payments', icon: '🤝' },
   { screen: 'Verification', label: 'Identity verification', icon: '🪪' },
 ];
 

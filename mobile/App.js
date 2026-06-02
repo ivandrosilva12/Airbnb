@@ -18,6 +18,7 @@ import HostEarningsScreen from './src/screens/HostEarningsScreen';
 import HostPropertyBookingsScreen from './src/screens/HostPropertyBookingsScreen';
 import HostCalendarScreen from './src/screens/HostCalendarScreen';
 import HostListingFormScreen from './src/screens/HostListingFormScreen';
+import SplitsScreen from './src/screens/SplitsScreen';
 import { HeaderAuthButton } from './src/screens/HeaderAuthButton';
 
 const Stack = createNativeStackNavigator();
@@ -59,6 +60,7 @@ export default function App() {
           <Stack.Screen name="HostPropertyBookings" component={HostPropertyBookingsScreen} options={{ title: 'Bookings' }} />
           <Stack.Screen name="HostCalendar" component={HostCalendarScreen} options={{ title: 'Calendar' }} />
           <Stack.Screen name="HostListingForm" component={HostListingFormScreen} options={{ title: 'Listing' }} />
+          <Stack.Screen name="Splits" component={SplitsScreen} options={{ title: 'Split payments' }} />
         </Stack.Navigator>
       </NavigationContainer>
       </RealtimeProvider>

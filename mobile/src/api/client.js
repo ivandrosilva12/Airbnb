@@ -148,11 +148,13 @@ export function createApi(getAccessToken) {
     myCohostListings: () => request('GET', '/me/cohost-listings', { auth: true }),
     myCohostMailbox: () => request('GET', '/me/cohost-mailbox', { auth: true }),
 
-    // Split payment between travellers (read + authorize on mobile).
+    // Split payment between travellers (read + authorize + cancel on mobile).
     mySplits: () => request('GET', '/me/splits', { auth: true }),
     getSplit: (id) => request('GET', `/splits/${id}`, { auth: true }),
+    getBookingSplit: (bookingId) => request('GET', `/bookings/${bookingId}/split`, { auth: true }),
     authorizeShare: (splitId, shareId) =>
       request('POST', `/splits/${splitId}/shares/${shareId}/authorize`, { auth: true }),
+    cancelSplit: (splitId) => request('POST', `/splits/${splitId}/cancel`, { auth: true }),
 
     // Saved-reply templates (host playbook surfaced in the composer).
     listMessageTemplates: () => request('GET', '/me/message-templates', { auth: true }),
