@@ -5,13 +5,23 @@ import { useMessages } from '../context/MessagesContext';
 import { useT } from '../i18n/I18nContext';
 
 function LanguageSwitcher() {
-  const { lang, setLang, t } = useT();
+  const { lang, setLang, locales, t } = useT();
+  // Switched from a 2-button toggle to a <select> in S69 to support
+  // 4+ locales without crowding the navbar. Options render with their
+  // native label so a Spanish reader can find "Español" without first
+  // recognising the English label.
   return (
-    <span className="lang-switch" role="group" aria-label={t('a11y.language')}>
-      <button type="button" className={lang === 'pt' ? 'active' : ''} aria-pressed={lang === 'pt'} onClick={() => setLang('pt')}>PT</button>
-      <span aria-hidden="true">/</span>
-      <button type="button" className={lang === 'en' ? 'active' : ''} aria-pressed={lang === 'en'} onClick={() => setLang('en')}>EN</button>
-    </span>
+    <label className="lang-switch" aria-label={t('a11y.language')}>
+      <select
+        value={lang}
+        onChange={(e) => setLang(e.target.value)}
+        aria-label={t('a11y.language')}
+      >
+        {locales.map((l) => (
+          <option key={l.code} value={l.code}>{l.label}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 
