@@ -230,11 +230,34 @@ export default function PropertyScreen({ route, navigation }) {
         {property.instantBook && <Text style={styles.instant}>⚡ Instant Book — confirmed instantly</Text>}
         <Text style={styles.desc}>{property.description || 'No description provided.'}</Text>
 
-        <View style={styles.bookBox}>
-          <Text style={styles.bookTitle}>{property.instantBook ? 'Book instantly' : 'Reserve'}</Text>
-          <TextInput style={styles.input} placeholder="Check in (YYYY-MM-DD)" value={checkIn} onChangeText={setCheckIn} />
-          <TextInput style={styles.input} placeholder="Check out (YYYY-MM-DD)" value={checkOut} onChangeText={setCheckOut} />
-          <TextInput style={styles.input} placeholder="Guests" keyboardType="number-pad" value={guests} onChangeText={setGuests} />
+        <View style={styles.bookBox} accessibilityRole="none">
+          <Text style={styles.bookTitle} accessibilityRole="header">
+            {property.instantBook ? 'Book instantly' : 'Reserve'}
+          </Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Check in (YYYY-MM-DD)"
+            value={checkIn}
+            onChangeText={setCheckIn}
+            accessibilityLabel="Check-in date"
+            accessibilityHint="Format: year-month-day, e.g. 2026-07-04"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Check out (YYYY-MM-DD)"
+            value={checkOut}
+            onChangeText={setCheckOut}
+            accessibilityLabel="Check-out date"
+            accessibilityHint="Format: year-month-day"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Guests"
+            keyboardType="number-pad"
+            value={guests}
+            onChangeText={setGuests}
+            accessibilityLabel="Number of guests"
+          />
           <View style={styles.couponRow}>
             <TextInput
               style={[styles.input, { flex: 1, marginBottom: 0 }]}
@@ -242,13 +265,27 @@ export default function PropertyScreen({ route, navigation }) {
               autoCapitalize="characters"
               value={coupon}
               onChangeText={(v) => { setCoupon(v); setCouponInfo(null); }}
+              accessibilityLabel="Promo code"
             />
-            <Pressable style={styles.couponBtn} onPress={applyCoupon} disabled={!coupon.trim()}>
+            <Pressable
+              style={styles.couponBtn}
+              onPress={applyCoupon}
+              disabled={!coupon.trim()}
+              accessibilityRole="button"
+              accessibilityLabel="Apply promo code"
+              accessibilityState={{ disabled: !coupon.trim() }}
+            >
               <Text style={styles.secondaryText}>Apply</Text>
             </Pressable>
           </View>
-          {couponInfo && <Text style={styles.success}>Coupon applied — you save {couponInfo.discount.display}.</Text>}
-          <Pressable style={styles.btn} onPress={book}>
+          {couponInfo && <Text style={styles.success} accessibilityRole="alert">Coupon applied — you save {couponInfo.discount.display}.</Text>}
+          <Pressable
+            style={styles.btn}
+            onPress={book}
+            accessibilityRole="button"
+            accessibilityLabel={!authenticated ? 'Sign in to reserve' : property.instantBook ? 'Book instantly' : 'Send reservation request'}
+            accessibilityHint={!authenticated ? 'Opens the sign-in flow' : property.instantBook ? 'Confirms the booking immediately' : 'Sends the request to the host for approval'}
+          >
             <Text style={styles.btnText}>{!authenticated ? 'Sign in to reserve' : property.instantBook ? '⚡ Book instantly' : 'Reserve'}</Text>
           </Pressable>
           {message && <Text style={styles.success}>{message}</Text>}
@@ -267,10 +304,22 @@ export default function PropertyScreen({ route, navigation }) {
         </View>
 
         <View style={styles.secondaryActions}>
-          <Pressable style={styles.secondaryBtn} onPress={save}>
+          <Pressable
+            style={styles.secondaryBtn}
+            onPress={save}
+            accessibilityRole="button"
+            accessibilityLabel={saved ? 'Remove from wishlist' : 'Save to wishlist'}
+            accessibilityState={{ selected: saved }}
+          >
             <Text style={styles.secondaryText}>{saved ? '♥ Saved' : '♡ Save to wishlist'}</Text>
           </Pressable>
-          <Pressable style={styles.secondaryBtn} onPress={contactHost}>
+          <Pressable
+            style={styles.secondaryBtn}
+            onPress={contactHost}
+            accessibilityRole="button"
+            accessibilityLabel="Contact the host"
+            accessibilityHint="Opens a new conversation with the host of this listing"
+          >
             <Text style={styles.secondaryText}>Contact host</Text>
           </Pressable>
         </View>
@@ -404,9 +453,14 @@ export default function PropertyScreen({ route, navigation }) {
         </View>
 
         {reported ? (
-          <Text style={styles.reportDone}>Thanks — our team will review this listing.</Text>
+          <Text style={styles.reportDone} accessibilityRole="alert">Thanks — our team will review this listing.</Text>
         ) : !reportOpen ? (
-          <Pressable onPress={() => setReportOpen(true)}>
+          <Pressable
+            onPress={() => setReportOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Report this listing"
+            accessibilityHint="Opens a form to flag the listing for moderation"
+          >
             <Text style={styles.reportLink}>⚑ Report listing</Text>
           </Pressable>
         ) : (

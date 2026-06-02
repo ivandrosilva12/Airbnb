@@ -113,13 +113,23 @@ export default function DisputeScreen({ route, navigation }) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 24 }}>
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && <Text style={styles.error} accessibilityRole="alert">{error}</Text>}
 
       <View style={styles.header}>
-        <Text style={styles.title}>Case · {d.kind}</Text>
-        <View style={styles.badges}>
-          <Text style={[styles.badge, statusStyles[d.status] || statusStyles.open]}>{d.status}</Text>
-          {d.overdue && <Text style={[styles.badge, statusStyles.overdue]}>overdue</Text>}
+        <Text style={styles.title} accessibilityRole="header">Case · {d.kind}</Text>
+        <View style={styles.badges} accessibilityLabel={`Status: ${d.status}${d.overdue ? ', overdue' : ''}`}>
+          <Text
+            style={[styles.badge, statusStyles[d.status] || statusStyles.open]}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >{d.status}</Text>
+          {d.overdue && (
+            <Text
+              style={[styles.badge, statusStyles.overdue]}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >overdue</Text>
+          )}
         </View>
       </View>
 
@@ -165,7 +175,7 @@ export default function DisputeScreen({ route, navigation }) {
 
       {canAddEvidence && (
         <View style={styles.form}>
-          <Text style={styles.formLabel}>Add evidence</Text>
+          <Text style={styles.formLabel} accessibilityRole="header">Add evidence</Text>
           <TextInput
             style={styles.input}
             placeholder="Link (e.g. photo URL)"
@@ -173,6 +183,8 @@ export default function DisputeScreen({ route, navigation }) {
             autoCapitalize="none"
             value={evDraft.url}
             onChangeText={(v) => setEvDraft((s) => ({ ...s, url: v }))}
+            accessibilityLabel="Evidence link"
+            accessibilityHint="URL pointing to a photo or document supporting your case"
           />
           <TextInput
             style={[styles.input, { minHeight: 60 }]}
@@ -181,11 +193,16 @@ export default function DisputeScreen({ route, navigation }) {
             placeholderTextColor="#999"
             value={evDraft.note}
             onChangeText={(v) => setEvDraft((s) => ({ ...s, note: v }))}
+            accessibilityLabel="Evidence note"
+            accessibilityHint="Optional written context for the link, or just a note on its own"
           />
           <Pressable
             style={[styles.btn, busy && styles.btnDisabled]}
             disabled={busy}
             onPress={submitEvidence}
+            accessibilityRole="button"
+            accessibilityLabel={busy ? 'Saving evidence' : 'Add evidence'}
+            accessibilityState={{ disabled: busy, busy }}
           >
             <Text style={styles.btnText}>{busy ? 'Saving…' : 'Add evidence'}</Text>
           </Pressable>
@@ -194,7 +211,7 @@ export default function DisputeScreen({ route, navigation }) {
 
       {canHostRespond && (
         <View style={styles.form}>
-          <Text style={styles.formLabel}>Post host response</Text>
+          <Text style={styles.formLabel} accessibilityRole="header">Post host response</Text>
           <TextInput
             style={[styles.input, { minHeight: 90 }]}
             multiline
@@ -202,18 +219,28 @@ export default function DisputeScreen({ route, navigation }) {
             placeholderTextColor="#999"
             value={hostDraft}
             onChangeText={setHostDraft}
+            accessibilityLabel="Host response text"
+            accessibilityHint="Your version of what happened; both the guest and the moderator will read this"
           />
           <Pressable
             style={[styles.btn, busy && styles.btnDisabled]}
             disabled={busy}
             onPress={submitHostResponse}
+            accessibilityRole="button"
+            accessibilityLabel={busy ? 'Saving response' : 'Post response'}
+            accessibilityState={{ disabled: busy, busy }}
           >
             <Text style={styles.btnText}>{busy ? 'Saving…' : 'Post response'}</Text>
           </Pressable>
         </View>
       )}
 
-      <Pressable onPress={() => navigation.goBack()} style={styles.back}>
+      <Pressable
+        onPress={() => navigation.goBack()}
+        style={styles.back}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+      >
         <Text style={styles.backText}>Back</Text>
       </Pressable>
     </ScrollView>

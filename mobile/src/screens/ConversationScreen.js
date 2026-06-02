@@ -156,15 +156,31 @@ export default function ConversationScreen({ route, navigation }) {
           const att = item.attachment;
           const isImage = att && att.contentType && att.contentType.startsWith('image/');
           return (
-            <View style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
+            <View
+              style={[styles.bubble, mine ? styles.mine : styles.theirs]}
+              accessibilityLabel={`${mine ? 'You' : 'They'} said: ${item.body || (att ? `attachment ${att.filename || ''}` : '')}`}
+            >
               {!!item.body && <Text style={mine ? styles.mineText : styles.theirsText}>{item.body}</Text>}
               {att && isImage && (
-                <Pressable onPress={() => Linking.openURL(att.url)}>
-                  <Image source={{ uri: att.url }} style={styles.attachImage} resizeMode="cover" />
+                <Pressable
+                  onPress={() => Linking.openURL(att.url)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open photo ${att.filename || 'attachment'}`}
+                >
+                  <Image
+                    source={{ uri: att.url }}
+                    style={styles.attachImage}
+                    resizeMode="cover"
+                    accessible={false}
+                  />
                 </Pressable>
               )}
               {att && !isImage && (
-                <Pressable onPress={() => Linking.openURL(att.url)}>
+                <Pressable
+                  onPress={() => Linking.openURL(att.url)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open file ${att.filename || 'attachment'}`}
+                >
                   <Text style={[mine ? styles.mineText : styles.theirsText, styles.attachLink]}>
                     📎 {att.filename || 'Attachment'}
                   </Text>
@@ -185,15 +201,32 @@ export default function ConversationScreen({ route, navigation }) {
           assisting, so we hide the block bar entirely. */}
       {otherId && !isTeamMailbox && (
         <View style={styles.blockBar}>
-          {isBlocked && <Text style={styles.blockNotice}>Blocked — messaging is disabled.</Text>}
-          <Pressable onPress={toggleBlock}>
+          {isBlocked && <Text style={styles.blockNotice} accessibilityRole="alert">Blocked — messaging is disabled.</Text>}
+          <Pressable
+            onPress={toggleBlock}
+            accessibilityRole="button"
+            accessibilityLabel={isBlocked ? 'Unblock this user' : 'Block this user'}
+            accessibilityHint={isBlocked ? 'Allows them to message you again' : 'Stops messages in both directions'}
+          >
             <Text style={styles.blockLink}>{isBlocked ? 'Unblock' : 'Block user'}</Text>
           </Pressable>
         </View>
       )}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickReplies} contentContainerStyle={styles.quickRepliesContent}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.quickReplies}
+        contentContainerStyle={styles.quickRepliesContent}
+        accessibilityLabel="Quick replies"
+      >
         {QUICK_REPLIES.map((q) => (
-          <Pressable key={q} style={styles.quickChip} onPress={() => setDraft(q)}>
+          <Pressable
+            key={q}
+            style={styles.quickChip}
+            onPress={() => setDraft(q)}
+            accessibilityRole="button"
+            accessibilityLabel={`Insert quick reply: ${q}`}
+          >
             <Text style={styles.quickChipText} numberOfLines={1}>{q}</Text>
           </Pressable>
         ))}
@@ -201,13 +234,28 @@ export default function ConversationScreen({ route, navigation }) {
             body. Distinct rose-tinted style so users see "this is mine"
             vs the platform's canned set. */}
         {savedTemplates.map((tpl) => (
-          <Pressable key={tpl.id} style={styles.savedChip} onPress={() => setDraft(tpl.body)}>
+          <Pressable
+            key={tpl.id}
+            style={styles.savedChip}
+            onPress={() => setDraft(tpl.body)}
+            accessibilityRole="button"
+            accessibilityLabel={`Insert saved reply: ${tpl.label}`}
+            accessibilityHint={tpl.body.length > 80 ? `${tpl.body.slice(0, 80)}…` : tpl.body}
+          >
             <Text style={styles.savedChipText} numberOfLines={1}>{tpl.label}</Text>
           </Pressable>
         ))}
       </ScrollView>
       <View style={styles.composer}>
-        <Pressable style={styles.attachBtn} onPress={attach} disabled={sending}>
+        <Pressable
+          style={styles.attachBtn}
+          onPress={attach}
+          disabled={sending}
+          accessibilityRole="button"
+          accessibilityLabel="Attach a photo"
+          accessibilityHint="Opens the photo library to pick an image to send"
+          accessibilityState={{ disabled: sending }}
+        >
           <Text style={styles.attachText}>📎</Text>
         </Pressable>
         <TextInput
@@ -216,8 +264,16 @@ export default function ConversationScreen({ route, navigation }) {
           value={draft}
           onChangeText={setDraft}
           multiline
+          accessibilityLabel="Message text"
         />
-        <Pressable style={[styles.sendBtn, sending && styles.sendBtnDisabled]} onPress={send} disabled={sending}>
+        <Pressable
+          style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
+          onPress={send}
+          disabled={sending}
+          accessibilityRole="button"
+          accessibilityLabel={sending ? 'Sending message' : 'Send message'}
+          accessibilityState={{ disabled: sending, busy: sending }}
+        >
           <Text style={styles.sendText}>Send</Text>
         </Pressable>
       </View>
