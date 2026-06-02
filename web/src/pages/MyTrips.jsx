@@ -358,11 +358,22 @@ export default function MyTrips() {
                   )}
                 </td>
                 <td>
+                  {/* Each action button repeats per row; the dates suffix
+                      in aria-label is what lets a screen-reader user
+                      distinguish "Cancel" for which trip. */}
                   {b.status === 'pending' && modifying !== b.id && (
-                    <button className="btn btn-ghost" onClick={() => { setError(null); setModifying(b.id); }}>{t('trips.modify')}</button>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => { setError(null); setModifying(b.id); }}
+                      aria-label={`${t('trips.modify')}: ${b.checkIn} → ${b.checkOut}`}
+                    >{t('trips.modify')}</button>
                   )}
                   {(b.status === 'pending' || b.status === 'confirmed') && (
-                    <button className="btn btn-ghost" onClick={() => cancel(b.id)}>{t('common.cancel')}</button>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => cancel(b.id)}
+                      aria-label={`${t('common.cancel')}: ${b.checkIn} → ${b.checkOut}`}
+                    >{t('common.cancel')}</button>
                   )}
                   {modifying === b.id && (
                     <ModifyForm
@@ -372,9 +383,13 @@ export default function MyTrips() {
                     />
                   )}
                   {b.status === 'completed' && !reviewed[b.id] && reviewing !== b.id && (
-                    <button className="btn btn-ghost" onClick={() => { setError(null); setReviewing(b.id); }}>{t('trips.leaveReview')}</button>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => { setError(null); setReviewing(b.id); }}
+                      aria-label={`${t('trips.leaveReview')}: ${b.checkIn} → ${b.checkOut}`}
+                    >{t('trips.leaveReview')}</button>
                   )}
-                  {reviewed[b.id] && <span className="success">{t('trips.reviewed')}</span>}
+                  {reviewed[b.id] && <span className="success" role="status">{t('trips.reviewed')}</span>}
                   {reviewing === b.id && (
                     <ReviewForm
                       bookingId={b.id}
@@ -385,17 +400,28 @@ export default function MyTrips() {
                   {/* Resolution Center: open a case on completed or cancelled stays
                       that don't already have an active dispute. */}
                   {(b.status === 'completed' || b.status === 'cancelled') && !disputes[b.id] && disputing !== b.id && (
-                    <button className="btn btn-ghost" onClick={() => { setError(null); setDisputing(b.id); }}>{t('dispute.openCase')}</button>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => { setError(null); setDisputing(b.id); }}
+                      aria-label={`${t('dispute.openCase')}: ${b.checkIn} → ${b.checkOut}`}
+                    >{t('dispute.openCase')}</button>
                   )}
                   {disputes[b.id] && (
                     <>
-                      <Link to={`/disputes/${disputes[b.id].id}`}>
-                        <span className={`badge badge-dispute-${disputes[b.id].status}`}>
+                      <Link
+                        to={`/disputes/${disputes[b.id].id}`}
+                        aria-label={`Open Resolution case: ${t(`dispute.status.${disputes[b.id].status}`)}${disputes[b.id].overdue ? `, ${t('dispute.detail.overdue')}` : ''}`}
+                      >
+                        <span className={`badge badge-dispute-${disputes[b.id].status}`} aria-hidden="true">
                           {t(`dispute.status.${disputes[b.id].status}`)}
                         </span>
                       </Link>
                       {disputes[b.id].overdue && (
-                        <span className="badge badge-overdue" style={{ marginLeft: '.35rem' }}>
+                        <span
+                          className="badge badge-overdue"
+                          style={{ marginLeft: '.35rem' }}
+                          aria-hidden="true"
+                        >
                           {t('dispute.detail.overdue')}
                         </span>
                       )}
