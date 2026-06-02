@@ -45,6 +45,7 @@ import (
 	savedsearchapp "github.com/airhost/backend/internal/application/savedsearch"
 	searchapp "github.com/airhost/backend/internal/application/search"
 	splitpaymentapp "github.com/airhost/backend/internal/application/splitpayment"
+	taxapp "github.com/airhost/backend/internal/application/tax"
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
@@ -147,6 +148,7 @@ func run() error {
 	messageTemplateRepo := postgres.NewMessageTemplateRepository(pool)
 	auditRepo := postgres.NewAuditRepository(pool)
 	houseRulesRepo := postgres.NewHouseRulesRepository(pool)
+	taxRepo := postgres.NewTaxRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers,
@@ -195,6 +197,7 @@ func run() error {
 	messageTemplateSvc := messagetemplateapp.NewService(messageTemplateRepo)
 	auditSvc := auditapp.NewService(auditRepo)
 	houseRulesSvc := houserulesapp.NewService(houseRulesRepo, propertyRepo)
+	taxSvc := taxapp.NewService(taxRepo, propertyRepo)
 	// Plug the verifier into the booking service so Create enforces the
 	// guest acknowledged the listing's current rules version (S47). The
 	// BookingHandler below records the per-booking acceptance row right
@@ -277,6 +280,7 @@ func run() error {
 			SplitPayment:    handler.NewSplitPaymentHandler(splitPaymentSvc, metrics),
 			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),
 			HouseRules:      handler.NewHouseRulesHandler(houseRulesSvc),
+			Tax:             handler.NewTaxHandler(taxSvc),
 		},
 	})
 

@@ -47,6 +47,7 @@ type Handlers struct {
 	SplitPayment    *handler.SplitPaymentHandler
 	MessageTemplate *handler.MessageTemplateHandler
 	HouseRules      *handler.HouseRulesHandler
+	Tax             *handler.TaxHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -138,6 +139,10 @@ func NewRouter(d Deps) *gin.Engine {
 	// House rules (S47) — public read so a prospective guest can
 	// preview the rules before logging in to book.
 	api.GET("/properties/:id/house-rules", h.HouseRules.Get)
+	// Tax quote (S48) — public preview of the tax breakdown for a
+	// stay. Anonymous-friendly so a UI can render the line items
+	// before the guest signs in.
+	api.GET("/properties/:id/tax-quote", h.Tax.Quote)
 		// Publicly shared wishlist collection (anyone with the link).
 		api.GET("/shared/collections/:token", h.Favorite.GetShared)
 
@@ -413,6 +418,13 @@ func NewRouter(d Deps) *gin.Engine {
 			// on success (property suspend/unsuspend, KYC approve/reject,
 			// dispute resolve/reject).
 			admin.GET("/audit", h.Audit.List)
+
+			// Tax rules CRUD (S48). Stub admin surface — no audit
+			// hookup yet (the audit BC's Action enum is closed and
+			// adding tax.* would warrant its own slice).
+			admin.GET("/tax-rules", h.Tax.AdminList)
+			admin.POST("/tax-rules", h.Tax.AdminCreate)
+			admin.DELETE("/tax-rules/:id", h.Tax.AdminDelete)
 		}
 	}
 

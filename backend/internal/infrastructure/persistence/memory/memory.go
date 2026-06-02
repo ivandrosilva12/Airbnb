@@ -33,6 +33,7 @@ import (
 	"github.com/airhost/backend/internal/domain/savedsearch"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/splitpayment"
+	"github.com/airhost/backend/internal/domain/tax"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/domain/userblock"
 	"github.com/google/uuid"
@@ -61,6 +62,7 @@ var (
 	_ messagetemplate.Repository   = (*MessageTemplateRepository)(nil)
 	_ audit.Repository             = (*AuditRepository)(nil)
 	_ houserules.Repository        = (*HouseRulesRepository)(nil)
+	_ tax.Repository               = (*TaxRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -2551,4 +2553,67 @@ func cloneRules(in houserules.Rules) *houserules.Rules {
 	out := in
 	out.Items = items
 	return &out
+}
+
+// --- Tax ---------------------------------------------------------------------
+
+// TaxRepository is an in-memory tax.Repository. The rule set is
+// expected to be small (dozens, not millions) so a scan-and-filter
+// pass through the slice on every RulesFor is fine — matches the
+// production reality where the postgres repo can pre-filter by
+// country/city via an index.
+type TaxRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]tax.Rule
+}
+
+// NewTaxRepository builds an empty in-memory tax repository.
+func NewTaxRepository() *TaxRepository {
+	return &TaxRepository{m: map[uuid.UUID]tax.Rule{}}
+}
+
+func (r *TaxRepository) Save(_ context.Context, rule *tax.Rule) error {
+	if rule == nil {
+		return shared.NewValidationError("tax: nil rule")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.m[rule.ID] = *rule
+	return nil
+}
+
+func (r *TaxRepository) Delete(_ context.Context, id uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.m, id)
+	return nil
+}
+
+func (r *TaxRepository) List(_ context.Context) ([]*tax.Rule, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*tax.Rule, 0, len(r.m))
+	for _, v := range r.m {
+		dup := v
+		out = append(out, &dup)
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
+	return out, nil
+}
+
+// RulesFor uses the rule's own Matches predicate so the in-memory
+// path agrees with what the calculator would do at filter time —
+// the calculator double-filters (defence in depth) but the contract
+// is "return everything that applies".
+func (r *TaxRepository) RulesFor(_ context.Context, country, city string, at time.Time) ([]*tax.Rule, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*tax.Rule, 0)
+	for _, v := range r.m {
+		dup := v
+		if dup.Matches(country, city, at) {
+			out = append(out, &dup)
+		}
+	}
+	return out, nil
 }

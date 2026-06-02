@@ -41,6 +41,7 @@ import (
 	savedsearchapp "github.com/airhost/backend/internal/application/savedsearch"
 	searchapp "github.com/airhost/backend/internal/application/search"
 	splitpaymentapp "github.com/airhost/backend/internal/application/splitpayment"
+	taxapp "github.com/airhost/backend/internal/application/tax"
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
@@ -184,6 +185,7 @@ func newHarness(t *testing.T) *harness {
 	auditSvc := auditapp.NewService(memory.NewAuditRepository())
 	houseRulesRepo := memory.NewHouseRulesRepository()
 	houseRulesSvc := houserulesapp.NewService(houseRulesRepo, propertyRepo)
+	taxSvc := taxapp.NewService(memory.NewTaxRepository(), propertyRepo)
 	// Plug the verifier into the booking service so the gate fires when a
 	// listing has rules; the BookingHandler below records the per-booking
 	// acceptance row right after Create succeeds (S47).
@@ -266,6 +268,7 @@ func newHarness(t *testing.T) *harness {
 			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),
 			Audit:           handler.NewAuditHandler(auditSvc),
 			HouseRules:      handler.NewHouseRulesHandler(houseRulesSvc),
+			Tax:             handler.NewTaxHandler(taxSvc),
 		},
 	})
 
