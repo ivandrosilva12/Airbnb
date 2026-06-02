@@ -1,10 +1,13 @@
 package http
 
 import (
+	"log/slog"
+
 	"github.com/airhost/backend/internal/config"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/handler"
 	"github.com/airhost/backend/internal/interfaces/http/middleware"
+	"github.com/airhost/backend/internal/interfaces/http/openapi"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
@@ -86,6 +89,14 @@ func NewRouter(d Deps) *gin.Engine {
 	r.GET("/healthz", h.Health.Live)
 	r.GET("/readyz", h.Health.Ready)
 	r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(d.Registry, promhttp.HandlerOpts{})))
+
+	// OpenAPI 3.0 spec generated from the live route table (S46). The
+	// two endpoints below are registered now (so they show up in the
+	// generated spec) and their payloads are filled by Refresh at the
+	// bottom of NewRouter — by that point every other route exists.
+	specHandler := openapi.NewHandler()
+	r.GET("/openapi.yaml", specHandler.ServeYAML)
+	r.GET("/openapi.json", specHandler.ServeJSON)
 
 	api := r.Group("/api/v1")
 
@@ -391,5 +402,33 @@ func NewRouter(d Deps) *gin.Engine {
 		}
 	}
 
+	// Fill the OpenAPI cache now that every route is registered. A
+	// generator error here is non-fatal — we log and continue so a bad
+	// spec doesn't bring down the entire API surface; clients can still
+	// hit every endpoint, they just won't get a 200 from /openapi.*.
+	if err := specHandler.Refresh(routesToOpenAPI(r.Routes()), openapi.Info{
+		Title:       "AirHost API",
+		Version:     d.Config.App.Environment,
+		Description: "AirHost public + authenticated API surface. Generated from the live router — see /openapi.yaml.",
+	}); err != nil {
+		slog.Default().Error("openapi spec refresh failed", "err", err)
+	}
+
 	return r
+}
+
+// routesToOpenAPI converts gin's RouteInfo slice into the openapi
+// package's slim Route type. Kept here (rather than imported into the
+// openapi package) so openapi/ stays free of gin and can be tested in
+// isolation.
+func routesToOpenAPI(in gin.RoutesInfo) []openapi.Route {
+	out := make([]openapi.Route, 0, len(in))
+	for _, r := range in {
+		out = append(out, openapi.Route{
+			Method:  r.Method,
+			Path:    r.Path,
+			Handler: r.Handler,
+		})
+	}
+	return out
 }
