@@ -8,6 +8,8 @@ code is non-zero and CI fails the build.
 
 ## What's covered today
 
+**Public reads:**
+
 | Script | Endpoint | Shape | Why it matters |
 | --- | --- | --- | --- |
 | `search.js` | `GET /api/v1/properties` | sustained ramp to 50 VUs | top-of-funnel discovery; query plan stress |
@@ -15,10 +17,23 @@ code is non-zero and CI fails the build.
 | `availability.js` | `GET /api/v1/properties/:id/availability` | constant 20 VUs | exercises the date-overlap query (N+1 prone) |
 | `mixed_browse.js` | 70% search + 30% detail | ramp to 60 VUs | realistic browsing mix; integration smoke |
 
-Authenticated paths (`POST /api/v1/bookings`, `/me/disputes`, …) are
-deliberately out of scope for this slice — they need a Keycloak token
-flow that complicates the scaffold. A follow-up adds an auth helper +
-scripts for the write paths.
+**Authenticated reads (S40):**
+
+| Script | Endpoint(s) | Shape | Why it matters |
+| --- | --- | --- | --- |
+| `me_dashboard.js` | `/me`, `/bookings/me`, `/me/disputes`, `/notifications` | constant 20 VUs, weighted mix | cold-load dashboard pattern; **regression gate for the S27 dispute N+1 fix** |
+| `cohost_mailbox.js` | `/me/cohost-mailbox` | constant 15 VUs | **regression gate for the S27 cohost permission N+1 fix** |
+
+`auth.js` is the shared helper — does Keycloak OIDC direct-grant for the
+seeded `guest@airhost.dev` / `host@airhost.dev` / `admin@airhost.dev`
+users (passwords in the realm export). Tokens are cached per VU. The
+dev realm's 5-minute token TTL covers the default 2-minute scenario
+durations; bump the scenario past ~4 min and you'll need refresh.
+
+Write paths (POST /bookings with money-moving side effects, POST
+/disputes, etc) are still out of scope — they pollute the dev DB and
+need cleanup tooling. Add them as a follow-up if you want write-tail
+budgets in CI.
 
 ## How to run
 
@@ -34,6 +49,11 @@ k6 run scripts/load/search.js
 # 4. Override the base URL or target VU count via env vars
 BASE_URL=https://staging.airhost.example k6 run scripts/load/search.js
 VUS=100 DURATION=5m k6 run scripts/load/search.js
+
+# 5. Authenticated scripts also accept KEYCLOAK_URL / REALM / CLIENT
+#    (defaults match the dev docker-compose)
+k6 run scripts/load/me_dashboard.js
+KEYCLOAK_URL=https://staging-id.example k6 run scripts/load/cohost_mailbox.js
 ```
 
 If `k6` isn't installed: <https://k6.io/docs/get-started/installation/>
