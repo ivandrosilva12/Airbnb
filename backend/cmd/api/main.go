@@ -94,6 +94,19 @@ func run() error {
 		return err
 	}
 
+	// Validate secrets / placeholders at startup (S50). In production
+	// any blocker fails the boot — refusing to start with a known-weak
+	// credential is the safest default. In non-production we log
+	// warnings and keep going so dev workflows aren't blocked by
+	// placeholder values they intentionally chose.
+	if vres, verr := cfg.Validate(); verr != nil {
+		return verr
+	} else if len(vres.Warnings) > 0 {
+		for _, w := range vres.Warnings {
+			slog.Warn("config validation warning", "issue", w)
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

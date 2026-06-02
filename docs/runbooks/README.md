@@ -13,6 +13,12 @@ on-call engineer can jump straight from the notification to the diagnosis steps.
 | `AirhostRateLimitingSustained` | warning | [AirhostRateLimitingSustained.md](AirhostRateLimitingSustained.md) |
 | `AirhostWebhookProcessingErrors` | warning | [AirhostWebhookProcessingErrors.md](AirhostWebhookProcessingErrors.md) |
 
+## Operational runbooks (not alert-driven)
+
+| Runbook | Trigger |
+| --- | --- |
+| [SecretsRotation.md](SecretsRotation.md) | Scheduled rotation cadence, or any suspected secret leak |
+
 ## Conventions
 
 - **`runbook_url` base** — the alerts point at
