@@ -56,6 +56,11 @@ export default function PropertyDetail() {
   // with the standard validation error.
   const [houseRules, setHouseRules] = useState({ version: 0, items: [] });
   const [rulesAccepted, setRulesAccepted] = useState(false);
+  // Tax preview (S57): per-jurisdiction line items the booking total
+  // will include. Fetched whenever the stay shape changes; the
+  // booking response already reflects the same lines server-side
+  // (S49), so the breakdown matches what the guest is charged.
+  const [taxQuote, setTaxQuote] = useState(null);
 
   useEffect(() => {
     api.getProperty(id).then(setProperty).catch((e) => setError(e.message));
@@ -64,6 +69,45 @@ export default function PropertyDetail() {
     api.availability(id).then((a) => setBooked(a.booked || [])).catch(() => {});
     api.getHouseRules(id).then(setHouseRules).catch(() => {});
   }, [id]);
+
+  // Tax-quote refetch (S57). The taxable base is the same expression
+  // the server's calculator uses: subtotal net of discount + cleaning
+  // + extra-guest (per S49's quoteJurisdictionTax). Quote silently
+  // becomes null when inputs aren't ready — the price-breakdown skips
+  // the lines block without flickering "loading".
+  useEffect(() => {
+    if (!property) return;
+    if (!form.checkIn || !form.checkOut) {
+      setTaxQuote(null);
+      return;
+    }
+    const nights = Math.round((new Date(form.checkOut) - new Date(form.checkIn)) / 86400000);
+    if (nights <= 0) {
+      setTaxQuote(null);
+      return;
+    }
+    const subtotal = nights * property.pricePerNight.amountCents;
+    const cleaning = property.cleaningFee?.amountCents || 0;
+    const included = property.guestsIncluded || property.maxGuests;
+    const extras = Math.max(0, Number(form.guests || 1) - included);
+    const extraFee = extras * (property.extraGuestFee?.amountCents || 0) * nights;
+    const couponDisc = couponInfo?.discount?.amountCents || 0;
+    const taxableBase = Math.max(0, subtotal - couponDisc) + cleaning + extraFee;
+
+    let cancelled = false;
+    api
+      .getTaxQuote(id, {
+        checkIn: form.checkIn,
+        nights,
+        guests: Number(form.guests || 1),
+        subtotalCents: taxableBase,
+      })
+      .then((q) => { if (!cancelled) setTaxQuote(q); })
+      .catch(() => { if (!cancelled) setTaxQuote(null); });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, property, form.checkIn, form.checkOut, form.guests, couponInfo]);
 
   async function book(e) {
     e.preventDefault();
@@ -283,8 +327,29 @@ export default function PropertyDetail() {
                 {couponCents > 0 && <div className="bd-discount"><span>{t('detail.couponDiscount', { code: couponInfo.code })}</span><span>-{fmt(couponCents)}</span></div>}
                 {cleaningCents > 0 && <div><span>{t('detail.cleaningFee')}</span><span>{fmt(cleaningCents)}</span></div>}
                 {extraGuestCents > 0 && <div><span>{t('detail.extraGuestFee', { n: extraGuests })}</span><span>{fmt(extraGuestCents)}</span></div>}
+                {taxQuote && taxQuote.lines && taxQuote.lines.length > 0 && (
+                  <>
+                    {taxQuote.lines.map((line) => (
+                      <div key={line.ruleId || line.name} className="bd-tax">
+                        <span>{line.name}</span>
+                        <span>{fmt(line.amountCents)}</span>
+                      </div>
+                    ))}
+                    <div className="muted bd-tax-note">
+                      {t('detail.taxesIncludedHint')}
+                    </div>
+                  </>
+                )}
                 <div className="muted">{t('detail.serviceNote')}</div>
-                <div className="bd-total"><span>{t('detail.beforeFees')}</span><span>{fmt(Math.max(0, subtotalCents - discountCents - couponCents) + cleaningCents + extraGuestCents)}</span></div>
+                <div className="bd-total">
+                  <span>{t('detail.beforeFees')}</span>
+                  <span>{fmt(
+                    Math.max(0, subtotalCents - discountCents - couponCents) +
+                      cleaningCents +
+                      extraGuestCents +
+                      (taxQuote?.totalCents || 0),
+                  )}</span>
+                </div>
                 {depositCents > 0 && <div className="muted"><span>{t('detail.securityDeposit', { amount: fmt(depositCents) })}</span></div>}
               </div>
             )}

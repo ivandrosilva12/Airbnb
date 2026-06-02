@@ -103,6 +103,21 @@ export const api = {
     request('PATCH', `/properties/${propertyId}/house-rules`, { body: { items }, auth: true }),
   getHouseRulesAcceptance: (bookingId) =>
     request('GET', `/bookings/${bookingId}/house-rules-acceptance`, { auth: true }),
+  // Per-jurisdiction tax preview (S48 + S57). Public — anonymous
+  // browsers can render the breakdown before sign-in. The backend
+  // resolves the listing's (country, city, currency) so the caller
+  // only sends the stay shape.
+  getTaxQuote: (propertyId, { checkIn, nights, guests, subtotalCents }) =>
+    request(
+      'GET',
+      `/properties/${propertyId}/tax-quote?` +
+        new URLSearchParams({
+          checkIn,
+          nights: String(nights),
+          guests: String(guests),
+          subtotalCents: String(subtotalCents),
+        }).toString(),
+    ),
   // Saved searches & alerts
   listSavedSearches: () => request('GET', '/saved-searches', { auth: true }),
   saveSearch: (body) => request('POST', '/saved-searches', { body, auth: true }),
