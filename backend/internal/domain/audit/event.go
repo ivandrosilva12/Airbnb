@@ -32,6 +32,13 @@ const (
 	ActionDisputeResolve    Action = "dispute.resolve"
 	ActionDisputeReject     Action = "dispute.reject"
 	ActionCouponDeactivate  Action = "coupon.deactivate"
+	// S54 — tax-rule admin actions. The rule table is small (dozens
+	// per deployment) and changes are infrequent but high-impact:
+	// every line on every receipt depends on this state, so an
+	// audit trail of who-changed-what is non-negotiable for
+	// regulator + accountant readiness.
+	ActionTaxRuleCreate Action = "tax_rule.create"
+	ActionTaxRuleDelete Action = "tax_rule.delete"
 )
 
 // Valid reports whether a is one of the recognised actions. The zero
@@ -42,7 +49,8 @@ func (a Action) Valid() bool {
 		ActionIdentityApprove, ActionIdentityReject,
 		ActionReportResolve, ActionReportDismiss,
 		ActionDisputeResolve, ActionDisputeReject,
-		ActionCouponDeactivate:
+		ActionCouponDeactivate,
+		ActionTaxRuleCreate, ActionTaxRuleDelete:
 		return true
 	}
 	return false
@@ -60,6 +68,7 @@ const (
 	TargetReport   TargetType = "report"
 	TargetDispute  TargetType = "dispute"
 	TargetCoupon   TargetType = "coupon"
+	TargetTaxRule  TargetType = "tax_rule" // S54
 )
 
 // Event is one entry in the audit trail. Immutable by convention: the

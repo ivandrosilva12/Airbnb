@@ -1,7 +1,9 @@
 package handler
 
 import (
+	auditapp "github.com/airhost/backend/internal/application/audit"
 	reportapp "github.com/airhost/backend/internal/application/report"
+	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
 	"github.com/gin-gonic/gin"
@@ -10,13 +12,26 @@ import (
 
 // ReportHandler exposes listing-report endpoints: filing a report (any
 // authenticated user) and the administrator moderation queue.
+//
+// audit is optional (S54) — wired via WithAudit at the composition
+// root. When nil the admin Resolve/Dismiss paths still work but
+// don't write an audit row, matching the early-tests pattern shared
+// with PropertyHandler / IdentityHandler / DisputeHandler.
 type ReportHandler struct {
-	svc *reportapp.Service
+	svc   *reportapp.Service
+	audit *auditapp.Service
 }
 
 // NewReportHandler builds a ReportHandler.
 func NewReportHandler(svc *reportapp.Service) *ReportHandler {
 	return &ReportHandler{svc: svc}
+}
+
+// WithAudit attaches the audit service so admin Resolve/Dismiss
+// record a trail (S54). Returns the receiver for chaining.
+func (h *ReportHandler) WithAudit(a *auditapp.Service) *ReportHandler {
+	h.audit = a
+	return h
 }
 
 type createReportRequest struct {
@@ -87,6 +102,10 @@ type resolveReportRequest struct {
 }
 
 // Resolve marks an open report acted-upon (administrator action).
+// Records an audit row on success (S54): action=report.resolve,
+// target=report:<id>, metadata.resolution carries the moderator's
+// note. Audit failure is a HARD error — same policy as the other
+// admin handlers (S45): we don't ship a state change without a trail.
 func (h *ReportHandler) Resolve(c *gin.Context) {
 	adminID, id, req, ok := h.bindDecide(c)
 	if !ok {
@@ -96,6 +115,16 @@ func (h *ReportHandler) Resolve(c *gin.Context) {
 	if err != nil {
 		response.Fail(c, err)
 		return
+	}
+	if h.audit != nil {
+		if err := h.audit.Record(c.Request.Context(), auditapp.RecordInput{
+			ActorID: adminID, Action: audit.ActionReportResolve,
+			TargetType: audit.TargetReport, TargetID: id,
+			Metadata: map[string]any{"resolution": req.Resolution},
+		}); err != nil {
+			response.Fail(c, err)
+			return
+		}
 	}
 	response.OK(c, dto.FromReport(r))
 }
@@ -110,6 +139,16 @@ func (h *ReportHandler) Dismiss(c *gin.Context) {
 	if err != nil {
 		response.Fail(c, err)
 		return
+	}
+	if h.audit != nil {
+		if err := h.audit.Record(c.Request.Context(), auditapp.RecordInput{
+			ActorID: adminID, Action: audit.ActionReportDismiss,
+			TargetType: audit.TargetReport, TargetID: id,
+			Metadata: map[string]any{"resolution": req.Resolution},
+		}); err != nil {
+			response.Fail(c, err)
+			return
+		}
 	}
 	response.OK(c, dto.FromReport(r))
 }

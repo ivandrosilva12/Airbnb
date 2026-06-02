@@ -4,20 +4,34 @@ import (
 	"net/http"
 	"time"
 
+	auditapp "github.com/airhost/backend/internal/application/audit"
 	couponapp "github.com/airhost/backend/internal/application/coupon"
+	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/interfaces/http/dto"
 	"github.com/airhost/backend/internal/interfaces/http/response"
 	"github.com/gin-gonic/gin"
 )
 
 // CouponHandler exposes admin promo-code management endpoints.
+// audit is optional (S54) — wired at the composition root via
+// WithAudit. When nil, Deactivate still works but no trail row is
+// written, matching the pattern in PropertyHandler / IdentityHandler /
+// DisputeHandler / ReportHandler.
 type CouponHandler struct {
-	svc *couponapp.Service
+	svc   *couponapp.Service
+	audit *auditapp.Service
 }
 
 // NewCouponHandler builds a CouponHandler.
 func NewCouponHandler(svc *couponapp.Service) *CouponHandler {
 	return &CouponHandler{svc: svc}
+}
+
+// WithAudit attaches the audit service so Deactivate writes a row.
+// Returns the receiver for chaining.
+func (h *CouponHandler) WithAudit(a *auditapp.Service) *CouponHandler {
+	h.audit = a
+	return h
 }
 
 type createCouponRequest struct {
@@ -77,8 +91,15 @@ func (h *CouponHandler) List(c *gin.Context) {
 	response.OK(c, dto.PageView[dto.CouponView]{Items: items, Total: res.Total})
 }
 
-// Deactivate disables a coupon.
+// Deactivate disables a coupon. Records an audit row on success
+// (S54): action=coupon.deactivate, target=coupon:<id>,
+// metadata.code carries the code so a later read knows which one
+// without joining back to the coupon table.
 func (h *CouponHandler) Deactivate(c *gin.Context) {
+	adminID, ok := requireUser(c)
+	if !ok {
+		return
+	}
 	id, ok := pathUUID(c, "id")
 	if !ok {
 		return
@@ -87,6 +108,16 @@ func (h *CouponHandler) Deactivate(c *gin.Context) {
 	if err != nil {
 		response.Fail(c, err)
 		return
+	}
+	if h.audit != nil {
+		if err := h.audit.Record(c.Request.Context(), auditapp.RecordInput{
+			ActorID: adminID, Action: audit.ActionCouponDeactivate,
+			TargetType: audit.TargetCoupon, TargetID: id,
+			Metadata: map[string]any{"code": cp.Code},
+		}); err != nil {
+			response.Fail(c, err)
+			return
+		}
 	}
 	response.OK(c, dto.FromCoupon(cp))
 }

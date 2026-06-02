@@ -257,11 +257,11 @@ func newHarness(t *testing.T) *harness {
 			Payout:         handler.NewPayoutHandler(payoutSvc),
 			Realtime:       handler.NewRealtimeHandler(realtimeHub),
 			Identity:       handler.NewIdentityHandler(identitySvc).WithAudit(auditSvc),
-			Report:         handler.NewReportHandler(reportSvc),
+			Report:         handler.NewReportHandler(reportSvc).WithAudit(auditSvc),
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(config.PaymentConfig{GPayAngola: config.GPayAngolaConfig{WebhookSecret: webhookSecret}}), memory.NewWebhookEventRepository(), metrics),
 			ConnectWebhook: handler.NewConnectWebhookHandler(payoutSvc, nil, memory.NewWebhookEventRepository(), metrics),
 			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc, ""),
-			Coupon:         handler.NewCouponHandler(couponSvc),
+			Coupon:         handler.NewCouponHandler(couponSvc).WithAudit(auditSvc),
 			UserBlock:      handler.NewUserBlockHandler(userBlockSvc),
 			Offer:          handler.NewOfferHandler(offerSvc),
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
@@ -273,7 +273,7 @@ func newHarness(t *testing.T) *harness {
 			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),
 			Audit:           handler.NewAuditHandler(auditSvc),
 			HouseRules:      handler.NewHouseRulesHandler(houseRulesSvc),
-			Tax:             handler.NewTaxHandler(taxSvc),
+			Tax:             handler.NewTaxHandler(taxSvc).WithAudit(auditSvc),
 		},
 	})
 

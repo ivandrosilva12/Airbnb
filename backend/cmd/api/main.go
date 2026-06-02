@@ -331,12 +331,12 @@ func run() error {
 			Payout:         handler.NewPayoutHandler(payoutSvc),
 			Realtime:       handler.NewRealtimeHandler(realtimeHub),
 			Identity:       handler.NewIdentityHandler(identitySvc).WithAudit(auditSvc),
-			Report:         handler.NewReportHandler(reportSvc),
+			Report:         handler.NewReportHandler(reportSvc).WithAudit(auditSvc),
 			PaymentWebhook: handler.NewPaymentWebhookHandler(paymentSvc, paymentgw.NewWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
 			ConnectWebhook: handler.NewConnectWebhookHandler(payoutSvc, paymentgw.NewConnectWebhookVerifiers(cfg.Payment), webhookEventRepo, metrics),
 			Alert:          handler.NewAlertHandler(alertingSvc, alertStateSvc, cfg.Alerting.WebhookToken),
 			Privacy:        handler.NewPrivacyHandler(privacySvc),
-			Coupon:         handler.NewCouponHandler(couponSvc),
+			Coupon:         handler.NewCouponHandler(couponSvc).WithAudit(auditSvc),
 			UserBlock:      handler.NewUserBlockHandler(userBlockSvc),
 			Offer:          handler.NewOfferHandler(offerSvc),
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
@@ -348,7 +348,7 @@ func run() error {
 			SplitPayment:    handler.NewSplitPaymentHandler(splitPaymentSvc, metrics),
 			MessageTemplate: handler.NewMessageTemplateHandler(messageTemplateSvc),
 			HouseRules:      handler.NewHouseRulesHandler(houseRulesSvc),
-			Tax:             handler.NewTaxHandler(taxSvc),
+			Tax:             handler.NewTaxHandler(taxSvc).WithAudit(auditSvc),
 		},
 	})
 
