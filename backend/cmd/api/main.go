@@ -272,12 +272,12 @@ func run() error {
 	bookingSvc.WithTaxQuoter(taxQuoterAdapter{svc: taxSvc})
 	// S62 — read-only remittance aggregator over the same booking data.
 	taxRemittanceSvc := taxremittanceapp.NewService(bookingRepo, propertyRepo)
-	// S68 — fraud detection BC. Memory-only repository for the first
-	// slice (intentional — we want to shape the wire API before
-	// committing to a postgres schema). Reuses the same per-currency
-	// high-value table as the KYC step-up gate so the two surfaces
-	// don't drift over time.
-	fraudRepo := memory.NewFraudRepository()
+	// S68 + S72 — fraud detection BC. Persisted to Postgres via
+	// migration 0050; the memory adapter remains available for tests
+	// and local experimentation. Reuses the same per-currency high-
+	// value table as the KYC step-up gate so the two surfaces don't
+	// drift over time.
+	fraudRepo := postgres.NewFraudRepository(pool)
 	fraudSvc := fraudapp.NewService(fraudRepo, bookingRepo, userRepo, identitySvc, cfg.Identity.HighValueThresholdsCents)
 	// S71 — Experiences BC. Memory-only repo for the stub slice; the
 	// postgres impl + a host-facing UI land in follow-up slices.
