@@ -15,6 +15,7 @@ import (
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/coupon"
 	"github.com/airhost/backend/internal/domain/dispute"
+	"github.com/airhost/backend/internal/domain/experience"
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/fraud"
 	"github.com/airhost/backend/internal/domain/houserules"
@@ -65,6 +66,7 @@ var (
 	_ houserules.Repository        = (*HouseRulesRepository)(nil)
 	_ tax.Repository               = (*TaxRepository)(nil)
 	_ fraud.Repository             = (*FraudRepository)(nil)
+	_ experience.Repository        = (*ExperienceRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -2767,4 +2769,131 @@ func (r *FraudRepository) List(_ context.Context, f fraud.ListFilter, page share
 		end = len(all)
 	}
 	return shared.PageResult[*fraud.Assessment]{Items: all[page.Offset:end], Total: total}, nil
+}
+
+// --- Experiences -------------------------------------------------------------
+
+// ExperienceRepository is an in-memory experience.Repository.
+type ExperienceRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]experience.Experience
+}
+
+// NewExperienceRepository builds an empty in-memory experience repository.
+func NewExperienceRepository() *ExperienceRepository {
+	return &ExperienceRepository{m: map[uuid.UUID]experience.Experience{}}
+}
+
+func (r *ExperienceRepository) Create(_ context.Context, e *experience.Experience) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.m[e.ID]; exists {
+		return shared.ErrConflict
+	}
+	r.m[e.ID] = *e
+	return nil
+}
+
+func (r *ExperienceRepository) Update(_ context.Context, e *experience.Experience) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[e.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[e.ID] = *e
+	return nil
+}
+
+func (r *ExperienceRepository) Delete(_ context.Context, id uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[id]; !ok {
+		return shared.ErrNotFound
+	}
+	delete(r.m, id)
+	return nil
+}
+
+func (r *ExperienceRepository) FindByID(_ context.Context, id uuid.UUID) (*experience.Experience, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	v, ok := r.m[id]
+	if !ok {
+		return nil, shared.ErrNotFound
+	}
+	dup := v
+	return &dup, nil
+}
+
+func (r *ExperienceRepository) ListByHost(_ context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*experience.Experience], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	all := make([]*experience.Experience, 0)
+	for _, v := range r.m {
+		if v.HostID != hostID {
+			continue
+		}
+		dup := v
+		all = append(all, &dup)
+	}
+	// Newest first, ID as a stable tiebreaker.
+	sort.Slice(all, func(i, j int) bool {
+		if !all[i].CreatedAt.Equal(all[j].CreatedAt) {
+			return all[i].CreatedAt.After(all[j].CreatedAt)
+		}
+		return all[i].ID.String() < all[j].ID.String()
+	})
+	total := int64(len(all))
+	if page.Offset >= len(all) {
+		return shared.PageResult[*experience.Experience]{Items: nil, Total: total}, nil
+	}
+	end := page.Offset + page.Limit
+	if end > len(all) {
+		end = len(all)
+	}
+	return shared.PageResult[*experience.Experience]{Items: all[page.Offset:end], Total: total}, nil
+}
+
+func (r *ExperienceRepository) Search(_ context.Context, f experience.SearchFilter, page shared.Page) (shared.PageResult[*experience.Experience], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	cityFilter := strings.ToLower(strings.TrimSpace(f.City))
+	countryFilter := strings.ToLower(strings.TrimSpace(f.Country))
+	langFilter := strings.ToLower(strings.TrimSpace(f.Language))
+	all := make([]*experience.Experience, 0)
+	for _, v := range r.m {
+		// Search hides drafts and suspended — only the catalogue.
+		if v.Status != experience.StatusPublished {
+			continue
+		}
+		if f.Category != "" && v.Category != f.Category {
+			continue
+		}
+		if cityFilter != "" && !strings.Contains(strings.ToLower(v.Address.City), cityFilter) {
+			continue
+		}
+		if countryFilter != "" && !strings.Contains(strings.ToLower(v.Address.Country), countryFilter) {
+			continue
+		}
+		if langFilter != "" && v.Language != langFilter {
+			continue
+		}
+		dup := v
+		all = append(all, &dup)
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if !all[i].CreatedAt.Equal(all[j].CreatedAt) {
+			return all[i].CreatedAt.After(all[j].CreatedAt)
+		}
+		return all[i].ID.String() < all[j].ID.String()
+	})
+	total := int64(len(all))
+	if page.Offset >= len(all) {
+		return shared.PageResult[*experience.Experience]{Items: nil, Total: total}, nil
+	}
+	end := page.Offset + page.Limit
+	if end > len(all) {
+		end = len(all)
+	}
+	return shared.PageResult[*experience.Experience]{Items: all[page.Offset:end], Total: total}, nil
 }

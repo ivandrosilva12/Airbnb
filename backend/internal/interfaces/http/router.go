@@ -50,6 +50,7 @@ type Handlers struct {
 	Tax             *handler.TaxHandler
 	TaxRemittance   *handler.TaxRemittanceHandler
 	Fraud           *handler.FraudHandler
+	Experience      *handler.ExperienceHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -158,6 +159,14 @@ func NewRouter(d Deps) *gin.Engine {
 	// booking.Create would assemble without persisting anything, so the
 	// booking flow can preview before the guest commits.
 	api.GET("/properties/:id/pricing-quote", h.Booking.Quote)
+
+		// Experiences catalogue (S71) — public search + detail. Filters:
+		// category, city, country, language. Drafts and suspended
+		// listings are hidden by the search; Get returns whatever id
+		// matches (the host UI uses this for the edit pre-load).
+		api.GET("/experiences", h.Experience.Search)
+		api.GET("/experiences/:id", h.Experience.Get)
+
 		// Publicly shared wishlist collection (anyone with the link).
 		api.GET("/shared/collections/:token", h.Favorite.GetShared)
 
@@ -373,6 +382,17 @@ func NewRouter(d Deps) *gin.Engine {
 			host.GET("/properties/:id/bookings", h.Booking.ListForProperty)
 			host.POST("/bookings/:id/confirm", h.Booking.Confirm)
 			host.POST("/bookings/:id/complete", h.Booking.Complete)
+
+			// Experiences host CRUD (S71). Ownership is checked inside
+			// the service so the route gate is enough here. Public Get
+			// + Search are registered above on the public group.
+			host.GET("/host/experiences", h.Experience.HostList)
+			host.POST("/experiences", h.Experience.Create)
+			host.PATCH("/experiences/:id", h.Experience.Update)
+			host.DELETE("/experiences/:id", h.Experience.Delete)
+			host.POST("/experiences/:id/publish", h.Experience.Publish)
+			host.POST("/experiences/:id/suspend", h.Experience.Suspend)
+			host.POST("/experiences/:id/photos", h.Experience.AddPhoto)
 
 			// Host offers (pre-approval / special offer) to guests.
 			host.POST("/offers", h.Offer.Create)

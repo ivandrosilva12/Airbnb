@@ -42,6 +42,7 @@ import (
 	pushtokenapp "github.com/airhost/backend/internal/application/pushtoken"
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reportapp "github.com/airhost/backend/internal/application/report"
+	experienceapp "github.com/airhost/backend/internal/application/experience"
 	fraudapp "github.com/airhost/backend/internal/application/fraud"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	savedsearchapp "github.com/airhost/backend/internal/application/savedsearch"
@@ -278,6 +279,10 @@ func run() error {
 	// don't drift over time.
 	fraudRepo := memory.NewFraudRepository()
 	fraudSvc := fraudapp.NewService(fraudRepo, bookingRepo, userRepo, identitySvc, cfg.Identity.HighValueThresholdsCents)
+	// S71 — Experiences BC. Memory-only repo for the stub slice; the
+	// postgres impl + a host-facing UI land in follow-up slices.
+	experienceRepo := memory.NewExperienceRepository()
+	experienceSvc := experienceapp.NewService(experienceRepo)
 	// Plug the verifier into the booking service so Create enforces the
 	// guest acknowledged the listing's current rules version (S47). The
 	// BookingHandler below records the per-booking acceptance row right
@@ -363,6 +368,7 @@ func run() error {
 			Tax:             handler.NewTaxHandler(taxSvc).WithAudit(auditSvc),
 			TaxRemittance:   handler.NewTaxRemittanceHandler(taxRemittanceSvc),
 			Fraud:           handler.NewFraudHandler(fraudSvc),
+			Experience:      handler.NewExperienceHandler(experienceSvc),
 		},
 	})
 
