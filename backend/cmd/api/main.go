@@ -43,6 +43,7 @@ import (
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reportapp "github.com/airhost/backend/internal/application/report"
 	experienceapp "github.com/airhost/backend/internal/application/experience"
+	experiencebookingapp "github.com/airhost/backend/internal/application/experiencebooking"
 	fraudapp "github.com/airhost/backend/internal/application/fraud"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	savedsearchapp "github.com/airhost/backend/internal/application/savedsearch"
@@ -64,6 +65,7 @@ import (
 	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/airhost/backend/internal/observability/tracing"
 	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
+	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 	"github.com/airhost/backend/internal/infrastructure/persistence/postgres"
 	infrapush "github.com/airhost/backend/internal/infrastructure/push"
 	"github.com/airhost/backend/internal/infrastructure/realtime"
@@ -283,6 +285,11 @@ func run() error {
 	// and local experimentation.
 	experienceRepo := postgres.NewExperienceRepository(pool)
 	experienceSvc := experienceapp.NewService(experienceRepo)
+	// S80 — ExperienceBooking BC. In-memory adapter for now (the postgres
+	// impl + migration land in S81). The platform service-fee rate is the
+	// same one applied to property bookings; sourced from booking config.
+	experienceBookingRepo := memory.NewExperienceBookingRepository()
+	experienceBookingSvc := experiencebookingapp.NewService(experienceBookingRepo, experienceRepo, cfg.Pricing.ServiceFeeRate)
 	// Plug the verifier into the booking service so Create enforces the
 	// guest acknowledged the listing's current rules version (S47). The
 	// BookingHandler below records the per-booking acceptance row right
@@ -373,6 +380,7 @@ func run() error {
 			TaxRemittance:   handler.NewTaxRemittanceHandler(taxRemittanceSvc),
 			Fraud:           handler.NewFraudHandler(fraudSvc),
 			Experience:      handler.NewExperienceHandler(experienceSvc),
+			ExperienceBooking: handler.NewExperienceBookingHandler(experienceBookingSvc),
 		},
 	})
 

@@ -16,6 +16,7 @@ import (
 	"github.com/airhost/backend/internal/domain/coupon"
 	"github.com/airhost/backend/internal/domain/dispute"
 	"github.com/airhost/backend/internal/domain/experience"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/favorite"
 	"github.com/airhost/backend/internal/domain/fraud"
 	"github.com/airhost/backend/internal/domain/houserules"
@@ -67,6 +68,7 @@ var (
 	_ tax.Repository               = (*TaxRepository)(nil)
 	_ fraud.Repository             = (*FraudRepository)(nil)
 	_ experience.Repository        = (*ExperienceRepository)(nil)
+	_ experiencebooking.Repository = (*ExperienceBookingRepository)(nil)
 )
 
 // --- Users -------------------------------------------------------------------
@@ -2896,4 +2898,104 @@ func (r *ExperienceRepository) Search(_ context.Context, f experience.SearchFilt
 		end = len(all)
 	}
 	return shared.PageResult[*experience.Experience]{Items: all[page.Offset:end], Total: total}, nil
+}
+
+// --- Experience bookings ----------------------------------------------------
+
+// ExperienceBookingRepository is an in-memory experiencebooking.Repository.
+type ExperienceBookingRepository struct {
+	mu sync.RWMutex
+	m  map[uuid.UUID]experiencebooking.Booking
+}
+
+// NewExperienceBookingRepository builds an empty in-memory repo.
+func NewExperienceBookingRepository() *ExperienceBookingRepository {
+	return &ExperienceBookingRepository{m: map[uuid.UUID]experiencebooking.Booking{}}
+}
+
+func (r *ExperienceBookingRepository) Create(_ context.Context, b *experiencebooking.Booking) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.m[b.ID]; exists {
+		return shared.ErrConflict
+	}
+	r.m[b.ID] = *b
+	return nil
+}
+
+func (r *ExperienceBookingRepository) Update(_ context.Context, b *experiencebooking.Booking) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[b.ID]; !ok {
+		return shared.ErrNotFound
+	}
+	r.m[b.ID] = *b
+	return nil
+}
+
+func (r *ExperienceBookingRepository) FindByID(_ context.Context, id uuid.UUID) (*experiencebooking.Booking, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	v, ok := r.m[id]
+	if !ok {
+		return nil, shared.ErrNotFound
+	}
+	dup := v
+	return &dup, nil
+}
+
+func (r *ExperienceBookingRepository) ListByGuest(_ context.Context, guestID uuid.UUID, page shared.Page) (shared.PageResult[*experiencebooking.Booking], error) {
+	return r.listBy(func(b experiencebooking.Booking) bool { return b.GuestID == guestID }, page)
+}
+
+func (r *ExperienceBookingRepository) ListByHost(_ context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*experiencebooking.Booking], error) {
+	return r.listBy(func(b experiencebooking.Booking) bool { return b.HostID == hostID }, page)
+}
+
+func (r *ExperienceBookingRepository) listBy(pred func(experiencebooking.Booking) bool, page shared.Page) (shared.PageResult[*experiencebooking.Booking], error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	all := make([]*experiencebooking.Booking, 0)
+	for _, v := range r.m {
+		if !pred(v) {
+			continue
+		}
+		dup := v
+		all = append(all, &dup)
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if !all[i].CreatedAt.Equal(all[j].CreatedAt) {
+			return all[i].CreatedAt.After(all[j].CreatedAt)
+		}
+		return all[i].ID.String() < all[j].ID.String()
+	})
+	total := int64(len(all))
+	if page.Offset >= len(all) {
+		return shared.PageResult[*experiencebooking.Booking]{Items: nil, Total: total}, nil
+	}
+	end := page.Offset + page.Limit
+	if end > len(all) {
+		end = len(all)
+	}
+	return shared.PageResult[*experiencebooking.Booking]{Items: all[page.Offset:end], Total: total}, nil
+}
+
+func (r *ExperienceBookingRepository) FindOverlapping(_ context.Context, experienceID uuid.UUID, startAt, endAt time.Time) ([]*experiencebooking.Booking, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*experiencebooking.Booking, 0)
+	for _, v := range r.m {
+		if v.ExperienceID != experienceID {
+			continue
+		}
+		if v.Status == experiencebooking.StatusCancelled {
+			continue
+		}
+		// Half-open overlap: [a.start, a.end) ∩ [b.start, b.end) ≠ ∅.
+		if v.Session.StartAt.Before(endAt) && startAt.Before(v.Session.EndAt()) {
+			dup := v
+			out = append(out, &dup)
+		}
+	}
+	return out, nil
 }

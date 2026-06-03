@@ -51,6 +51,7 @@ type Handlers struct {
 	TaxRemittance   *handler.TaxRemittanceHandler
 	Fraud           *handler.FraudHandler
 	Experience      *handler.ExperienceHandler
+	ExperienceBooking *handler.ExperienceBookingHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -214,6 +215,19 @@ func NewRouter(d Deps) *gin.Engine {
 		auth.GET("/bookings/:id", h.Booking.Get)
 		auth.POST("/bookings/:id/modify", h.Booking.Modify)
 		auth.POST("/bookings/:id/cancel", h.Booking.Cancel)
+
+		// Experience bookings (S80) — guest endpoints. POST sits on the
+		// experience subresource for create; the rest live under
+		// /experience-bookings/* because they target the booking itself,
+		// not the parent experience. Confirm/Complete are host-only —
+		// the handler enforces actor=host.
+		auth.POST("/experiences/:id/bookings", h.ExperienceBooking.Create)
+		auth.GET("/experience-bookings/me", h.ExperienceBooking.ListMine)
+		auth.GET("/experience-bookings/host", h.ExperienceBooking.HostList)
+		auth.GET("/experience-bookings/:id", h.ExperienceBooking.Get)
+		auth.POST("/experience-bookings/:id/cancel", h.ExperienceBooking.Cancel)
+		auth.POST("/experience-bookings/:id/confirm", h.ExperienceBooking.Confirm)
+		auth.POST("/experience-bookings/:id/complete", h.ExperienceBooking.Complete)
 
 		// Saved searches & new-listing alerts.
 		auth.GET("/saved-searches", h.SavedSearch.List)

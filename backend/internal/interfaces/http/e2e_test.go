@@ -38,6 +38,7 @@ import (
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	reportapp "github.com/airhost/backend/internal/application/report"
 	experienceapp "github.com/airhost/backend/internal/application/experience"
+	experiencebookingapp "github.com/airhost/backend/internal/application/experiencebooking"
 	fraudapp "github.com/airhost/backend/internal/application/fraud"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	savedsearchapp "github.com/airhost/backend/internal/application/savedsearch"
@@ -202,7 +203,12 @@ func newHarness(t *testing.T) *harness {
 	fraudRepo := memory.NewFraudRepository()
 	fraudSvc := fraudapp.NewService(fraudRepo, bookingRepo, userRepo, identitySvc, map[string]int64{"EUR": 500000, "USD": 500000})
 	// S71 — Experiences BC. Memory-only repo for the stub slice.
-	experienceSvc := experienceapp.NewService(memory.NewExperienceRepository())
+	experienceRepoMem := memory.NewExperienceRepository()
+	experienceSvc := experienceapp.NewService(experienceRepoMem)
+	// S80 — ExperienceBooking BC. Memory-only repo until the postgres
+	// impl lands. The same service fee rate as property bookings is
+	// reused so receipts and payouts split the same way.
+	experienceBookingSvc := experiencebookingapp.NewService(memory.NewExperienceBookingRepository(), experienceRepoMem, 0.10)
 	// Plug the verifier into the booking service so the gate fires when a
 	// listing has rules; the BookingHandler below records the per-booking
 	// acceptance row right after Create succeeds (S47).
@@ -299,6 +305,7 @@ func newHarness(t *testing.T) *harness {
 			TaxRemittance:   handler.NewTaxRemittanceHandler(taxRemittanceSvc),
 			Fraud:           handler.NewFraudHandler(fraudSvc),
 			Experience:      handler.NewExperienceHandler(experienceSvc),
+			ExperienceBooking: handler.NewExperienceBookingHandler(experienceBookingSvc),
 		},
 	})
 
