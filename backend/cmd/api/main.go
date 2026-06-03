@@ -64,7 +64,6 @@ import (
 	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/airhost/backend/internal/observability/tracing"
 	paymentgw "github.com/airhost/backend/internal/infrastructure/payment"
-	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 	"github.com/airhost/backend/internal/infrastructure/persistence/postgres"
 	infrapush "github.com/airhost/backend/internal/infrastructure/push"
 	"github.com/airhost/backend/internal/infrastructure/realtime"
@@ -279,9 +278,10 @@ func run() error {
 	// drift over time.
 	fraudRepo := postgres.NewFraudRepository(pool)
 	fraudSvc := fraudapp.NewService(fraudRepo, bookingRepo, userRepo, identitySvc, cfg.Identity.HighValueThresholdsCents)
-	// S71 — Experiences BC. Memory-only repo for the stub slice; the
-	// postgres impl + a host-facing UI land in follow-up slices.
-	experienceRepo := memory.NewExperienceRepository()
+	// S71 + S75 — Experiences BC. Persisted to Postgres via migration
+	// 0051; the memory adapter remains available for the e2e harness
+	// and local experimentation.
+	experienceRepo := postgres.NewExperienceRepository(pool)
 	experienceSvc := experienceapp.NewService(experienceRepo)
 	// Plug the verifier into the booking service so Create enforces the
 	// guest acknowledged the listing's current rules version (S47). The
