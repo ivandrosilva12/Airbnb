@@ -36,6 +36,7 @@ export default function Navbar() {
         <Link to="/" className="brand">AirHost</Link>
         <nav className="nav-links" aria-label={t('a11y.primaryNav')}>
           <Link to="/">{t('nav.explore')}</Link>
+          <Link to="/experiences">{t('nav.experiences')}</Link>
           {authenticated && <Link to="/trips">{t('nav.trips')}</Link>}
           {authenticated && <Link to="/saved">{t('nav.saved')}</Link>}
           {authenticated && (

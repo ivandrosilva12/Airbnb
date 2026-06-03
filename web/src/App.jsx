@@ -20,6 +20,10 @@ import Admin from './pages/Admin';
 import SharedWishlist from './pages/SharedWishlist';
 import SplitPay from './pages/SplitPay';
 import DisputeDetail from './pages/DisputeDetail';
+import Experiences from './pages/Experiences';
+import ExperienceDetail from './pages/ExperienceDetail';
+import HostExperiences from './pages/HostExperiences';
+import HostExperienceForm from './pages/HostExperienceForm';
 
 function Protected({ children, requireHost, requireAdmin }) {
   const { ready, authenticated, isHost, isAdmin, login } = useAuth();
@@ -49,6 +53,8 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/properties/:id" element={<PropertyDetail />} />
+            <Route path="/experiences" element={<Experiences />} />
+            <Route path="/experiences/:id" element={<ExperienceDetail />} />
             <Route path="/wishlist/:token" element={<SharedWishlist />} />
             <Route path="/trips" element={<Protected><MyTrips /></Protected>} />
             <Route path="/saved" element={<Protected><Favorites /></Protected>} />
@@ -57,6 +63,9 @@ export default function App() {
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/admin" element={<Protected requireAdmin><Admin /></Protected>} />
             <Route path="/host" element={<Protected requireHost><HostDashboard /></Protected>} />
+            <Route path="/host/experiences" element={<Protected requireHost><HostExperiences /></Protected>} />
+            <Route path="/host/experiences/new" element={<Protected requireHost><HostExperienceForm /></Protected>} />
+            <Route path="/host/experiences/:id/edit" element={<Protected requireHost><HostExperienceForm /></Protected>} />
             <Route path="/host/new" element={<Protected requireHost><CreateListing /></Protected>} />
             <Route path="/host/properties/:id/edit" element={<Protected requireHost><EditListing /></Protected>} />
             <Route path="/host/earnings" element={<Protected requireHost><HostEarnings /></Protected>} />

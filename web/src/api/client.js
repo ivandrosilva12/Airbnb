@@ -93,6 +93,19 @@ export const api = {
     return request('GET', `/properties${qs ? `?${qs}` : ''}`);
   },
   getProperty: (id) => request('GET', `/properties/${id}`),
+  // Experiences (S71 backend; S76/S77 web). Public reads + host CRUD.
+  searchExperiences: (params = {}) => {
+    const qs = buildQuery(params);
+    return request('GET', `/experiences${qs ? `?${qs}` : ''}`);
+  },
+  getExperience: (id) => request('GET', `/experiences/${id}`),
+  hostListExperiences: () => request('GET', '/host/experiences', { auth: true }),
+  createExperience: (body) => request('POST', '/experiences', { body, auth: true }),
+  updateExperience: (id, body) => request('PATCH', `/experiences/${id}`, { body, auth: true }),
+  publishExperience: (id) => request('POST', `/experiences/${id}/publish`, { auth: true }),
+  suspendExperience: (id) => request('POST', `/experiences/${id}/suspend`, { auth: true }),
+  deleteExperience: (id) => request('DELETE', `/experiences/${id}`, { auth: true }),
+  addExperiencePhoto: (id, body) => request('POST', `/experiences/${id}/photos`, { body, auth: true }),
   listAmenities: () => request('GET', '/amenities'),
   // House rules (S47 + S56) — public read of the current versioned rule
   // set, host-only PATCH that bumps version (history preserved server-side).

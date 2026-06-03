@@ -89,7 +89,10 @@ export default function HostDashboard() {
     <main className="container" aria-label={t('host.listings')}>
       <div className="row-between">
         <h1>{t('host.listings')}</h1>
-        <Link to="/host/new" className="btn btn-primary">{t('host.newListing')}</Link>
+        <div className="actions">
+          <Link to="/host/experiences" className="btn btn-ghost">{t('host.experiences.manage')}</Link>
+          <Link to="/host/new" className="btn btn-primary">{t('host.newListing')}</Link>
+        </div>
       </div>
       {metrics && (
         <div className="metrics-grid" role="list" aria-label="Host metrics summary">
