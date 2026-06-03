@@ -22,6 +22,8 @@ import SplitsScreen from './src/screens/SplitsScreen';
 import DisputeScreen from './src/screens/DisputeScreen';
 import MyDisputesScreen from './src/screens/MyDisputesScreen';
 import SavedRepliesScreen from './src/screens/SavedRepliesScreen';
+import ExperiencesScreen from './src/screens/ExperiencesScreen';
+import ExperienceDetailScreen from './src/screens/ExperienceDetailScreen';
 import { HeaderAuthButton } from './src/screens/HeaderAuthButton';
 
 const Stack = createNativeStackNavigator();
@@ -67,6 +69,8 @@ export default function App() {
           <Stack.Screen name="Dispute" component={DisputeScreen} options={{ title: 'Resolution case' }} />
           <Stack.Screen name="MyDisputes" component={MyDisputesScreen} options={{ title: 'Resolution cases' }} />
           <Stack.Screen name="SavedReplies" component={SavedRepliesScreen} options={{ title: 'Saved replies' }} />
+          <Stack.Screen name="Experiences" component={ExperiencesScreen} options={{ title: 'Experiences' }} />
+          <Stack.Screen name="ExperienceDetail" component={ExperienceDetailScreen} options={{ title: 'Experience' }} />
         </Stack.Navigator>
       </NavigationContainer>
       </RealtimeProvider>

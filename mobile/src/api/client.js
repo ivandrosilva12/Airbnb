@@ -56,6 +56,13 @@ export function createApi(getAccessToken) {
       return request('GET', `/properties${qs ? `?${qs}` : ''}`);
     },
     getProperty: (id) => request('GET', `/properties/${id}`),
+    // Experiences — public read endpoints (S79 mobile parity with web S76).
+    // Search filters: category, city, language, limit, offset.
+    searchExperiences: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request('GET', `/experiences${qs ? `?${qs}` : ''}`);
+    },
+    getExperience: (id) => request('GET', `/experiences/${id}`),
     // Saved searches & alerts
     listSavedSearches: () => request('GET', '/saved-searches', { auth: true }),
     saveSearch: (body) => request('POST', '/saved-searches', { body, auth: true }),

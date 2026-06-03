@@ -154,6 +154,12 @@ export default function ExploreScreen({ navigation }) {
       )}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.savedRow} contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 12 }}>
         <Pressable onPress={saveCurrent}><Text style={styles.saveLink}>★ Save</Text></Pressable>
+        {/* Cross-link to the experiences catalogue. Sits alongside the saved-
+            search chips so the row stays the discovery hub, not just for
+            stays. */}
+        <Pressable style={styles.expChip} onPress={() => navigation.navigate('Experiences')}>
+          <Text style={styles.expChipText}>🎉 Experiences</Text>
+        </Pressable>
         {saved.map((s) => (
           <Pressable key={s.id} style={styles.savedChip} onPress={() => applySaved(s)} onLongPress={() => confirmRemoveSaved(s)}>
             <Text style={styles.savedChipText}>{s.alertsEnabled ? '🔔 ' : ''}{s.name}</Text>
@@ -205,6 +211,8 @@ const styles = StyleSheet.create({
   saveLink: { color: '#ff385c', fontWeight: '700', paddingVertical: 6 },
   savedChip: { borderWidth: 1, borderColor: '#ddd', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff' },
   savedChipText: { fontSize: 13, color: '#222' },
+  expChip: { borderWidth: 1, borderColor: '#ff385c', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff' },
+  expChipText: { fontSize: 13, color: '#ff385c', fontWeight: '700' },
   filterRow: { flexDirection: 'row', gap: 8 },
   filterInput: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 8 },
   instantToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
