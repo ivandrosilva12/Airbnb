@@ -285,12 +285,14 @@ func run() error {
 	experienceRepo := postgres.NewExperienceRepository(pool)
 	experienceSvc := experienceapp.NewService(experienceRepo)
 	// S80 — ExperienceBooking BC. Postgres-backed since S81 (migration
-	// 0052); the memory adapter remains available for the e2e harness
-	// and the application-layer tests. The platform service-fee rate is
-	// the same one applied to property bookings; sourced from booking
-	// config.
+	// 0052). Lifecycle events fan out through the in-process dispatcher
+	// (S85); the Prometheus sink is attached after metrics is constructed
+	// further below, mirroring the fraud service's two-step wiring. The
+	// platform service-fee rate is the same one applied to property
+	// bookings.
 	experienceBookingRepo := postgres.NewExperienceBookingRepository(pool)
-	experienceBookingSvc := experiencebookingapp.NewService(experienceBookingRepo, experienceRepo, cfg.Pricing.ServiceFeeRate)
+	experienceBookingSvc := experiencebookingapp.NewService(experienceBookingRepo, experienceRepo, cfg.Pricing.ServiceFeeRate).
+		WithDispatcher(dispatcher)
 	// Plug the verifier into the booking service so Create enforces the
 	// guest acknowledged the listing's current rules version (S47). The
 	// BookingHandler below records the per-booking acceptance row right
@@ -328,6 +330,11 @@ func run() error {
 	// Assess Save increments the FraudAssessmentsTotal counter
 	// labeled by the resulting risk level.
 	fraudSvc.WithMetrics(metrics)
+	experienceBookingSvc.WithMetrics(metrics)
+	// S85 — same fluent-wire pattern for experience-booking lifecycle
+	// events: every dispatched created / confirmed / cancelled bumps
+	// the ExperienceBookingEventsTotal counter labeled by EventName.
+	experienceBookingSvc.WithMetrics(metrics)
 
 	// --- HTTP interface ----------------------------------------------------
 	syncFn := func(c *gin.Context, claims auth.Claims) (*domainuser.User, error) {

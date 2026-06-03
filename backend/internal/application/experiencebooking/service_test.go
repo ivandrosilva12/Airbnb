@@ -3,15 +3,42 @@ package experiencebookingapp
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/experience"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 	"github.com/google/uuid"
 )
+
+// recordingDispatcher captures every published event so tests can assert
+// what the service handed to the dispatcher. Mirrors the capturing pattern
+// used by splitpayment's service test — kept local so each BC's test
+// stays self-contained.
+type recordingDispatcher struct {
+	mu     sync.Mutex
+	events []event.Event
+}
+
+func (r *recordingDispatcher) Publish(_ context.Context, e event.Event) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, e)
+}
+
+func (r *recordingDispatcher) names() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.events))
+	for _, e := range r.events {
+		out = append(out, e.EventName())
+	}
+	return out
+}
 
 type stubFinder struct {
 	exp *experience.Experience
@@ -161,15 +188,146 @@ func TestService_Confirm_HostOnly(t *testing.T) {
 	}
 }
 
-// fixedClock returns a *Service helper that fast-forwards time so the
-// scheduler tests can stage past-session bookings without bypassing the
-// NewSession future-start invariant. The booking is created at t0, then
-// we re-point the clock to after the session window has closed before
-// invoking AutoCompleteOverdue.
+// TestService_Create_DispatchesEvents proves a successful Create hands the
+// in-process dispatcher exactly one ExperienceBookingCreated event carrying
+// the new aggregate's identity, host, guest and total. The Money snapshot
+// is captured as cents+currency so future durable-outbox routing can
+// (de)serialise without exposing shared.Money's unexported fields.
+func TestService_Create_DispatchesEvents(t *testing.T) {
+	exp := mkExperience(t, experience.StatusPublished)
+	rec := &recordingDispatcher{}
+	svc := NewService(memory.NewExperienceBookingRepository(), &stubFinder{exp: exp}, 0.10).
+		WithDispatcher(rec)
+	guest := uuid.New()
+	b, err := svc.Create(context.Background(), CreateInput{
+		ExperienceID: exp.ID, GuestID: guest,
+		StartAt: time.Now().UTC().Add(48 * time.Hour), Guests: 2,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	names := rec.names()
+	if len(names) != 1 || names[0] != "experiencebooking.created" {
+		t.Fatalf("dispatched names = %v, want [experiencebooking.created]", names)
+	}
+	created, ok := rec.events[0].(experiencebooking.ExperienceBookingCreated)
+	if !ok {
+		t.Fatalf("dispatched event = %T, want ExperienceBookingCreated", rec.events[0])
+	}
+	if created.BookingID != b.ID {
+		t.Errorf("BookingID got %s, want %s", created.BookingID, b.ID)
+	}
+	if created.ExperienceID != exp.ID {
+		t.Errorf("ExperienceID got %s, want %s", created.ExperienceID, exp.ID)
+	}
+	if created.HostID != exp.HostID {
+		t.Errorf("HostID got %s, want %s", created.HostID, exp.HostID)
+	}
+	if created.GuestID != guest {
+		t.Errorf("GuestID got %s, want %s", created.GuestID, guest)
+	}
+	if created.TotalCents != b.Pricing.Total.AmountCents() || created.Currency != b.Pricing.Total.Currency() {
+		t.Errorf("money snapshot got %d %s, want %d %s",
+			created.TotalCents, created.Currency,
+			b.Pricing.Total.AmountCents(), b.Pricing.Total.Currency())
+	}
+	if created.OccurredAt.IsZero() {
+		t.Error("OccurredAt should be set")
+	}
+}
+
+// TestService_Confirm_DispatchesEventOnceAndIsIdempotent proves the first
+// host Confirm fires ExperienceBookingConfirmed, but a second Confirm on
+// the now-confirmed booking does NOT re-publish — subscribers would
+// otherwise double-charge or double-notify.
+func TestService_Confirm_DispatchesEventOnceAndIsIdempotent(t *testing.T) {
+	exp := mkExperience(t, experience.StatusPublished)
+	rec := &recordingDispatcher{}
+	svc := NewService(memory.NewExperienceBookingRepository(), &stubFinder{exp: exp}, 0.10).
+		WithDispatcher(rec)
+	b, _ := svc.Create(context.Background(), CreateInput{
+		ExperienceID: exp.ID, GuestID: uuid.New(),
+		StartAt: time.Now().UTC().Add(48 * time.Hour), Guests: 1,
+	})
+	if _, err := svc.Confirm(context.Background(), exp.HostID, b.ID); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	if _, err := svc.Confirm(context.Background(), exp.HostID, b.ID); err != nil {
+		t.Fatalf("re-confirm: %v", err)
+	}
+	names := rec.names()
+	want := []string{"experiencebooking.created", "experiencebooking.confirmed"}
+	if len(names) != len(want) {
+		t.Fatalf("dispatched names = %v, want %v", names, want)
+	}
+	for i, n := range want {
+		if names[i] != n {
+			t.Errorf("dispatched[%d] = %q, want %q", i, names[i], n)
+		}
+	}
+	confirmed, ok := rec.events[1].(experiencebooking.ExperienceBookingConfirmed)
+	if !ok {
+		t.Fatalf("second event = %T, want ExperienceBookingConfirmed", rec.events[1])
+	}
+	if confirmed.BookingID != b.ID || confirmed.HostID != exp.HostID {
+		t.Errorf("confirmed identity mismatch: %+v", confirmed)
+	}
+}
+
+// TestService_Cancel_DispatchesEventOnceAndIsIdempotent mirrors the confirm
+// test for the cancellation transition.
+func TestService_Cancel_DispatchesEventOnceAndIsIdempotent(t *testing.T) {
+	exp := mkExperience(t, experience.StatusPublished)
+	rec := &recordingDispatcher{}
+	svc := NewService(memory.NewExperienceBookingRepository(), &stubFinder{exp: exp}, 0.10).
+		WithDispatcher(rec)
+	guest := uuid.New()
+	b, _ := svc.Create(context.Background(), CreateInput{
+		ExperienceID: exp.ID, GuestID: guest,
+		StartAt: time.Now().UTC().Add(48 * time.Hour), Guests: 1,
+	})
+	if _, err := svc.Cancel(context.Background(), guest, b.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if _, err := svc.Cancel(context.Background(), guest, b.ID); err != nil {
+		t.Fatalf("re-cancel: %v", err)
+	}
+	names := rec.names()
+	want := []string{"experiencebooking.created", "experiencebooking.cancelled"}
+	if len(names) != len(want) {
+		t.Fatalf("dispatched names = %v, want %v", names, want)
+	}
+	cancelled, ok := rec.events[1].(experiencebooking.ExperienceBookingCancelled)
+	if !ok {
+		t.Fatalf("second event = %T, want ExperienceBookingCancelled", rec.events[1])
+	}
+	if cancelled.BookingID != b.ID || cancelled.CancelledBy != guest {
+		t.Errorf("cancelled identity mismatch: %+v", cancelled)
+	}
+}
+
+// TestService_NilDispatcherFallsBackToNop proves the service constructed
+// without WithDispatcher (or with nil) doesn't panic on the publish call —
+// it falls back to event.Nop().
+func TestService_NilDispatcherFallsBackToNop(t *testing.T) {
+	exp := mkExperience(t, experience.StatusPublished)
+	svc := NewService(memory.NewExperienceBookingRepository(), &stubFinder{exp: exp}, 0.10).
+		WithDispatcher(nil)
+	if _, err := svc.Create(context.Background(), CreateInput{
+		ExperienceID: exp.ID, GuestID: uuid.New(),
+		StartAt: time.Now().UTC().Add(48 * time.Hour), Guests: 1,
+	}); err != nil {
+		t.Fatalf("create with nil dispatcher: %v", err)
+	}
+}
+
+// mutableClock lets the scheduler tests fast-forward time so they can
+// stage past-session bookings without bypassing the NewSession future-
+// start invariant (S82).
 type mutableClock struct{ t time.Time }
 
-func (c *mutableClock) Now() time.Time     { return c.t }
-func (c *mutableClock) Advance(d time.Duration) { c.t = c.t.Add(d) }
+func (c *mutableClock) Now() time.Time           { return c.t }
+func (c *mutableClock) Advance(d time.Duration)  { c.t = c.t.Add(d) }
 
 func TestService_AutoCompleteOverdue_FlipsConfirmedBookings(t *testing.T) {
 	exp := mkExperience(t, experience.StatusPublished)

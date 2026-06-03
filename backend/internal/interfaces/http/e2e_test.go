@@ -208,7 +208,8 @@ func newHarness(t *testing.T) *harness {
 	// S80 — ExperienceBooking BC. Memory-only repo until the postgres
 	// impl lands. The same service fee rate as property bookings is
 	// reused so receipts and payouts split the same way.
-	experienceBookingSvc := experiencebookingapp.NewService(memory.NewExperienceBookingRepository(), experienceRepoMem, 0.10)
+	experienceBookingSvc := experiencebookingapp.NewService(memory.NewExperienceBookingRepository(), experienceRepoMem, 0.10).
+		WithDispatcher(dispatcher)
 	// Plug the verifier into the booking service so the gate fires when a
 	// listing has rules; the BookingHandler below records the per-booking
 	// acceptance row right after Create succeeds (S47).
@@ -234,6 +235,9 @@ func newHarness(t *testing.T) *harness {
 	// S74 — same wiring as production so the e2e harness exercises
 	// the fraud counter path.
 	fraudSvc.WithMetrics(metrics)
+	// S85 — same fluent wire as production for experience-booking
+	// lifecycle event metrics.
+	experienceBookingSvc.WithMetrics(metrics)
 
 	authMW := func(c *gin.Context) {
 		raw := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")

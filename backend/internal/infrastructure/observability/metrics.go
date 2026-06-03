@@ -27,6 +27,11 @@ type Metrics struct {
 	// alert on level=high spikes. Incremented after every successful
 	// Save in fraudapp.Service.Assess.
 	FraudAssessmentsTotal *prometheus.CounterVec
+	// S85 — experience-booking lifecycle events, labeled by EventName
+	// (experiencebooking.created / .confirmed / .cancelled). Incremented
+	// after the application service hands the event to the dispatcher,
+	// so subscriber failures don't suppress the metric.
+	ExperienceBookingEventsTotal *prometheus.CounterVec
 }
 
 // NewMetrics registers and returns the metric collectors. It uses a dedicated
@@ -112,6 +117,13 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Help: "Total fraud assessments persisted, labeled by resulting risk level (low / medium / high) so ops can graph the risk distribution and alert on level=high spikes (S74).",
 			},
 			[]string{"level"},
+		),
+		ExperienceBookingEventsTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "airhost_experience_booking_events_total",
+				Help: "Total experience-booking domain events dispatched, labeled by EventName (experiencebooking.created / .confirmed / .cancelled) (S85).",
+			},
+			[]string{"event"},
 		),
 	}
 }

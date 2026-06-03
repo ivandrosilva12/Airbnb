@@ -1,7 +1,7 @@
 // Package experiencebookingapp orchestrates the ExperienceBooking BC
 // use cases: a guest books a session of a published experience; either
 // party can cancel before the session starts; the host confirms; the
-// scheduler (later slice) flips to completed after the window elapses.
+// scheduler (S82) flips to completed after the window elapses.
 //
 // The service depends on the Experience BC's read port to pull the
 // per-guest price, the host id, and the duration/maxGuests bounds — it
@@ -12,9 +12,11 @@ import (
 	"context"
 	"time"
 
+	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/experience"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/google/uuid"
 )
@@ -39,8 +41,17 @@ type Service struct {
 	serviceFeeRate float64
 	// now is the clock; defaults to time.Now and is overridable via
 	// WithClock for tests (and for callers that need a fake clock for
-	// AutoCompleteOverdue / Cancel / Complete).
+	// AutoCompleteOverdue / Cancel / Complete). S82.
 	now func() time.Time
+	// pub fans the lifecycle events out to in-process subscribers
+	// (payment authorise / capture, host notifications). nil-safe:
+	// constructed services start with a noop publisher so the
+	// in-memory test paths don't have to wire anything; callers opt
+	// in with WithDispatcher when they want real fan-out (S85).
+	pub event.Publisher
+	// metrics counts each published event by name. Optional — nil
+	// keeps observability off for focused unit tests (S85).
+	metrics *observability.Metrics
 }
 
 // Option mutates the Service at construction time.
@@ -48,7 +59,7 @@ type Option func(*Service)
 
 // WithClock overrides the wall clock. Use in tests to set up bookings
 // whose session window has already closed without violating
-// NewSession's future-start invariant.
+// NewSession's future-start invariant (S82).
 func WithClock(now func() time.Time) Option {
 	return func(s *Service) {
 		if now != nil {
@@ -58,18 +69,54 @@ func WithClock(now func() time.Time) Option {
 }
 
 // NewService wires the application service. serviceFeeRate is the
-// platform's cut applied on top of subtotal (e.g. 0.10 for 10 %).
+// platform's cut applied on top of subtotal (e.g. 0.10 for 10 %). Events
+// default to the noop publisher; call WithDispatcher to attach the
+// in-process dispatcher used in main.go.
 func NewService(repo experiencebooking.Repository, experiences ExperienceFinder, serviceFeeRate float64, opts ...Option) *Service {
 	s := &Service{
 		repo:           repo,
 		experiences:    experiences,
 		serviceFeeRate: serviceFeeRate,
 		now:            func() time.Time { return time.Now().UTC() },
+		pub:            event.Nop(),
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 	return s
+}
+
+// WithDispatcher attaches an event publisher so the lifecycle events
+// (created / confirmed / cancelled) fan out to subscribers. Passing nil
+// resets the service to the silent noop publisher. Returns the receiver
+// for fluent wiring — main.go calls .WithDispatcher(dispatcher) right
+// after NewService, mirroring the booking/fraud services (S85).
+func (s *Service) WithDispatcher(p event.Publisher) *Service {
+	if p == nil {
+		p = event.Nop()
+	}
+	s.pub = p
+	return s
+}
+
+// WithMetrics plugs in the Prometheus sink so every published lifecycle
+// event increments the ExperienceBookingEventsTotal counter labeled by
+// event name (S85). Nil leaves observability off. Returns the receiver
+// for fluent wiring.
+func (s *Service) WithMetrics(m *observability.Metrics) *Service {
+	s.metrics = m
+	return s
+}
+
+// publish fans out an event through the wired publisher and, when a
+// metrics sink is attached, increments the per-event counter. Centralised
+// so every emission site stays consistent and the metric label can't
+// drift from the EventName().
+func (s *Service) publish(ctx context.Context, e event.Event) {
+	s.pub.Publish(ctx, e)
+	if s.metrics != nil {
+		s.metrics.ExperienceBookingEventsTotal.WithLabelValues(e.EventName()).Inc()
+	}
 }
 
 // CreateInput is the guest's booking request. StartAt is the session
@@ -117,6 +164,17 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*experiencebookin
 	if err := s.repo.Create(ctx, b); err != nil {
 		return nil, err
 	}
+	// Publish AFTER the repo write so a persistence failure doesn't
+	// leak a Created event for a booking that doesn't exist.
+	s.publish(ctx, experiencebooking.ExperienceBookingCreated{
+		BookingID:    b.ID,
+		ExperienceID: b.ExperienceID,
+		HostID:       b.HostID,
+		GuestID:      b.GuestID,
+		TotalCents:   b.Pricing.Total.AmountCents(),
+		Currency:     b.Pricing.Total.Currency(),
+		OccurredAt:   b.CreatedAt,
+	})
 	return b, nil
 }
 
@@ -139,7 +197,8 @@ func (s *Service) ListForHost(ctx context.Context, hostID uuid.UUID, page shared
 }
 
 // Confirm flips a pending booking to confirmed. Only the host may
-// call.
+// call. Idempotent on the confirmed state: a second call returns the
+// already-confirmed aggregate without publishing a second event.
 func (s *Service) Confirm(ctx context.Context, actorID, id uuid.UUID) (*experiencebooking.Booking, error) {
 	b, err := s.repo.FindByID(ctx, id)
 	if err != nil {
@@ -148,18 +207,31 @@ func (s *Service) Confirm(ctx context.Context, actorID, id uuid.UUID) (*experien
 	if b.HostID != actorID {
 		return nil, shared.ErrForbidden
 	}
+	priorStatus := b.Status
 	if err := b.Confirm(); err != nil {
 		return nil, err
 	}
 	if err := s.repo.Update(ctx, b); err != nil {
 		return nil, err
 	}
+	// Only fire the event on a real transition — re-confirming an
+	// already-confirmed booking must not double-charge or double-notify.
+	if priorStatus != experiencebooking.StatusConfirmed && b.Status == experiencebooking.StatusConfirmed {
+		s.publish(ctx, experiencebooking.ExperienceBookingConfirmed{
+			BookingID:    b.ID,
+			ExperienceID: b.ExperienceID,
+			HostID:       b.HostID,
+			GuestID:      b.GuestID,
+			OccurredAt:   b.UpdatedAt,
+		})
+	}
 	return b, nil
 }
 
 // Cancel cancels a booking. Either the booking's guest or the parent
 // host may call. The domain refuses if the session has already
-// started.
+// started. Idempotent on the cancelled state — the second call doesn't
+// re-publish the event.
 func (s *Service) Cancel(ctx context.Context, actorID, id uuid.UUID) (*experiencebooking.Booking, error) {
 	b, err := s.repo.FindByID(ctx, id)
 	if err != nil {
@@ -168,11 +240,20 @@ func (s *Service) Cancel(ctx context.Context, actorID, id uuid.UUID) (*experienc
 	if b.GuestID != actorID && b.HostID != actorID {
 		return nil, shared.ErrForbidden
 	}
+	priorStatus := b.Status
 	if err := b.Cancel(s.now()); err != nil {
 		return nil, err
 	}
 	if err := s.repo.Update(ctx, b); err != nil {
 		return nil, err
+	}
+	if priorStatus != experiencebooking.StatusCancelled && b.Status == experiencebooking.StatusCancelled {
+		s.publish(ctx, experiencebooking.ExperienceBookingCancelled{
+			BookingID:    b.ID,
+			ExperienceID: b.ExperienceID,
+			CancelledBy:  actorID,
+			OccurredAt:   b.UpdatedAt,
+		})
 	}
 	return b, nil
 }
@@ -204,7 +285,7 @@ func (s *Service) Complete(ctx context.Context, actorID, id uuid.UUID) (*experie
 // Errors on individual bookings (a transient DB failure on Update, or
 // the defensive guard on b.Complete) are logged and skipped so one bad
 // row never stalls the batch — the next tick will retry whatever did
-// not flip this time around.
+// not flip this time around. S82.
 func (s *Service) AutoCompleteOverdue(ctx context.Context) (int, error) {
 	now := s.now()
 	log := logctx.LoggerFrom(ctx)

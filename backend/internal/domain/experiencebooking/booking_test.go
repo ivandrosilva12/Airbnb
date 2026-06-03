@@ -154,3 +154,54 @@ func TestComputePricing_RejectsBadInputs(t *testing.T) {
 		t.Fatal("expected error for fee rate > 1")
 	}
 }
+
+// TestLifecycleEvents_EventNamesAreStable pins the stable wire names of the
+// S85 lifecycle events. Subscribers + Prometheus metric labels depend on
+// these strings — flipping one is a breaking change that would silently
+// break alerts and downstream filters.
+func TestLifecycleEvents_EventNamesAreStable(t *testing.T) {
+	if got := (ExperienceBookingCreated{}).EventName(); got != "experiencebooking.created" {
+		t.Errorf("created EventName = %q, want experiencebooking.created", got)
+	}
+	if got := (ExperienceBookingConfirmed{}).EventName(); got != "experiencebooking.confirmed" {
+		t.Errorf("confirmed EventName = %q, want experiencebooking.confirmed", got)
+	}
+	if got := (ExperienceBookingCancelled{}).EventName(); got != "experiencebooking.cancelled" {
+		t.Errorf("cancelled EventName = %q, want experiencebooking.cancelled", got)
+	}
+}
+
+// TestLifecycleEvents_CarryAggregateIdentity proves each event embeds the
+// booking identity (id + experience id) so a subscriber doesn't have to
+// re-read the aggregate to know which booking transitioned. The Created
+// event additionally carries the money snapshot and the host id.
+func TestLifecycleEvents_CarryAggregateIdentity(t *testing.T) {
+	bid, exp, host, guest := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	now := time.Now().UTC()
+
+	created := ExperienceBookingCreated{
+		BookingID:    bid,
+		ExperienceID: exp,
+		HostID:       host,
+		GuestID:      guest,
+		TotalCents:   5500,
+		Currency:     "EUR",
+		OccurredAt:   now,
+	}
+	if created.BookingID != bid || created.ExperienceID != exp || created.HostID != host || created.GuestID != guest {
+		t.Errorf("created identity mismatch: %+v", created)
+	}
+	if created.TotalCents != 5500 || created.Currency != "EUR" {
+		t.Errorf("created money mismatch: %d %s", created.TotalCents, created.Currency)
+	}
+
+	confirmed := ExperienceBookingConfirmed{BookingID: bid, ExperienceID: exp, HostID: host, GuestID: guest, OccurredAt: now}
+	if confirmed.BookingID != bid || confirmed.HostID != host {
+		t.Errorf("confirmed identity mismatch: %+v", confirmed)
+	}
+
+	cancelled := ExperienceBookingCancelled{BookingID: bid, ExperienceID: exp, CancelledBy: guest, OccurredAt: now}
+	if cancelled.BookingID != bid || cancelled.CancelledBy != guest {
+		t.Errorf("cancelled identity mismatch: %+v", cancelled)
+	}
+}
