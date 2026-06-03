@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 
 const LINKS = [
   { screen: 'Trips', label: 'My trips', icon: '🧳' },
+  { screen: 'MyExperienceBookings', label: 'My experience bookings', icon: '🎉' },
   { screen: 'Saved', label: 'Saved listings', icon: '♥' },
   { screen: 'Messages', label: 'Messages', icon: '💬' },
   { screen: 'Notifications', label: 'Notifications', icon: '🔔' },

@@ -24,6 +24,7 @@ import MyDisputesScreen from './src/screens/MyDisputesScreen';
 import SavedRepliesScreen from './src/screens/SavedRepliesScreen';
 import ExperiencesScreen from './src/screens/ExperiencesScreen';
 import ExperienceDetailScreen from './src/screens/ExperienceDetailScreen';
+import MyExperienceBookingsScreen from './src/screens/MyExperienceBookingsScreen';
 import { HeaderAuthButton } from './src/screens/HeaderAuthButton';
 
 const Stack = createNativeStackNavigator();
@@ -71,6 +72,7 @@ export default function App() {
           <Stack.Screen name="SavedReplies" component={SavedRepliesScreen} options={{ title: 'Saved replies' }} />
           <Stack.Screen name="Experiences" component={ExperiencesScreen} options={{ title: 'Experiences' }} />
           <Stack.Screen name="ExperienceDetail" component={ExperienceDetailScreen} options={{ title: 'Experience' }} />
+          <Stack.Screen name="MyExperienceBookings" component={MyExperienceBookingsScreen} options={{ title: 'My experiences' }} />
         </Stack.Navigator>
       </NavigationContainer>
       </RealtimeProvider>

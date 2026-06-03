@@ -63,6 +63,14 @@ export function createApi(getAccessToken) {
       return request('GET', `/experiences${qs ? `?${qs}` : ''}`);
     },
     getExperience: (id) => request('GET', `/experiences/${id}`),
+    // ExperienceBooking (S84 mobile parity with backend S80) — guests book a
+    // session of an experience, list/view/cancel their own bookings.
+    createExperienceBooking: (expId, body) =>
+      request('POST', `/experiences/${expId}/bookings`, { body, auth: true }),
+    myExperienceBookings: () => request('GET', '/experience-bookings/me', { auth: true }),
+    getExperienceBooking: (id) => request('GET', `/experience-bookings/${id}`, { auth: true }),
+    cancelExperienceBooking: (id) =>
+      request('POST', `/experience-bookings/${id}/cancel`, { auth: true }),
     // Saved searches & alerts
     listSavedSearches: () => request('GET', '/saved-searches', { auth: true }),
     saveSearch: (body) => request('POST', '/saved-searches', { body, auth: true }),
