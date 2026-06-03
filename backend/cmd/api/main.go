@@ -316,6 +316,10 @@ func run() error {
 	registry.MustRegister(collectors.NewGoCollector())
 	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	metrics := observability.NewMetrics(registry)
+	// S74 — plug the metrics sink into the fraud assessor so every
+	// Assess Save increments the FraudAssessmentsTotal counter
+	// labeled by the resulting risk level.
+	fraudSvc.WithMetrics(metrics)
 
 	// --- HTTP interface ----------------------------------------------------
 	syncFn := func(c *gin.Context, claims auth.Claims) (*domainuser.User, error) {

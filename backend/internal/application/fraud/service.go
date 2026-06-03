@@ -14,6 +14,7 @@ import (
 	"github.com/airhost/backend/internal/domain/fraud"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
+	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/google/uuid"
 )
 
@@ -34,6 +35,10 @@ type Service struct {
 	// consults for the high_value rule. Defensive-copied at wire
 	// time so post-wire mutation can't reshape running behaviour.
 	highValueThresholds map[string]int64
+	// metrics is the optional Prometheus sink. Nil means observability
+	// is off (test paths that don't care about counters stay simple);
+	// the Assess path is best-effort either way (S74).
+	metrics *observability.Metrics
 }
 
 // NewService builds a fraud application service.
@@ -50,6 +55,15 @@ func NewService(repo fraud.Repository, bookings booking.Repository, users user.R
 		}
 		s.highValueThresholds = cp
 	}
+	return s
+}
+
+// WithMetrics wires the Prometheus sink so Assess can increment the
+// FraudAssessmentsTotal counter labeled by the resulting risk level
+// (S74). Returns the receiver for fluent wiring. Nil leaves metrics
+// disabled; the assessor stays best-effort either way.
+func (s *Service) WithMetrics(m *observability.Metrics) *Service {
+	s.metrics = m
 	return s
 }
 
@@ -114,6 +128,12 @@ func (s *Service) Assess(ctx context.Context, bookingID uuid.UUID) (*fraud.Asses
 	}
 	if err := s.repo.Save(ctx, a); err != nil {
 		return nil, err
+	}
+	// S74 — record the outcome AFTER persistence so a Save failure
+	// doesn't double-count via caller retries. Nil-guarded so the
+	// observability wiring stays optional (test paths skip it).
+	if s.metrics != nil {
+		s.metrics.FraudAssessmentsTotal.WithLabelValues(string(a.Level)).Inc()
 	}
 	return a, nil
 }

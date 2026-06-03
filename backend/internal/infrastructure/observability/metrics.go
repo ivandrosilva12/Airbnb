@@ -22,6 +22,11 @@ type Metrics struct {
 	SplitPaymentsCompleted prometheus.Counter
 	DisputesOpened         prometheus.Counter
 	CohostActions          *prometheus.CounterVec
+	// S74 — fraud assessor outcomes, labeled by Assessment.Level
+	// (low/medium/high) so ops can graph the risk distribution and
+	// alert on level=high spikes. Incremented after every successful
+	// Save in fraudapp.Service.Assess.
+	FraudAssessmentsTotal *prometheus.CounterVec
 }
 
 // NewMetrics registers and returns the metric collectors. It uses a dedicated
@@ -100,6 +105,13 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Help: "Total co-host grant mutations, labeled by action (invited / permissions_changed / revoked).",
 			},
 			[]string{"action"},
+		),
+		FraudAssessmentsTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "airhost_fraud_assessments_total",
+				Help: "Total fraud assessments persisted, labeled by resulting risk level (low / medium / high) so ops can graph the risk distribution and alert on level=high spikes (S74).",
+			},
+			[]string{"level"},
 		),
 	}
 }

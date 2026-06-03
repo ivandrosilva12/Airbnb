@@ -225,6 +225,9 @@ func newHarness(t *testing.T) *harness {
 
 	registry := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(registry)
+	// S74 — same wiring as production so the e2e harness exercises
+	// the fraud counter path.
+	fraudSvc.WithMetrics(metrics)
 
 	authMW := func(c *gin.Context) {
 		raw := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
