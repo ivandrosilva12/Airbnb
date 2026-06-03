@@ -106,6 +106,14 @@ export const api = {
   suspendExperience: (id) => request('POST', `/experiences/${id}/suspend`, { auth: true }),
   deleteExperience: (id) => request('DELETE', `/experiences/${id}`, { auth: true }),
   addExperiencePhoto: (id, body) => request('POST', `/experiences/${id}/photos`, { body, auth: true }),
+  // Experience bookings (S80 backend; S83 web). createExperienceBooking books
+  // a session, myExperienceBookings lists the signed-in user's bookings, and
+  // cancelExperienceBooking transitions one to "cancelled".
+  createExperienceBooking: (expId, { startAt, guests }) =>
+    request('POST', `/experiences/${expId}/bookings`, { body: { startAt, guests }, auth: true }),
+  myExperienceBookings: () => request('GET', '/experience-bookings/me', { auth: true }),
+  getExperienceBooking: (id) => request('GET', `/experience-bookings/${id}`, { auth: true }),
+  cancelExperienceBooking: (id) => request('POST', `/experience-bookings/${id}/cancel`, { auth: true }),
   listAmenities: () => request('GET', '/amenities'),
   // House rules (S47 + S56) — public read of the current versioned rule
   // set, host-only PATCH that bumps version (history preserved server-side).

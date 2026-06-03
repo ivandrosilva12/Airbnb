@@ -24,6 +24,7 @@ import Experiences from './pages/Experiences';
 import ExperienceDetail from './pages/ExperienceDetail';
 import HostExperiences from './pages/HostExperiences';
 import HostExperienceForm from './pages/HostExperienceForm';
+import MyExperienceBookings from './pages/MyExperienceBookings';
 
 function Protected({ children, requireHost, requireAdmin }) {
   const { ready, authenticated, isHost, isAdmin, login } = useAuth();
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="/properties/:id" element={<PropertyDetail />} />
             <Route path="/experiences" element={<Experiences />} />
             <Route path="/experiences/:id" element={<ExperienceDetail />} />
+            <Route path="/experience-bookings/me" element={<Protected><MyExperienceBookings /></Protected>} />
             <Route path="/wishlist/:token" element={<SharedWishlist />} />
             <Route path="/trips" element={<Protected><MyTrips /></Protected>} />
             <Route path="/saved" element={<Protected><Favorites /></Protected>} />

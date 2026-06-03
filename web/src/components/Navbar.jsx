@@ -38,6 +38,7 @@ export default function Navbar() {
           <Link to="/">{t('nav.explore')}</Link>
           <Link to="/experiences">{t('nav.experiences')}</Link>
           {authenticated && <Link to="/trips">{t('nav.trips')}</Link>}
+          {authenticated && <Link to="/experience-bookings/me">{t('nav.expBookings')}</Link>}
           {authenticated && <Link to="/saved">{t('nav.saved')}</Link>}
           {authenticated && (
             <Link
