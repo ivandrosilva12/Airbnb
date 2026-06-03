@@ -25,4 +25,11 @@ type Repository interface {
 	// Callers use this to refuse a second booking on the same start time
 	// when the host has not modelled multi-cohort sessions.
 	FindOverlapping(ctx context.Context, experienceID uuid.UUID, startAt, endAt time.Time) ([]*Booking, error)
+	// FindConfirmedPastSession returns confirmed bookings whose session
+	// window (StartAt + duration) has already ended at or before `before`.
+	// Used by the scheduler to drive the confirmed→completed transition.
+	// Limit caps the batch size; callers re-tick the scheduler to drain
+	// any backlog. A non-positive limit means "no batch cap" — repos may
+	// still enforce a sane internal ceiling.
+	FindConfirmedPastSession(ctx context.Context, before time.Time, limit int) ([]*Booking, error)
 }

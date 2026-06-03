@@ -422,6 +422,18 @@ func run() error {
 		Interval: time.Hour,
 		Run:      savedSearchSvc.RunAlerts,
 	})
+	// Flip confirmed experience bookings to completed once their session
+	// window has elapsed. Five minutes is a sensible compromise: tight
+	// enough for the review-request workflow to fire promptly, loose
+	// enough that the per-tick DB load stays trivial.
+	sched.Add(scheduler.Job{
+		Name:     "experience-bookings-auto-complete",
+		Interval: 5 * time.Minute,
+		Run: func(ctx context.Context) error {
+			_, err := experienceBookingSvc.AutoCompleteOverdue(ctx)
+			return err
+		},
+	})
 	sched.Start(ctx)
 
 	srv := &http.Server{

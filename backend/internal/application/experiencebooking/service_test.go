@@ -161,6 +161,124 @@ func TestService_Confirm_HostOnly(t *testing.T) {
 	}
 }
 
+// fixedClock returns a *Service helper that fast-forwards time so the
+// scheduler tests can stage past-session bookings without bypassing the
+// NewSession future-start invariant. The booking is created at t0, then
+// we re-point the clock to after the session window has closed before
+// invoking AutoCompleteOverdue.
+type mutableClock struct{ t time.Time }
+
+func (c *mutableClock) Now() time.Time     { return c.t }
+func (c *mutableClock) Advance(d time.Duration) { c.t = c.t.Add(d) }
+
+func TestService_AutoCompleteOverdue_FlipsConfirmedBookings(t *testing.T) {
+	exp := mkExperience(t, experience.StatusPublished)
+	repo := memory.NewExperienceBookingRepository()
+	clk := &mutableClock{t: time.Now().UTC()}
+	svc := NewService(repo, &stubFinder{exp: exp}, 0.10, WithClock(clk.Now))
+
+	// Session starts 1h after "now"; duration is 120 minutes (from mkExperience).
+	start := clk.Now().Add(1 * time.Hour)
+	b, err := svc.Create(context.Background(), CreateInput{
+		ExperienceID: exp.ID, GuestID: uuid.New(), StartAt: start, Guests: 1,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.Confirm(context.Background(), exp.HostID, b.ID); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	// Advance past the session end (start + 120m + a minute of slack).
+	clk.Advance(3*time.Hour + time.Minute)
+
+	completed, err := svc.AutoCompleteOverdue(context.Background())
+	if err != nil {
+		t.Fatalf("auto-complete: %v", err)
+	}
+	if completed != 1 {
+		t.Errorf("completed got %d want 1", completed)
+	}
+
+	got, err := svc.Get(context.Background(), b.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != experiencebooking.StatusCompleted {
+		t.Errorf("status got %s want completed", got.Status)
+	}
+}
+
+func TestService_AutoCompleteOverdue_SkipsPending(t *testing.T) {
+	exp := mkExperience(t, experience.StatusPublished)
+	repo := memory.NewExperienceBookingRepository()
+	clk := &mutableClock{t: time.Now().UTC()}
+	svc := NewService(repo, &stubFinder{exp: exp}, 0.10, WithClock(clk.Now))
+
+	b, err := svc.Create(context.Background(), CreateInput{
+		ExperienceID: exp.ID, GuestID: uuid.New(),
+		StartAt: clk.Now().Add(1 * time.Hour), Guests: 1,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// Pending — NEVER confirmed.
+
+	clk.Advance(3*time.Hour + time.Minute)
+
+	completed, err := svc.AutoCompleteOverdue(context.Background())
+	if err != nil {
+		t.Fatalf("auto-complete: %v", err)
+	}
+	if completed != 0 {
+		t.Errorf("completed got %d want 0", completed)
+	}
+
+	got, _ := svc.Get(context.Background(), b.ID)
+	if got.Status != experiencebooking.StatusPending {
+		t.Errorf("status got %s want pending", got.Status)
+	}
+}
+
+func TestService_AutoCompleteOverdue_SkipsAlreadyCompleted(t *testing.T) {
+	exp := mkExperience(t, experience.StatusPublished)
+	repo := memory.NewExperienceBookingRepository()
+	clk := &mutableClock{t: time.Now().UTC()}
+	svc := NewService(repo, &stubFinder{exp: exp}, 0.10, WithClock(clk.Now))
+
+	b, err := svc.Create(context.Background(), CreateInput{
+		ExperienceID: exp.ID, GuestID: uuid.New(),
+		StartAt: clk.Now().Add(1 * time.Hour), Guests: 1,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.Confirm(context.Background(), exp.HostID, b.ID); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	// Advance past the session end and flip once.
+	clk.Advance(3*time.Hour + time.Minute)
+	if _, err := svc.AutoCompleteOverdue(context.Background()); err != nil {
+		t.Fatalf("first auto-complete: %v", err)
+	}
+
+	// Second pass: idempotent — no further completions.
+	clk.Advance(10 * time.Minute)
+	completed, err := svc.AutoCompleteOverdue(context.Background())
+	if err != nil {
+		t.Fatalf("second auto-complete: %v", err)
+	}
+	if completed != 0 {
+		t.Errorf("second pass completed got %d want 0", completed)
+	}
+
+	got, _ := svc.Get(context.Background(), b.ID)
+	if got.Status != experiencebooking.StatusCompleted {
+		t.Errorf("status got %s want completed", got.Status)
+	}
+}
+
 func TestService_ListMine_ReturnsGuestsBookings(t *testing.T) {
 	exp := mkExperience(t, experience.StatusPublished)
 	svc := NewService(memory.NewExperienceBookingRepository(), &stubFinder{exp: exp}, 0.10)

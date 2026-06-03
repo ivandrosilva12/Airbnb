@@ -2999,3 +2999,30 @@ func (r *ExperienceBookingRepository) FindOverlapping(_ context.Context, experie
 	}
 	return out, nil
 }
+
+// FindConfirmedPastSession returns confirmed bookings whose session end
+// is at or before `before`, ordered by SessionEnd ascending (oldest first
+// so the scheduler drains backlog deterministically). limit ≤ 0 means no
+// cap.
+func (r *ExperienceBookingRepository) FindConfirmedPastSession(_ context.Context, before time.Time, limit int) ([]*experiencebooking.Booking, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*experiencebooking.Booking, 0)
+	for _, v := range r.m {
+		if v.Status != experiencebooking.StatusConfirmed {
+			continue
+		}
+		if v.Session.EndAt().After(before) {
+			continue
+		}
+		dup := v
+		out = append(out, &dup)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Session.EndAt().Before(out[j].Session.EndAt())
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}

@@ -15,8 +15,14 @@ import (
 	"github.com/airhost/backend/internal/domain/experience"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/google/uuid"
 )
+
+// autoCompleteBatchLimit caps how many bookings the scheduler completes in
+// a single tick. The job re-runs every few minutes, so any backlog drains
+// in subsequent ticks without locking the DB for too long.
+const autoCompleteBatchLimit = 500
 
 // ExperienceFinder is the slimmest read port the service needs from
 // the Experience BC. Defined here rather than imported as
@@ -31,12 +37,39 @@ type Service struct {
 	repo           experiencebooking.Repository
 	experiences    ExperienceFinder
 	serviceFeeRate float64
+	// now is the clock; defaults to time.Now and is overridable via
+	// WithClock for tests (and for callers that need a fake clock for
+	// AutoCompleteOverdue / Cancel / Complete).
+	now func() time.Time
+}
+
+// Option mutates the Service at construction time.
+type Option func(*Service)
+
+// WithClock overrides the wall clock. Use in tests to set up bookings
+// whose session window has already closed without violating
+// NewSession's future-start invariant.
+func WithClock(now func() time.Time) Option {
+	return func(s *Service) {
+		if now != nil {
+			s.now = now
+		}
+	}
 }
 
 // NewService wires the application service. serviceFeeRate is the
 // platform's cut applied on top of subtotal (e.g. 0.10 for 10 %).
-func NewService(repo experiencebooking.Repository, experiences ExperienceFinder, serviceFeeRate float64) *Service {
-	return &Service{repo: repo, experiences: experiences, serviceFeeRate: serviceFeeRate}
+func NewService(repo experiencebooking.Repository, experiences ExperienceFinder, serviceFeeRate float64, opts ...Option) *Service {
+	s := &Service{
+		repo:           repo,
+		experiences:    experiences,
+		serviceFeeRate: serviceFeeRate,
+		now:            func() time.Time { return time.Now().UTC() },
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // CreateInput is the guest's booking request. StartAt is the session
@@ -135,7 +168,7 @@ func (s *Service) Cancel(ctx context.Context, actorID, id uuid.UUID) (*experienc
 	if b.GuestID != actorID && b.HostID != actorID {
 		return nil, shared.ErrForbidden
 	}
-	if err := b.Cancel(time.Now().UTC()); err != nil {
+	if err := b.Cancel(s.now()); err != nil {
 		return nil, err
 	}
 	if err := s.repo.Update(ctx, b); err != nil {
@@ -155,11 +188,47 @@ func (s *Service) Complete(ctx context.Context, actorID, id uuid.UUID) (*experie
 	if b.HostID != actorID {
 		return nil, shared.ErrForbidden
 	}
-	if err := b.Complete(time.Now().UTC()); err != nil {
+	if err := b.Complete(s.now()); err != nil {
 		return nil, err
 	}
 	if err := s.repo.Update(ctx, b); err != nil {
 		return nil, err
 	}
 	return b, nil
+}
+
+// AutoCompleteOverdue is the scheduler entry point: every confirmed
+// booking whose session window has already ended is flipped to
+// completed. Returns the count of bookings successfully completed.
+//
+// Errors on individual bookings (a transient DB failure on Update, or
+// the defensive guard on b.Complete) are logged and skipped so one bad
+// row never stalls the batch — the next tick will retry whatever did
+// not flip this time around.
+func (s *Service) AutoCompleteOverdue(ctx context.Context) (int, error) {
+	now := s.now()
+	log := logctx.LoggerFrom(ctx)
+	bookings, err := s.repo.FindConfirmedPastSession(ctx, now, autoCompleteBatchLimit)
+	if err != nil {
+		return 0, err
+	}
+	completed := 0
+	for _, b := range bookings {
+		if err := b.Complete(now); err != nil {
+			// Defensive: the where-clause already filtered to confirmed +
+			// past-end so Complete should never refuse. Log and skip if it
+			// does (e.g. a concurrent state change between query and now).
+			log.Warn("experiencebooking: auto-complete skipped booking", "booking_id", b.ID, "status", b.Status, "error", err)
+			continue
+		}
+		if err := s.repo.Update(ctx, b); err != nil {
+			log.Error("experiencebooking: auto-complete update failed", "booking_id", b.ID, "error", err)
+			continue
+		}
+		completed++
+	}
+	if completed > 0 {
+		log.Info("experiencebooking: auto-completed bookings", "count", completed, "scanned", len(bookings))
+	}
+	return completed, nil
 }
