@@ -18,7 +18,109 @@ export default function Admin() {
       <SilencesPanel />
       <UsersPanel />
       <TaxRemittancePanel />
+      <FraudPanel />
     </div>
+  );
+}
+
+// FraudPanel (S73) — read-only review queue over the fraud assessments
+// produced by S68 (postgres-backed since S72). Drives the admin "show me
+// high-risk bookings" workflow: filter by level, scan the page, click
+// through to the booking detail. The assessment itself is forensic
+// (the booking has already landed); the operator decides what to do
+// (manual review, account suspension, refund).
+function FraudPanel() {
+  const { t } = useT();
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  // Default to ?level=high — the queue is for things worth a human's
+  // attention, not the routine low-risk noise. Admins can broaden the
+  // floor with the picker.
+  const [level, setLevel] = useState('high');
+
+  async function load(nextLevel = level) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.adminListFraudAssessments({ level: nextLevel, limit: 50 });
+      setItems(res.items || []);
+      setTotal(res.total || 0);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function onLevelChange(e) {
+    const v = e.target.value;
+    setLevel(v);
+    load(v);
+  }
+
+  return (
+    <section className="admin-panel" aria-label={t('admin.fraud.title')}>
+      <h2>{t('admin.fraud.title')}</h2>
+      <p className="muted">{t('admin.fraud.hint')}</p>
+      <div className="admin-filters">
+        <label>
+          {t('admin.fraud.levelLabel')}
+          <select value={level} onChange={onLevelChange} aria-label={t('admin.fraud.levelLabel')}>
+            <option value="">{t('admin.fraud.anyLevel')}</option>
+            <option value="medium">{t('admin.fraud.minMedium')}</option>
+            <option value="high">{t('admin.fraud.minHigh')}</option>
+          </select>
+        </label>
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
+      {loading ? (
+        <p role="status">{t('common.loading')}</p>
+      ) : items.length === 0 ? (
+        <p className="muted">{t('admin.fraud.empty')}</p>
+      ) : (
+        <>
+          <p className="muted">{t('admin.fraud.total', { n: total })}</p>
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>{t('admin.fraud.colScore')}</th>
+                <th>{t('admin.fraud.colLevel')}</th>
+                <th>{t('admin.fraud.colSignals')}</th>
+                <th>{t('admin.fraud.colBooking')}</th>
+                <th>{t('admin.fraud.colWhen')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((a) => (
+                <tr key={a.id}>
+                  <td><strong>{a.score}</strong></td>
+                  <td>
+                    <span className={`badge badge-fraud-${a.level}`}>
+                      {t(`admin.fraud.level.${a.level}`)}
+                    </span>
+                  </td>
+                  <td>
+                    {/* Top 3 signals, comma-separated. The full list lives
+                        in the future per-booking drill-down; here we show
+                        the headline so the operator can triage at a glance. */}
+                    {(a.signals || []).slice(0, 3).map((s) => (
+                      <span key={s.name} className="badge badge-signal" title={s.note}>
+                        {t(`admin.fraud.signal.${s.name}`)} (+{s.impact})
+                      </span>
+                    ))}
+                  </td>
+                  <td><code className="muted-text">{a.bookingId}</code></td>
+                  <td>{new Date(a.createdAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </section>
   );
 }
 

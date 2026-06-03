@@ -440,3 +440,21 @@ main:focus { outline: none; }
 .consent-row input[type='checkbox'] {
   margin-top: 4px;
 }
+
+/* Fraud queue (S73). Severity badges follow the same low/medium/high
+   semantic palette used for dispute states elsewhere on /admin —
+   green-ish for low (rare in the queue since the default filter is
+   high), amber for medium, red for high. Signal chips are quieter
+   so a row with 3 of them doesn't visually outweigh the score. */
+.badge-fraud-low { background: #e6f7ed; color: #1a7f47; }
+.badge-fraud-medium { background: #fff4d6; color: #8a5a00; }
+.badge-fraud-high { background: #fde8e8; color: #c0392b; }
+.badge-signal {
+  display: inline-block;
+  background: #f1f1f1;
+  color: #444;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-right: 4px;
+  font-size: 12px;
+}

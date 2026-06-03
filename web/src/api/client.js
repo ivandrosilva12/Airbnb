@@ -189,6 +189,16 @@ export const api = {
   // operator can tell "no tax owed" from "I forgot to run the report".
   adminTaxRemittance: (year, month) =>
     request('GET', `/admin/tax/remittance?year=${year}&month=${month}`, { auth: true }),
+  // S73 — admin fraud queue (read-only). Backed by the S68 BC, persisted
+  // to postgres in S72. Level filter narrows to "at least this severe":
+  // level=high returns only high; omitted/low returns everything.
+  adminListFraudAssessments: ({ level = '', limit = 50, offset = 0 } = {}) => {
+    const qs = new URLSearchParams();
+    if (level) qs.set('level', level);
+    qs.set('limit', String(limit));
+    qs.set('offset', String(offset));
+    return request('GET', `/admin/fraud/assessments?${qs.toString()}`, { auth: true });
+  },
 
   // Promo codes (admin)
   adminListCoupons: () => request('GET', '/admin/coupons', { auth: true }),
