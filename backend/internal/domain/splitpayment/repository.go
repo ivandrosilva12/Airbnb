@@ -19,4 +19,12 @@ type Repository interface {
 	// ListForUser returns the splits where the user is either the organizer
 	// or a share payer (matched by email). Newest first.
 	ListForUser(ctx context.Context, userID uuid.UUID, email string) ([]*SplitPayment, error)
+	// AnonymizeByUser scrubs PII from every split-payment record the user
+	// touched: on shares where they were the invited payer (matched by
+	// email, case-folded) the email is blanked. Organizer-side splits are
+	// retained as-is — the organizer_id FK still resolves to the
+	// (anonymised) user row, and the split is co-owned by the other
+	// payers who have a legitimate interest in the record. Returns the
+	// number of share rows scrubbed.
+	AnonymizeByUser(ctx context.Context, userID uuid.UUID, email string) (int, error)
 }

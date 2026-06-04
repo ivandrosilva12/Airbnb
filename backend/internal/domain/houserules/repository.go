@@ -35,4 +35,13 @@ type Repository interface {
 	// ErrNotFound when no acceptance was recorded (host had no rules,
 	// or the post-commit recording failed and was not retried).
 	AcceptanceFor(ctx context.Context, bookingID uuid.UUID) (*Acceptance, error)
+	// AnonymizeAcceptancesByGuest blanks the guest_id link on every
+	// acceptance the user authored — the GDPR right-to-erasure path.
+	// The acceptance row is RETAINED because it is a legal artefact
+	// proving the booking honoured the host's rules version: the host
+	// can still answer "the guest on booking X acknowledged the rules"
+	// via the booking_id key. After erase the guest_id column holds the
+	// zero UUID so the row no longer ties back to a personal account.
+	// Returns the number of rows touched.
+	AnonymizeAcceptancesByGuest(ctx context.Context, guestID uuid.UUID) (int, error)
 }

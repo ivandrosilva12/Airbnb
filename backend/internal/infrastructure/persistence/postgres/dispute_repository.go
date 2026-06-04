@@ -223,6 +223,65 @@ func (r *DisputeRepository) ListOpen(ctx context.Context, page shared.Page) (sha
 	return shared.PageResult[*dispute.Dispute]{Items: items, Total: total}, nil
 }
 
+// AnonymizeByUser scrubs PII from disputes touched by the user: the
+// dispute's free-text fields where the user is the opener, and the
+// note + url on any evidence entry they contributed. The dispute row +
+// opener_id FK stay in place (legal artefact tied to the booking; the
+// user row itself is being anonymised).
+func (r *DisputeRepository) AnonymizeByUser(ctx context.Context, userID uuid.UUID) (int, error) {
+	pool, ok := r.pool.(*pgxpool.Pool)
+	if !ok {
+		// Inside a UoW tx; the caller's transaction already gives us atomicity.
+		return r.anonymizeWithin(ctx, r.pool, userID)
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	touched, err := r.anonymizeWithin(ctx, tx, userID)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, mapError(err)
+	}
+	return touched, nil
+}
+
+// anonymizeWithin runs the two PII-redaction UPDATEs against the given querier
+// (an inner tx when running standalone, or the outer UoW tx). The transaction
+// boundary is managed by the caller.
+func (r *DisputeRepository) anonymizeWithin(ctx context.Context, q querier, userID uuid.UUID) (int, error) {
+	// Disputes the user OPENED — blank the free text. Other parties
+	// (host response, admin resolution) may still be authored by
+	// non-erased users; we redact those only when the dispute opener
+	// is the erased user, since the bundle of free text on the row is
+	// dominated by the opener's own statement.
+	const redacted = "[redacted]"
+	ct, err := q.Exec(ctx, `
+		UPDATE disputes
+		   SET reason = $2, host_response = $2, resolution = $2, updated_at = NOW()
+		 WHERE opener_id = $1`,
+		userID, redacted,
+	)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	touched := int(ct.RowsAffected())
+	// Evidence the user contributed — blank the note/url on rows
+	// they added (regardless of which dispute they live on).
+	if _, err := q.Exec(ctx, `
+		UPDATE dispute_evidence
+		   SET url = '', note = $2
+		 WHERE added_by = $1`,
+		userID, redacted,
+	); err != nil {
+		return 0, mapError(err)
+	}
+	return touched, nil
+}
+
 func scanDispute(row pgx.Row) (*dispute.Dispute, error) {
 	var (
 		d         dispute.Dispute

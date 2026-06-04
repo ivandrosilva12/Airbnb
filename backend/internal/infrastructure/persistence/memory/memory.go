@@ -1504,6 +1504,23 @@ func (r *IdentityRepository) ListByStatus(_ context.Context, status identity.Sta
 	return paginate(all, page), nil
 }
 
+// EraseByUser hard-deletes every verification submitted by the user.
+// KYC payload is the most sensitive PII the platform holds (legal name
+// + document reference) — we drop rather than anonymise so the row
+// cannot be reconstructed from the audit trail later.
+func (r *IdentityRepository) EraseByUser(_ context.Context, userID uuid.UUID) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for id, v := range r.m {
+		if v.UserID == userID {
+			delete(r.m, id)
+			n++
+		}
+	}
+	return n, nil
+}
+
 // --- Listing reports ---------------------------------------------------------
 
 // ReportRepository is an in-memory report.Repository.
@@ -1767,6 +1784,22 @@ func (r *SavedSearchRepository) MarkNotified(_ context.Context, id uuid.UUID, at
 		r.m[id] = s
 	}
 	return nil
+}
+
+// EraseByUser hard-deletes every saved search owned by the user. Pure
+// preference data — no retention basis — so we drop rather than
+// anonymise.
+func (r *SavedSearchRepository) EraseByUser(_ context.Context, userID uuid.UUID) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for id, s := range r.m {
+		if s.UserID == userID {
+			delete(r.m, id)
+			n++
+		}
+	}
+	return n, nil
 }
 
 // --- Price rules -------------------------------------------------------------
@@ -2111,6 +2144,41 @@ func (r *DisputeRepository) ListOpen(_ context.Context, page shared.Page) (share
 	return paginate(all, page), nil
 }
 
+// AnonymizeByUser scrubs PII from disputes touched by the user: the
+// dispute's free-text fields (reason, host_response, resolution) where
+// the user is the opener, and the note on any evidence entry they
+// contributed. The dispute row + opener_id FK stay in place — the
+// dispute is a legal artefact tied to the booking, and the user row
+// itself is being anonymised (so opener_id resolves to "Deleted user").
+func (r *DisputeRepository) AnonymizeByUser(_ context.Context, userID uuid.UUID) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	const redacted = "[redacted]"
+	touched := 0
+	for id, d := range r.m {
+		changed := false
+		if d.OpenerID == userID {
+			d.Reason = redacted
+			d.HostResponse = redacted
+			d.Resolution = redacted
+			changed = true
+		}
+		for i, ev := range d.Evidence {
+			if ev.AddedBy == userID {
+				ev.Note = redacted
+				ev.URL = ""
+				d.Evidence[i] = ev
+				changed = true
+			}
+		}
+		if changed {
+			r.m[id] = d
+			touched++
+		}
+	}
+	return touched, nil
+}
+
 // --- Deposit holds -----------------------------------------------------------
 
 // DepositRepository is an in-memory payment.DepositRepository.
@@ -2303,6 +2371,22 @@ func (r *CohostRepository) ListByUser(_ context.Context, userID uuid.UUID) ([]*p
 	return out, nil
 }
 
+// EraseByUser hard-deletes every co-host grant held by the user. The
+// grant is a per-listing permission set with no retention basis once
+// the user erases their account.
+func (r *CohostRepository) EraseByUser(_ context.Context, userID uuid.UUID) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for id, c := range r.m {
+		if c.UserID == userID {
+			delete(r.m, id)
+			n++
+		}
+	}
+	return n, nil
+}
+
 // --- Split payments ----------------------------------------------------------
 
 // SplitPaymentRepository is an in-memory splitpayment.Repository.
@@ -2394,6 +2478,36 @@ func (r *SplitPaymentRepository) ListForUser(_ context.Context, userID uuid.UUID
 	return out, nil
 }
 
+// AnonymizeByUser scrubs the email column on shares the user was
+// invited to pay. The split-payment row + organizer_id stay in place —
+// the organizer FK resolves to the (anonymised) user row, and the
+// split is co-owned by the other payers who have a legitimate
+// interest in the record.
+func (r *SplitPaymentRepository) AnonymizeByUser(_ context.Context, userID uuid.UUID, email string) (int, error) {
+	emailLower := strings.ToLower(strings.TrimSpace(email))
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	touched := 0
+	for id, sp := range r.m {
+		changed := false
+		for i, sh := range sp.Shares {
+			matchesEmail := emailLower != "" && strings.ToLower(sh.PayerEmail) == emailLower
+			matchesUser := sh.PayerUserID != nil && *sh.PayerUserID == userID
+			if matchesEmail || matchesUser {
+				sh.PayerEmail = ""
+				sh.PayerUserID = nil
+				sp.Shares[i] = sh
+				changed = true
+			}
+		}
+		if changed {
+			r.m[id] = cloneSplitPayment(&sp)
+			touched++
+		}
+	}
+	return touched, nil
+}
+
 // --- Message templates -------------------------------------------------------
 
 // MessageTemplateRepository is an in-memory messagetemplate.Repository.
@@ -2458,6 +2572,21 @@ func (r *MessageTemplateRepository) ListByHost(_ context.Context, hostID uuid.UU
 	return out, nil
 }
 
+// EraseByHost hard-deletes every template owned by the host. Templates
+// are author-scoped preference data with no retention basis.
+func (r *MessageTemplateRepository) EraseByHost(_ context.Context, hostID uuid.UUID) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for id, t := range r.m {
+		if t.HostID == hostID {
+			delete(r.m, id)
+			n++
+		}
+	}
+	return n, nil
+}
+
 // --- Audit -------------------------------------------------------------------
 
 // AuditRepository is an in-memory audit.Repository. Append-only by
@@ -2479,6 +2608,32 @@ func (r *AuditRepository) Create(_ context.Context, e *audit.Event) error {
 	cp := *e
 	r.m = append(r.m, cp)
 	return nil
+}
+
+// AnonymizeBySubject scrubs links to the user across the audit trail
+// (actor_id when they once were the actor, target_id when they were a
+// user-target). Event rows themselves are RETAINED — the audit trail is
+// the compliance evidence the regulator expects to outlive the user.
+func (r *AuditRepository) AnonymizeBySubject(_ context.Context, userID uuid.UUID) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	touched := 0
+	for i := range r.m {
+		ev := &r.m[i]
+		changed := false
+		if ev.ActorID == userID {
+			ev.ActorID = uuid.Nil
+			changed = true
+		}
+		if ev.TargetType == audit.TargetUser && ev.TargetID == userID {
+			ev.TargetID = uuid.Nil
+			changed = true
+		}
+		if changed {
+			touched++
+		}
+	}
+	return touched, nil
 }
 
 func (r *AuditRepository) List(_ context.Context, f audit.Filter, page shared.Page) (shared.PageResult[*audit.Event], error) {
@@ -2609,6 +2764,24 @@ func (r *HouseRulesRepository) AcceptanceFor(_ context.Context, bookingID uuid.U
 	return &dup, nil
 }
 
+// AnonymizeAcceptancesByGuest zeroes the guest_id link on every
+// acceptance the user authored. The acceptance row is RETAINED — it
+// is a legal artefact proving the booking honoured the host's rules
+// version, joined back to the booking via booking_id.
+func (r *HouseRulesRepository) AnonymizeAcceptancesByGuest(_ context.Context, guestID uuid.UUID) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	touched := 0
+	for bid, a := range r.acceptances {
+		if a.GuestID == guestID {
+			a.GuestID = uuid.Nil
+			r.acceptances[bid] = a
+			touched++
+		}
+	}
+	return touched, nil
+}
+
 // cloneRules deep-copies the Items slice so callers can't mutate the
 // stored row through the returned pointer. The Rules value itself is
 // already a fresh value-copy.
@@ -2725,6 +2898,25 @@ func (r *FraudRepository) FindByBookingID(_ context.Context, bookingID uuid.UUID
 		}
 	}
 	return nil, shared.ErrNotFound
+}
+
+// AnonymizeByGuest zeroes the guest_id link on every assessment the
+// user triggered. The assessment row is RETAINED as the forensic
+// record tied to the booking — admins still see "this booking was
+// flagged high-risk", just no longer with a direct path back to the
+// (now anonymised) account.
+func (r *FraudRepository) AnonymizeByGuest(_ context.Context, guestID uuid.UUID) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	touched := 0
+	for id, a := range r.m {
+		if a.GuestID == guestID {
+			a.GuestID = uuid.Nil
+			r.m[id] = a
+			touched++
+		}
+	}
+	return touched, nil
 }
 
 // List filters by minimum level (low → everything; medium → medium+high; high

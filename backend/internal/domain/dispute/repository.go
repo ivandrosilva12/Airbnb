@@ -27,4 +27,14 @@ type Repository interface {
 	ListByBookings(ctx context.Context, bookingIDs []uuid.UUID, page shared.Page) (shared.PageResult[*Dispute], error)
 	// ListOpen returns the moderation queue (open + under_review), oldest first.
 	ListOpen(ctx context.Context, page shared.Page) (shared.PageResult[*Dispute], error)
+	// AnonymizeByUser scrubs PII from every dispute the user touched (as
+	// opener or evidence contributor) — the free-text reason / host
+	// response / resolution and any evidence notes they authored. The
+	// dispute row itself is RETAINED because it is a legal artefact tied
+	// to the booking: the counterparty has a legitimate interest in the
+	// claim record and refunds/damage debits already moved money on its
+	// authority. The opener_id FK stays valid because the user row is
+	// kept (anonymised) — the row becomes "Deleted user".
+	// Returns the number of dispute rows touched.
+	AnonymizeByUser(ctx context.Context, userID uuid.UUID) (int, error)
 }

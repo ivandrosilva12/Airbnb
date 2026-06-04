@@ -25,4 +25,13 @@ type Repository interface {
 	Save(ctx context.Context, a *Assessment) error
 	FindByBookingID(ctx context.Context, bookingID uuid.UUID) (*Assessment, error)
 	List(ctx context.Context, f ListFilter, page shared.Page) (shared.PageResult[*Assessment], error)
+	// AnonymizeByGuest scrubs the guest_id column on every assessment
+	// the user triggered — the GDPR right-to-erasure path. The
+	// assessment row is RETAINED because it is a forensic record tied
+	// to the booking_id (the platform's defence if a chargeback or
+	// regulator query asks "did you flag this booking before
+	// confirming"). After erase the guest_id column holds the zero
+	// UUID so the row no longer ties back to a personal account.
+	// Returns the number of rows touched.
+	AnonymizeByGuest(ctx context.Context, guestID uuid.UUID) (int, error)
 }

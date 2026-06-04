@@ -115,6 +115,38 @@ func (r *AuditRepository) List(ctx context.Context, f audit.Filter, page shared.
 	return shared.PageResult[*audit.Event]{Items: out, Total: total}, nil
 }
 
+// AnonymizeBySubject scrubs links to the user across the audit trail:
+// actor_id where they once were the admin actor, target_id where the
+// event recorded a user-level target. Event rows themselves are
+// RETAINED — the audit trail is the compliance evidence the regulator
+// expects to outlive the user. The returned count is the number of
+// distinct rows touched (a row that matched both columns counts once).
+func (r *AuditRepository) AnonymizeBySubject(ctx context.Context, userID uuid.UUID) (int, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	// A single UPDATE keeps the row count clean: every row where the
+	// user appears as actor OR as a user-typed target is touched once,
+	// with the matching columns nulled-out (set to zero UUID).
+	ct, err := tx.Exec(ctx, `
+		UPDATE audit_events
+		   SET actor_id  = CASE WHEN actor_id = $1 THEN $2 ELSE actor_id END,
+		       target_id = CASE WHEN target_type = $3 AND target_id = $1 THEN $2 ELSE target_id END
+		 WHERE actor_id = $1
+		    OR (target_type = $3 AND target_id = $1)`,
+		userID, uuid.Nil, string(audit.TargetUser),
+	)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, mapError(err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
 // itoa is a stdlib-free strconv.Itoa equivalent for small positive
 // numbers, used to build the parameter placeholders ($1, $2, …) at
 // query-build time. Saves importing strconv for one call.

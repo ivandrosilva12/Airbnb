@@ -218,6 +218,30 @@ func (r *SplitPaymentRepository) ListForUser(ctx context.Context, userID uuid.UU
 	return out, nil
 }
 
+// AnonymizeByUser scrubs the payer_email + payer_user_id on shares
+// the user was invited to pay. The split-payment row + organizer_id
+// stay in place — the organizer FK resolves to the (anonymised) user
+// row, and the split is co-owned by the other payers who have a
+// legitimate interest in the record. Returns the share-row count that
+// was touched.
+func (r *SplitPaymentRepository) AnonymizeByUser(ctx context.Context, userID uuid.UUID, email string) (int, error) {
+	emailLower := strings.ToLower(strings.TrimSpace(email))
+	// Build a single UPDATE that matches by either email (case-folded)
+	// or by payer_user_id — covers shares the user authorised and
+	// shares still keyed only by the invite address.
+	ct, err := r.db.Exec(ctx, `
+		UPDATE split_payment_shares
+		   SET payer_email = '', payer_user_id = NULL, updated_at = NOW()
+		 WHERE payer_user_id = $1
+		    OR ($2 <> '' AND lower(payer_email) = $2)`,
+		userID, emailLower,
+	)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
 func scanSplitPayment(row interface{ Scan(...any) error }) (*splitpayment.SplitPayment, error) {
 	var sp splitpayment.SplitPayment
 	var status string

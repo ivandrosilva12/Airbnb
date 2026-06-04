@@ -79,6 +79,22 @@ func (r *FraudRepository) FindByBookingID(ctx context.Context, bookingID uuid.UU
 	return &a, nil
 }
 
+// AnonymizeByGuest zeroes the guest_id link on every assessment the
+// user triggered. The assessment row is RETAINED as the forensic
+// record tied to the booking — admins still see "this booking was
+// flagged high-risk", just no longer with a direct path back to the
+// (now anonymised) account.
+func (r *FraudRepository) AnonymizeByGuest(ctx context.Context, guestID uuid.UUID) (int, error) {
+	ct, err := r.pool.Exec(ctx,
+		`UPDATE fraud_assessments SET guest_id = $2 WHERE guest_id = $1`,
+		guestID, uuid.Nil,
+	)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
 func (r *FraudRepository) List(ctx context.Context, f fraud.ListFilter, page shared.Page) (shared.PageResult[*fraud.Assessment], error) {
 	// MinLevel implements "at least this severe". We compile the
 	// filter into an IN-list rather than a numeric rank column —

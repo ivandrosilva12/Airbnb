@@ -90,6 +90,17 @@ func (r *IdentityRepository) ListByStatus(ctx context.Context, status identity.S
 	return shared.PageResult[*identity.Verification]{Items: items, Total: total}, mapError(rows.Err())
 }
 
+// EraseByUser hard-deletes every verification submitted by the user —
+// the GDPR right-to-erasure path. KYC payload is the most sensitive
+// PII the platform holds; drop rather than anonymise.
+func (r *IdentityRepository) EraseByUser(ctx context.Context, userID uuid.UUID) (int, error) {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM identity_verifications WHERE user_id=$1`, userID)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
 func scanVerification(row rowScanner) (*identity.Verification, error) {
 	var (
 		v          identity.Verification

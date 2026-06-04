@@ -21,4 +21,9 @@ type Repository interface {
 	ListAlertable(ctx context.Context) ([]*SavedSearch, error)
 	// MarkNotified advances the alert watermark after notifying a user.
 	MarkNotified(ctx context.Context, id uuid.UUID, at time.Time) error
+	// EraseByUser hard-deletes every saved search owned by the user — the
+	// GDPR right-to-erasure path. Saved searches are pure preference data
+	// with no retention basis, so they are dropped rather than anonymised.
+	// Returns the number of rows removed.
+	EraseByUser(ctx context.Context, userID uuid.UUID) (int, error)
 }

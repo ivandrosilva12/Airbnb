@@ -164,6 +164,17 @@ func (r *CohostRepository) ListPropertiesForUser(ctx context.Context, userID uui
 	return out, mapError(rows.Err())
 }
 
+// EraseByUser hard-deletes every co-host grant held by the user — the
+// GDPR right-to-erasure path. The grant is a per-listing permission
+// set with no retention basis once the user erases their account.
+func (r *CohostRepository) EraseByUser(ctx context.Context, userID uuid.UUID) (int, error) {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM cohosts WHERE user_id=$1`, userID)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
 // scanCohost reads a single row from a QueryRow result.
 func scanCohost(row interface{ Scan(...any) error }) (*property.Cohost, error) {
 	var c property.Cohost

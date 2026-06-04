@@ -15,4 +15,9 @@ type Repository interface {
 	// ListByHost returns the host's templates ordered by label ASC. The set
 	// is intentionally unpaginated — a host's playbook is small by design.
 	ListByHost(ctx context.Context, hostID uuid.UUID) ([]*Template, error)
+	// EraseByHost hard-deletes every template owned by the host — the GDPR
+	// right-to-erasure path. Templates are author-scoped preference data
+	// (a host's saved reply playbook) with no retention basis. Returns
+	// the number of rows removed.
+	EraseByHost(ctx context.Context, hostID uuid.UUID) (int, error)
 }

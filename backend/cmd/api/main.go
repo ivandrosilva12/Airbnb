@@ -314,7 +314,15 @@ func run() error {
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment)).
 		WithSplitPayments(splitPaymentRepo) // S88 — credit per-share on split bookings
-	privacySvc := privacyapp.NewService(userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo)
+	// privacySvc orchestrates GDPR self-service (export + erase). The erase
+	// pipeline (S90 / WF-GAP-009) sweeps every PII-bearing table — adding a
+	// new table to the platform means extending NewService AND this call
+	// site so the schema and the erase pipeline cannot drift apart.
+	privacySvc := privacyapp.NewService(
+		userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo,
+		pushTokenRepo, savedSearchRepo, identityRepo, disputeRepo, splitPaymentRepo, cohostRepo,
+		messageTemplateRepo, houseRulesRepo, fraudRepo, auditRepo,
+	)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo, reviewRepo)
 	couponSvc := couponapp.NewService(couponRepo)
 	userBlockSvc := userblockapp.NewService(userBlockRepo)

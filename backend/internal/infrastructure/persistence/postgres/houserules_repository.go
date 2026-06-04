@@ -91,6 +91,21 @@ func (r *HouseRulesRepository) RecordAcceptance(ctx context.Context, a *houserul
 	return mapError(err)
 }
 
+// AnonymizeAcceptancesByGuest zeroes the guest_id link on every
+// acceptance the user authored. The acceptance row itself is RETAINED:
+// it is a legal artefact proving the booking honoured the host's rules
+// version, joined back to the booking via booking_id.
+func (r *HouseRulesRepository) AnonymizeAcceptancesByGuest(ctx context.Context, guestID uuid.UUID) (int, error) {
+	ct, err := r.pool.Exec(ctx,
+		`UPDATE house_rule_acceptances SET guest_id = $2 WHERE guest_id = $1`,
+		guestID, uuid.Nil,
+	)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
 func (r *HouseRulesRepository) AcceptanceFor(ctx context.Context, bookingID uuid.UUID) (*houserules.Acceptance, error) {
 	row := r.pool.QueryRow(ctx, `
 		SELECT booking_id, guest_id, property_id, accepted_version, accepted_at

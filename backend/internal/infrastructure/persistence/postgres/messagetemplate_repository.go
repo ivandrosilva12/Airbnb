@@ -66,6 +66,20 @@ func (r *MessageTemplateRepository) FindByID(ctx context.Context, id uuid.UUID) 
 	return &t, nil
 }
 
+// EraseByHost hard-deletes every template owned by the host — the GDPR
+// right-to-erasure path. Templates are author-scoped preference data
+// with no retention basis. Note: the FK already has ON DELETE CASCADE,
+// so deleting the user row would do this implicitly — we still issue
+// the DELETE explicitly so the erase orchestrator gets a row count and
+// the audit metadata reflects what we touched.
+func (r *MessageTemplateRepository) EraseByHost(ctx context.Context, hostID uuid.UUID) (int, error) {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM message_templates WHERE host_id=$1`, hostID)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
 func (r *MessageTemplateRepository) ListByHost(ctx context.Context, hostID uuid.UUID) ([]*messagetemplate.Template, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+messageTemplateColumns+` FROM message_templates

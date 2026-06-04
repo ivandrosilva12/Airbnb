@@ -81,6 +81,16 @@ func (r *SavedSearchRepository) MarkNotified(ctx context.Context, id uuid.UUID, 
 	return mapError(err)
 }
 
+// EraseByUser hard-deletes every saved search owned by the user — the
+// GDPR right-to-erasure path. Pure preference data; no retention basis.
+func (r *SavedSearchRepository) EraseByUser(ctx context.Context, userID uuid.UUID) (int, error) {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM saved_searches WHERE user_id=$1`, userID)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
 func scanSavedSearches(rows interface {
 	Next() bool
 	Scan(...any) error

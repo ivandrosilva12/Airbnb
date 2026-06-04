@@ -18,4 +18,11 @@ type Repository interface {
 	// ListByStatus returns verifications in the given status, newest first —
 	// used to drive the administrator review queue.
 	ListByStatus(ctx context.Context, status Status, page shared.Page) (shared.PageResult[*Verification], error)
+	// EraseByUser hard-deletes every verification submitted by the user — the
+	// GDPR right-to-erasure path for KYC data. Identity documents are the
+	// most sensitive PII the platform holds (legal name + document
+	// reference); we drop them outright rather than anonymise so the row
+	// cannot be reconstructed from the audit trail. Returns the number of
+	// rows removed.
+	EraseByUser(ctx context.Context, userID uuid.UUID) (int, error)
 }

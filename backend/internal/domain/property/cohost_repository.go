@@ -34,4 +34,10 @@ type CohostRepository interface {
 	// in memory rather than re-querying per property — the number of
 	// listings a single user co-hosts is small by design.
 	ListByUser(ctx context.Context, userID uuid.UUID) ([]*Cohost, error)
+	// EraseByUser hard-deletes every co-host grant held by the user — the
+	// GDPR right-to-erasure path. A grant is a per-listing permission set
+	// with no retention basis once the user erases their account; the
+	// primary host can re-invite a different co-host if they need cover.
+	// Returns the number of rows removed.
+	EraseByUser(ctx context.Context, userID uuid.UUID) (int, error)
 }
