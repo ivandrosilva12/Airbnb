@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/application/port"
@@ -159,6 +160,19 @@ func (s *Service) EventHandler() event.Handler {
 			title := propertyTitleOr(ev.PropertyTitle, "a property")
 			s.send(ctx, ev.GuestID, catBookings, "Offer withdrawn",
 				fmt.Sprintf("The host withdrew their offer for %q.", title))
+
+		// Co-host invitation (S111 — email arm for WF-GAP-016). S99 wired the
+		// in-app notification + realtime push when a host grants someone
+		// cohost permissions; this is the transactional email so the invitee
+		// is told even if they have in-app push muted. Routed through
+		// catAccount because a cohost grant is an account-level role change,
+		// not a per-booking event — same channel as IdentityVerified and the
+		// Resolution Center notices.
+		case event.CohostInvited:
+			title := propertyTitleOr(ev.PropertyTitle, "a property")
+			perms := strings.Join(ev.Permissions, ", ")
+			s.send(ctx, ev.UserID, catAccount, "You're now a co-host",
+				fmt.Sprintf("A host granted you co-host permissions on %q: %s.", title, perms))
 		}
 	}
 }

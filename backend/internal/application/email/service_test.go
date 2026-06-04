@@ -359,6 +359,50 @@ func TestEventHandler_OfferCreatedPreApprovalSubject(t *testing.T) {
 	assertSent(t, sent, guest.Email, "You're pre-approved")
 }
 
+// TestEventHandler_CohostInvitedEmail closes the email arm of WF-GAP-016
+// (S111 — follow-on to S99). S99 already wired the in-app notification +
+// realtime push when a host grants someone cohost permissions on a
+// listing; this asserts the matching transactional email lands in the
+// invitee's inbox with the property title and at least one permission
+// name in the body. The email rides catAccount (account-level role
+// change, not opt-out).
+func TestEventHandler_CohostInvitedEmail(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	host := mustUser(t, users, "cohost-host@test.dev", user.RoleHost)
+	invitee := mustUser(t, users, "cohost-invitee@test.dev", user.RoleHost)
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	dispatcher.Publish(ctx, event.CohostInvited{
+		CohostID:      uuid.New(),
+		PropertyID:    uuid.New(),
+		PropertyTitle: "Loft",
+		HostID:        host.ID,
+		UserID:        invitee.ID,
+		Permissions:   []string{"manage_calendar", "reply_messages"},
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want 1 (%+v)", len(sent), sent)
+	}
+	if sent[0].To != invitee.Email {
+		t.Fatalf("recipient = %q, want %q", sent[0].To, invitee.Email)
+	}
+	if sent[0].Subject != "You're now a co-host" {
+		t.Fatalf("subject = %q, want %q", sent[0].Subject, "You're now a co-host")
+	}
+	if !strings.Contains(sent[0].Text, "Loft") {
+		t.Fatalf("body should mention the property title, got %q", sent[0].Text)
+	}
+	if !strings.Contains(sent[0].Text, "manage_calendar") && !strings.Contains(sent[0].Text, "reply_messages") {
+		t.Fatalf("body should mention at least one permission name, got %q", sent[0].Text)
+	}
+}
+
 // TestSendArrivalInfoEmail — S107. Direct call (not event-driven) used by the
 // arrival-info scheduler to mirror the in-app notification.
 func TestSendArrivalInfoEmail(t *testing.T) {
