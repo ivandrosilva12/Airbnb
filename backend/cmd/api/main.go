@@ -261,7 +261,12 @@ func run() error {
 	// hits the same provider as the regular booking flow.
 	paymentGateway := paymentgw.NewGateway(cfg.Payment)
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentGateway, bookingRepo, propertyRepo).
-		WithDeposits(depositRepo)
+		WithDeposits(depositRepo).
+		// S94 / WF-GAP-010 — publisher lets the async-auth webhook emit
+		// PaymentAuthorized so the booking subscriber can promote
+		// pending→confirmed without the webhook handler touching the
+		// booking aggregate directly.
+		WithPublisher(dispatcher)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc)

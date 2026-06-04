@@ -181,19 +181,69 @@ func (s *Service) WithHighValueThresholds(thresholds map[string]int64) *Service 
 	return s
 }
 
-// EventHandler returns an event.Handler that confirms a booking when its
-// attached split-payment plan completes. Split bookings are created in
-// pending status (no instant confirmation, even on instant-book listings)
-// and confirm only when the splitpayment context publishes
-// SplitPaymentCompleted.
+// EventHandler returns an event.Handler that auto-confirms a booking when an
+// upstream payment event signals readiness. Two paths feed it:
+//
+//   - SplitPaymentCompleted (S20a): every share of a split has been
+//     authorised; confirm the booking that was held in pending while the
+//     team finished paying.
+//   - PaymentAuthorized (WF-GAP-010): an asynchronous gateway webhook
+//     finished the authorization (e.g. Stripe 3DS cleared, AppyPay redirect
+//     completed). An instant-book booking still in pending status is
+//     auto-confirmed; a non-instant-book booking is left alone (the host
+//     approves later through Confirm).
+//
+// Both transitions are idempotent: a re-delivered event finds the booking
+// already confirmed and short-circuits.
 func (s *Service) EventHandler() event.Handler {
 	return func(ctx context.Context, e event.Event) {
-		ev, ok := e.(event.SplitPaymentCompleted)
-		if !ok {
-			return
+		switch ev := e.(type) {
+		case event.SplitPaymentCompleted:
+			s.confirmAfterSplit(ctx, ev.BookingID)
+		case event.PaymentAuthorized:
+			s.confirmAfterAsyncAuth(ctx, ev.BookingID)
 		}
-		s.confirmAfterSplit(ctx, ev.BookingID)
 	}
+}
+
+// confirmAfterAsyncAuth confirms an instant-book booking that has been stuck
+// in pending while an asynchronous gateway authorization was in flight.
+// Conditions for auto-confirm:
+//   - The booking is still pending (any other status is terminal here).
+//   - The listing is instant-book.
+//
+// A non-instant-book booking is left in pending so the host can review and
+// approve manually through Confirm — the gateway is now ready to capture,
+// but the booking commercial decision is still the host's. Idempotent:
+// re-delivery finds the booking already confirmed (or already cancelled)
+// and quietly does nothing.
+func (s *Service) confirmAfterAsyncAuth(ctx context.Context, bookingID uuid.UUID) {
+	b, err := s.bookings.FindByID(ctx, bookingID)
+	if err != nil {
+		return
+	}
+	if b.Status != booking.StatusPending {
+		return // already confirmed/cancelled/completed — terminal
+	}
+	prop, err := s.properties.FindByID(ctx, b.PropertyID)
+	if err != nil {
+		return
+	}
+	if !prop.InstantBook {
+		return // host approves manually; auth completing doesn't bypass that
+	}
+	if err := b.Confirm(); err != nil {
+		return
+	}
+	_ = s.emit(ctx,
+		func(tx port.Tx) error { return tx.Bookings.Update(ctx, b) },
+		event.BookingConfirmed{
+			BookingID:     b.ID,
+			PropertyID:    prop.ID,
+			PropertyTitle: prop.Title,
+			GuestID:       b.GuestID,
+		},
+	)
 }
 
 // confirmAfterSplit confirms the booking and emits BookingConfirmed(Split=true).

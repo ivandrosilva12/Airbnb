@@ -66,6 +66,20 @@ func TestStripeWebhookVerifier(t *testing.T) {
 		t.Fatalf("verify with rotated signatures: ok=%v err=%v", ok, err)
 	}
 
+	// payment_intent.amount_capturable_updated maps to the async-auth completed
+	// signal (WF-GAP-010): the 3DS challenge cleared and the hold is in place
+	// but not yet captured. The reconciler moves a pending payment to
+	// authorized and publishes PaymentAuthorized so the booking can confirm.
+	abody := []byte(`{"type":"payment_intent.amount_capturable_updated","data":{"object":{"id":"pi_async_42"}}}`)
+	h.Set("Stripe-Signature", stripeSignature("whsec_test", ts, abody))
+	evt, ok, err = v.Verify(h, abody)
+	if err != nil || !ok {
+		t.Fatalf("verify amount_capturable_updated: ok=%v err=%v", ok, err)
+	}
+	if evt.Type != port.GatewayAuthorized || evt.Reference != "pi_async_42" {
+		t.Fatalf("amount_capturable_updated event = %+v, want authorized pi_async_42", evt)
+	}
+
 	// A charge.refunded maps to a refund against the payment intent.
 	rbody := []byte(`{"type":"charge.refunded","data":{"object":{"id":"ch_1","payment_intent":"pi_42","amount_refunded":1500}}}`)
 	h.Set("Stripe-Signature", stripeSignature("whsec_test", ts, rbody))
@@ -143,6 +157,19 @@ func TestJSONWebhookVerifier(t *testing.T) {
 	}
 	if evt.Type != port.GatewayRefunded || evt.Reference != "gp_7" || evt.AmountCents != 1250 {
 		t.Fatalf("event = %+v, want refunded gp_7 1250", evt)
+	}
+
+	// "authorized" maps to the async-auth completed signal (WF-GAP-010): the
+	// AppyPay/GPay redirect (or 3DS challenge) cleared and the gateway is
+	// reporting the hold is now in place.
+	abody := []byte(`{"event":"authorized","id":"gp_async_1","eventId":"evt_a1"}`)
+	h.Set("X-Signature", hexHMAC("shh", abody))
+	evt, ok, err = v.Verify(h, abody)
+	if err != nil || !ok {
+		t.Fatalf("verify authorized: ok=%v err=%v", ok, err)
+	}
+	if evt.Type != port.GatewayAuthorized || evt.Reference != "gp_async_1" || evt.EventID != "evt_a1" {
+		t.Fatalf("authorized event = %+v, want authorized gp_async_1 evt_a1", evt)
 	}
 
 	// Wrong signature rejected.

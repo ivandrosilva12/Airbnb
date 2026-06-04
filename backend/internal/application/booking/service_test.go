@@ -427,6 +427,173 @@ func TestCreate_SeasonalAndWeekendPricing(t *testing.T) {
 	}
 }
 
+// asyncFixture builds a booking service whose unit-of-work fans events
+// through an externally-visible dispatcher, so a test can both publish
+// PaymentAuthorized into the subscriber AND observe the resulting
+// BookingConfirmed emitted back through the UoW relay.
+type asyncFixture struct {
+	*fixture
+	dispatcher *event.Dispatcher
+}
+
+func newAsyncFixture(t *testing.T) *asyncFixture {
+	t.Helper()
+	bookings := memory.NewBookingRepository()
+	properties := memory.NewPropertyRepository()
+	coupons := memory.NewCouponRepository()
+	priceRules := memory.NewPriceRuleRepository()
+	dispatcher := event.NewDispatcher()
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, dispatcher)
+	uow := memory.NewUnitOfWork(bookings, nil, nil, outbox, relay)
+	svc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), coupons, priceRules, 0, stubVerifier{}, false, uow)
+	dispatcher.Subscribe(svc.EventHandler())
+
+	hostID := uuid.New()
+	price, _ := shared.NewMoney(10000, "EUR")
+	cleaning, _ := shared.NewMoney(0, "EUR")
+	addr := property.Address{City: "Lisbon", Country: "PT", Latitude: 38.7, Longitude: -9.1}
+	prop, err := property.NewProperty(hostID, "Sunny flat", "", property.TypeApartment, addr, price, cleaning, 4, 2, 2, 1, nil)
+	if err != nil {
+		t.Fatalf("new property: %v", err)
+	}
+	prop.AddPhoto("k", "http://x/k.jpg")
+	if err := prop.Publish(); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if err := properties.Create(context.Background(), prop); err != nil {
+		t.Fatalf("store property: %v", err)
+	}
+
+	return &asyncFixture{
+		fixture: &fixture{
+			svc: svc, bookings: bookings, properties: properties, coupons: coupons, priceRules: priceRules,
+			hostID: hostID, guestID: uuid.New(), prop: prop,
+		},
+		dispatcher: dispatcher,
+	}
+}
+
+// stashPendingBooking inserts a freshly-built pending booking directly into
+// the repository, bypassing the create-path's instant-book auto-confirm.
+// This is the state we'd be in if the gateway returned a pending ref and
+// the booking transaction left it pending while waiting for the webhook.
+func (f *asyncFixture) stashPendingBooking(t *testing.T) *booking.Booking {
+	t.Helper()
+	dates, err := booking.NewDateRange(days(1), days(4))
+	if err != nil {
+		t.Fatalf("dates: %v", err)
+	}
+	price, _ := shared.NewMoney(10000, "EUR")
+	cleaning, _ := shared.NewMoney(0, "EUR")
+	b, err := booking.NewBooking(f.prop.ID, f.guestID, dates, 1, price, cleaning, 0, booking.Discounts{})
+	if err != nil {
+		t.Fatalf("new booking: %v", err)
+	}
+	if err := f.bookings.Create(context.Background(), b); err != nil {
+		t.Fatalf("store booking: %v", err)
+	}
+	return b
+}
+
+// TestPaymentAuthorized_AutoConfirmsInstantBook covers the WF-GAP-010 hook:
+// an asynchronous gateway webhook completes the authorization (publishing
+// PaymentAuthorized), and the booking subscriber auto-confirms an instant-
+// book reservation that was stuck in pending while the auth was in flight.
+func TestPaymentAuthorized_AutoConfirmsInstantBook(t *testing.T) {
+	f := newAsyncFixture(t)
+	ctx := context.Background()
+	f.prop.SetInstantBook(true)
+	if err := f.properties.Update(ctx, f.prop); err != nil {
+		t.Fatalf("enable instant book: %v", err)
+	}
+	b := f.stashPendingBooking(t)
+
+	f.dispatcher.Publish(ctx, event.PaymentAuthorized{
+		BookingID:  b.ID,
+		PaymentID:  uuid.New(),
+		GuestID:    f.guestID,
+		GatewayRef: "pi_async_123",
+	})
+
+	stored, err := f.bookings.FindByID(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("find booking: %v", err)
+	}
+	if stored.Status != booking.StatusConfirmed {
+		t.Fatalf("status after async-auth = %q, want confirmed", stored.Status)
+	}
+}
+
+// TestPaymentAuthorized_LeavesNonInstantBookPending covers the inverse case:
+// a non-instant-book reservation that just finished its async authorization
+// must NOT be auto-confirmed — the host still has to approve manually. The
+// gateway being ready to capture doesn't bypass the host's commercial
+// decision.
+func TestPaymentAuthorized_LeavesNonInstantBookPending(t *testing.T) {
+	f := newAsyncFixture(t)
+	ctx := context.Background()
+	// f.prop is not instant-book by default.
+	b := f.stashPendingBooking(t)
+
+	f.dispatcher.Publish(ctx, event.PaymentAuthorized{
+		BookingID:  b.ID,
+		PaymentID:  uuid.New(),
+		GuestID:    f.guestID,
+		GatewayRef: "pi_async_456",
+	})
+
+	stored, err := f.bookings.FindByID(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("find booking: %v", err)
+	}
+	if stored.Status != booking.StatusPending {
+		t.Fatalf("status = %q, want pending (host approval still required)", stored.Status)
+	}
+}
+
+// TestPaymentAuthorized_IdempotentOnDuplicate covers the third scenario in
+// WF-GAP-010: a duplicate webhook delivery (or an outbox at-least-once
+// re-delivery) must not produce a second BookingConfirmed transition. The
+// already-confirmed booking is a terminal state from the subscriber's view.
+func TestPaymentAuthorized_IdempotentOnDuplicate(t *testing.T) {
+	f := newAsyncFixture(t)
+	ctx := context.Background()
+	f.prop.SetInstantBook(true)
+	if err := f.properties.Update(ctx, f.prop); err != nil {
+		t.Fatalf("enable instant book: %v", err)
+	}
+	b := f.stashPendingBooking(t)
+
+	// Count BookingConfirmed events delivered through the relay's dispatcher.
+	var confirms int
+	f.dispatcher.Subscribe(func(_ context.Context, ev event.Event) {
+		if _, ok := ev.(event.BookingConfirmed); ok {
+			confirms++
+		}
+	})
+
+	ev := event.PaymentAuthorized{
+		BookingID:  b.ID,
+		PaymentID:  uuid.New(),
+		GuestID:    f.guestID,
+		GatewayRef: "pi_async_789",
+	}
+	f.dispatcher.Publish(ctx, ev)
+	f.dispatcher.Publish(ctx, ev) // duplicate delivery (gateway retry / outbox)
+
+	if confirms != 1 {
+		t.Fatalf("BookingConfirmed fired %d times, want 1", confirms)
+	}
+	stored, err := f.bookings.FindByID(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("find booking: %v", err)
+	}
+	if stored.Status != booking.StatusConfirmed {
+		t.Fatalf("status = %q, want confirmed", stored.Status)
+	}
+}
+
 func TestCreate_SpecialOfferOverridesRules(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

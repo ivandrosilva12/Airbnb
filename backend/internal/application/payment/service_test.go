@@ -185,6 +185,81 @@ func TestReconcileGatewayEvent_CaptureRefundIdempotent(t *testing.T) {
 	}
 }
 
+// capturingPublisher records every event the service publishes — used by
+// TestReconcileGatewayEvent_AsyncAuthorized to assert that exactly one
+// PaymentAuthorized was fanned out after the webhook moved the local
+// payment from pending to authorized.
+type capturingPublisher struct{ events []event.Event }
+
+func (p *capturingPublisher) Publish(_ context.Context, ev event.Event) {
+	p.events = append(p.events, ev)
+}
+
+// TestReconcileGatewayEvent_AsyncAuthorized covers the WF-GAP-010 webhook
+// path: the gateway authorized asynchronously and reports it via a webhook,
+// which moves a still-pending local payment to authorized and emits
+// PaymentAuthorized so the booking context can auto-confirm. A duplicate
+// delivery is a no-op (no second event, no state change).
+func TestReconcileGatewayEvent_AsyncAuthorized(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewPaymentRepository()
+	pub := &capturingPublisher{}
+	svc := paymentapp.NewService(repo, infrapayment.NewFakeGateway(), memory.NewBookingRepository(), memory.NewPropertyRepository()).
+		WithPublisher(pub)
+
+	// Seed a pending payment with a gateway ref — the state we'd be in if
+	// the initial Authorize returned "pending" (no error, no transition).
+	bookingID := uuid.New()
+	guestID := uuid.New()
+	amount, _ := shared.NewMoney(20000, "EUR")
+	p := payment.New(bookingID, guestID, amount)
+	p.GatewayRef = "pi_async_007"
+	if err := repo.Create(ctx, p); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// Webhook arrives: async authorization completed.
+	changed, err := svc.ReconcileGatewayEvent(ctx, port.GatewayEvent{
+		Provider: "fake", Reference: "pi_async_007", Type: port.GatewayAuthorized,
+	})
+	if err != nil {
+		t.Fatalf("reconcile authorized: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected the authorize event to change state")
+	}
+	stored, _ := svc.GetForBooking(ctx, guestID, bookingID)
+	if stored.Status != payment.StatusAuthorized {
+		t.Fatalf("status = %s, want authorized", stored.Status)
+	}
+	if len(pub.events) != 1 {
+		t.Fatalf("published %d events, want 1 (PaymentAuthorized)", len(pub.events))
+	}
+	authEv, ok := pub.events[0].(event.PaymentAuthorized)
+	if !ok {
+		t.Fatalf("event 0 = %T, want PaymentAuthorized", pub.events[0])
+	}
+	if authEv.BookingID != bookingID || authEv.GuestID != guestID || authEv.GatewayRef != "pi_async_007" {
+		t.Fatalf("event payload = %+v, want booking=%s guest=%s ref=pi_async_007", authEv, bookingID, guestID)
+	}
+
+	// Duplicate delivery: storage-level dedupe sits in the handler, but the
+	// reconciler is also idempotent — a second call finds the payment
+	// already authorized and short-circuits, with no extra event.
+	changed, err = svc.ReconcileGatewayEvent(ctx, port.GatewayEvent{
+		Provider: "fake", Reference: "pi_async_007", Type: port.GatewayAuthorized,
+	})
+	if err != nil {
+		t.Fatalf("reconcile authorized (replay): %v", err)
+	}
+	if changed {
+		t.Fatal("replayed authorize should be a no-op")
+	}
+	if len(pub.events) != 1 {
+		t.Fatalf("published %d events after replay, want still 1", len(pub.events))
+	}
+}
+
 func TestReconcileGatewayEvent_FailedAuthorization(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewPaymentRepository()

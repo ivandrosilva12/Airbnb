@@ -22,6 +22,13 @@ type PaymentGateway interface {
 type GatewayEventType string
 
 const (
+	// GatewayAuthorized: the gateway finished an asynchronous authorization
+	// (e.g. Stripe 3DS challenge cleared, AppyPay redirect completed). The
+	// initial Authorize call returned a pending reference; this webhook is
+	// the gateway telling us the hold is now in place. The reconciler moves
+	// a still-pending local payment to authorized and emits PaymentAuthorized
+	// so the booking context can auto-confirm if appropriate.
+	GatewayAuthorized GatewayEventType = "authorized"
 	// GatewayCaptured: funds were captured/settled.
 	GatewayCaptured GatewayEventType = "captured"
 	// GatewayRefunded: funds were returned to the payer.

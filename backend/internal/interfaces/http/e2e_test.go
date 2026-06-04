@@ -179,7 +179,8 @@ func newHarness(t *testing.T) *harness {
 	savedSearchSvc := savedsearchapp.NewService(memory.NewSavedSearchRepository(), searchSvc, notificationSvc)
 	paymentGateway := paymentgw.NewFakeGateway()
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentGateway, bookingRepo, propertyRepo).
-		WithDeposits(depositRepo)
+		WithDeposits(depositRepo).
+		WithPublisher(relay)
 	disputeSvc := disputeapp.NewService(disputeRepo, bookingRepo, propertyRepo, dispatcher).
 		WithPaymentAdjuster(paymentSvc).
 		WithUnitOfWork(uow).

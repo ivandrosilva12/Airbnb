@@ -31,6 +31,10 @@ func init() {
 	// SplitShareRefunded per share when a cancellation releases it.
 	Register(SplitShareAuthorized{}.EventName(), jsonDecoder[SplitShareAuthorized]())
 	Register(SplitShareRefunded{}.EventName(), jsonDecoder[SplitShareRefunded]())
+	// S94 — async-gateway auto-confirm (WF-GAP-010): the payment service emits
+	// this once the gateway settles an async authorization via webhook, and
+	// the booking service subscriber promotes pending→confirmed when allowed.
+	Register(PaymentAuthorized{}.EventName(), jsonDecoder[PaymentAuthorized]())
 }
 
 // BookingRequested is published when a guest creates a booking. The host should
@@ -208,3 +212,25 @@ type SplitShareRefunded struct {
 }
 
 func (SplitShareRefunded) EventName() string { return "splitpayment.share.refunded" }
+
+// PaymentAuthorized is published (S94 — WF-GAP-010) when an asynchronous
+// gateway webhook completes the authorization of a payment that was
+// previously in pending status (e.g. Stripe 3DS challenge cleared, AppyPay
+// redirect completed). The booking context subscribes to this event so
+// that an instant-book booking still in pending status can be auto-
+// confirmed once the funds are actually held — closing the "stuck in
+// pending" gap that exists when the initial Authorize call returns before
+// the gateway has finished authenticating the payer.
+//
+// Subscribers must be idempotent: an at-least-once outbox plus the
+// gateway's own webhook retries mean the same authorization can surface
+// more than once. The booking subscriber guards against double-confirm
+// by checking the booking is still in pending status before acting.
+type PaymentAuthorized struct {
+	BookingID  uuid.UUID
+	PaymentID  uuid.UUID
+	GuestID    uuid.UUID
+	GatewayRef string
+}
+
+func (PaymentAuthorized) EventName() string { return "payment.authorized" }

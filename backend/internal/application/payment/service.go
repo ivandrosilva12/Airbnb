@@ -9,6 +9,7 @@ import (
 	"github.com/airhost/backend/internal/observability/logctx"
 	"time"
 
+	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/payment"
@@ -24,6 +25,11 @@ type Service struct {
 	gateway    port.PaymentGateway
 	bookings   booking.Repository
 	properties property.Repository
+	// publisher is used to fan out PaymentAuthorized once an asynchronous
+	// gateway webhook completes the authorization. Nil falls back to a
+	// no-op publisher so the service still works in tests that don't wire
+	// the booking auto-confirm subscriber.
+	publisher event.Publisher
 }
 
 // NewService wires the payment application service. The booking and property
@@ -31,13 +37,26 @@ type Service struct {
 // support is opt-in via WithDeposits — when no deposit repository is wired
 // the deposit subscriber and damage-via-deposit paths are no-ops.
 func NewService(repo payment.Repository, gateway port.PaymentGateway, bookings booking.Repository, properties property.Repository) *Service {
-	return &Service{repo: repo, gateway: gateway, bookings: bookings, properties: properties}
+	return &Service{repo: repo, gateway: gateway, bookings: bookings, properties: properties, publisher: event.Nop()}
 }
 
 // WithDeposits enables the security-deposit flow on the service. Returns the
 // same service for chained construction.
 func (s *Service) WithDeposits(deposits payment.DepositRepository) *Service {
 	s.deposits = deposits
+	return s
+}
+
+// WithPublisher wires the event publisher used to emit PaymentAuthorized when
+// an asynchronous gateway webhook completes the authorization. Without it,
+// the post-authorize hook is silent — useful for narrow unit tests that
+// only exercise the reconciliation state machine. Returns the same service
+// for chained construction.
+func (s *Service) WithPublisher(pub event.Publisher) *Service {
+	if pub == nil {
+		pub = event.Nop()
+	}
+	s.publisher = pub
 	return s
 }
 
@@ -93,7 +112,25 @@ func (s *Service) ReconcileGatewayEvent(ctx context.Context, evt port.GatewayEve
 		return false, err
 	}
 
+	// authorized tracks whether THIS call moved the payment from pending to
+	// authorized — used after the persist to emit PaymentAuthorized exactly
+	// once per async-auth completion (a duplicate webhook finds the payment
+	// already authorized and short-circuits before reaching here).
+	authorized := false
+
 	switch evt.Type {
+	case port.GatewayAuthorized:
+		if p.Status != payment.StatusPending {
+			return false, nil // already authorized/captured/failed — duplicate or out-of-order
+		}
+		ref := p.GatewayRef
+		if ref == "" {
+			ref = evt.Reference
+		}
+		if err := p.Authorize(ref); err != nil {
+			return false, err
+		}
+		authorized = true
 	case port.GatewayCaptured:
 		if p.Status != payment.StatusAuthorized {
 			return false, nil // already captured/settled or not capturable
@@ -123,6 +160,20 @@ func (s *Service) ReconcileGatewayEvent(ctx context.Context, evt port.GatewayEve
 
 	if err := s.repo.Update(ctx, p); err != nil {
 		return false, err
+	}
+	if authorized {
+		// Async-auth completed: fan out PaymentAuthorized so the booking
+		// subscriber can auto-confirm an instant-book reservation that has
+		// been stuck in pending while waiting for the gateway. Subscribers
+		// guard against duplicates themselves — we already short-circuited
+		// the second reconcile above, but the at-least-once outbox can
+		// re-deliver this event on its own.
+		s.publisher.Publish(ctx, event.PaymentAuthorized{
+			BookingID:  p.BookingID,
+			PaymentID:  p.ID,
+			GuestID:    p.GuestID,
+			GatewayRef: p.GatewayRef,
+		})
 	}
 	return true, nil
 }

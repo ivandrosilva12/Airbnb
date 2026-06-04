@@ -91,6 +91,7 @@ func TestDurablePublisher_DecoderRegisteredForAllEvents(t *testing.T) {
 		MessageSent{}.EventName(),
 		IdentityVerified{}.EventName(),
 		SplitPaymentCompleted{}.EventName(),
+		PaymentAuthorized{}.EventName(),
 	} {
 		if _, ok := decoders[name]; !ok {
 			t.Fatalf("no decoder registered for %q", name)

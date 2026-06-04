@@ -138,8 +138,15 @@ func (v *stripeWebhookVerifier) Verify(header http.Header, body []byte) (port.Ga
 	obj := evt.Data.Object
 	base := port.GatewayEvent{Provider: nameStripe, EventID: evt.ID}
 	switch evt.Type {
-	case "payment_intent.succeeded", "payment_intent.amount_capturable_updated":
+	case "payment_intent.succeeded":
 		base.Reference, base.Type = obj.ID, port.GatewayCaptured
+		return base, true, nil
+	case "payment_intent.amount_capturable_updated":
+		// In Stripe's manual-capture flow this fires once the 3DS challenge
+		// (or any other async authentication) has cleared and the funds are
+		// fully held but not yet captured — the "authorized" moment for
+		// async-gateway integration.
+		base.Reference, base.Type = obj.ID, port.GatewayAuthorized
 		return base, true, nil
 	case "charge.refunded":
 		ref := obj.PaymentIntent
@@ -246,6 +253,10 @@ func (v *jsonWebhookVerifier) Verify(header http.Header, body []byte) (port.Gate
 	}
 	base := port.GatewayEvent{Provider: v.provider, EventID: evt.EventID, Reference: evt.ID}
 	switch strings.ToLower(evt.Event) {
+	case "authorized", "authorize", "auth", "approved":
+		// Async-auth completed (e.g. AppyPay redirect finished, 3DS cleared).
+		// The reconciler moves a still-pending payment to authorized.
+		base.Type = port.GatewayAuthorized
 	case "captured", "capture", "succeeded", "paid":
 		base.Type = port.GatewayCaptured
 	case "refunded", "refund":
