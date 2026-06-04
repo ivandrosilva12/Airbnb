@@ -394,6 +394,12 @@ func run() error {
 	// events: every dispatched created / confirmed / cancelled bumps
 	// the ExperienceBookingEventsTotal counter labeled by EventName.
 	experienceBookingSvc.WithMetrics(metrics)
+	// S113 — count offer lifecycle events (offer.created/.declined/
+	// .withdrawn) so ops can graph the flow rate. The offer package
+	// declares an OfferMetrics interface to avoid importing the
+	// observability package; the adapter below satisfies it by
+	// forwarding to the OffersTotal CounterVec.
+	offerSvc.WithMetrics(offerMetricsAdapter{m: metrics})
 	// S97 — outbox DLQ + depth metric (WF-GAP-018). After 5 failed
 	// delivery attempts the relay promotes the record to dead-letter
 	// state, keeping the recovery scan cheap and surfacing stuck events
@@ -630,4 +636,19 @@ func (a taxQuoterAdapter) QuoteForBooking(ctx context.Context, in bookingapp.Tax
 		lines = append(lines, booking.TaxLine{Name: l.Name, AmountCents: l.AmountCents})
 	}
 	return bookingapp.TaxQuoteResult{Lines: lines, TotalCents: q.TotalCents, Currency: q.Currency}, nil
+}
+
+// offerMetricsAdapter satisfies offerapp.OfferMetrics by forwarding to the
+// observability OffersTotal CounterVec. Kept at the composition root so
+// the offer application package never imports the observability package
+// (S113 — follow-on to S99/WF-GAP-008).
+type offerMetricsAdapter struct {
+	m *observability.Metrics
+}
+
+func (a offerMetricsAdapter) IncOffer(eventName string) {
+	if a.m == nil || a.m.OffersTotal == nil {
+		return
+	}
+	a.m.OffersTotal.WithLabelValues(eventName).Inc()
 }

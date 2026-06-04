@@ -32,6 +32,12 @@ type Metrics struct {
 	// after the application service hands the event to the dispatcher,
 	// so subscriber failures don't suppress the metric.
 	ExperienceBookingEventsTotal *prometheus.CounterVec
+	// S113 — offer lifecycle events (WF-GAP-008 follow-on to S99/S106),
+	// labeled by EventName (offer.created / .declined / .withdrawn).
+	// Incremented after the offer service hands the event to the
+	// publisher, so subscriber failures don't suppress the metric and
+	// ops can graph the offer flow rate.
+	OffersTotal *prometheus.CounterVec
 	// S97 — outbox observability (WF-GAP-018). OutboxPending tracks the
 	// number of records the recovery scan would still pick up; spikes mean
 	// the dispatcher is falling behind or a subscriber is stuck. DLQ
@@ -128,6 +134,13 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			prometheus.CounterOpts{
 				Name: "airhost_experience_booking_events_total",
 				Help: "Total experience-booking domain events dispatched, labeled by EventName (experiencebooking.created / .confirmed / .cancelled) (S85).",
+			},
+			[]string{"event"},
+		),
+		OffersTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "airhost_offers_total",
+				Help: "Total offer lifecycle events published, labeled by EventName (offer.created / .declined / .withdrawn) — follow-on to S99/WF-GAP-008 (S113).",
 			},
 			[]string{"event"},
 		),

@@ -16,6 +16,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// OfferMetrics is the optional Prometheus sink for offer lifecycle events.
+// It is defined here (rather than imported from the observability package)
+// so the application layer does not depend on infrastructure: the wiring
+// in main.go passes the concrete *observability.Metrics, which satisfies
+// this interface via an inline adapter. eventName is the domain event's
+// EventName() — one of "offer.created", "offer.declined",
+// "offer.withdrawn" (S113 — follow-on to S99/WF-GAP-008).
+type OfferMetrics interface {
+	IncOffer(eventName string)
+}
+
 // Service orchestrates offer use cases.
 type Service struct {
 	offers     offer.Repository
@@ -26,6 +37,11 @@ type Service struct {
 	// inform the affected party. Optional — older tests / wiring leave it
 	// nil and the emit helper is a silent no-op (S99 — WF-GAP-008).
 	pub event.Publisher
+	// metrics, when wired via WithMetrics, counts each published lifecycle
+	// event by EventName so ops can graph the offer flow rate. Optional —
+	// nil keeps observability off, matching the pre-S113 behaviour for
+	// focused unit tests (S113).
+	metrics OfferMetrics
 }
 
 // NewService wires the offer application service. It uses the booking service to
@@ -41,14 +57,28 @@ func (s *Service) WithPublisher(p event.Publisher) *Service {
 	return s
 }
 
+// WithMetrics plugs in the Prometheus sink so every published offer
+// lifecycle event increments the OffersTotal counter labeled by EventName
+// (S113). Nil leaves observability off. Returns the receiver for fluent
+// wiring — main.go calls .WithMetrics(metrics) right after .WithPublisher,
+// mirroring fraud/experience-booking services.
+func (s *Service) WithMetrics(m OfferMetrics) *Service {
+	s.metrics = m
+	return s
+}
+
 // emit is a small helper that publishes through s.pub when wired, otherwise
 // silently drops — preserving the pre-S99 behaviour for tests that don't
-// thread a publisher through.
+// thread a publisher through. When a metrics sink is attached, it also
+// increments the per-event counter so the count stays consistent with the
+// dispatched events even if a subscriber later fails (S113).
 func (s *Service) emit(ctx context.Context, e event.Event) {
-	if s.pub == nil {
-		return
+	if s.pub != nil {
+		s.pub.Publish(ctx, e)
 	}
-	s.pub.Publish(ctx, e)
+	if s.metrics != nil {
+		s.metrics.IncOffer(e.EventName())
+	}
 }
 
 // CreateInput carries a host's offer to a guest.

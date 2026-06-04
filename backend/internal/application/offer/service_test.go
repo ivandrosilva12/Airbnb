@@ -79,6 +79,42 @@ func TestOffer_SpecialOfferAcceptCreatesConfirmedBookingAtOfferPrice(t *testing.
 	}
 }
 
+// fakeOfferMetrics records IncOffer calls so the test can assert the
+// counter was bumped with the expected EventName label (S113).
+type fakeOfferMetrics struct {
+	calls []string
+}
+
+func (f *fakeOfferMetrics) IncOffer(eventName string) {
+	f.calls = append(f.calls, eventName)
+}
+
+// TestService_Create_IncrementsMetric verifies that a successful Create
+// bumps the OffersTotal counter via the OfferMetrics sink, labeled with
+// the event's EventName ("offer.created"). The publisher is wired so
+// emit reaches the metrics branch too, mirroring main.go's wiring
+// (S113 — follow-on to S99/WF-GAP-008).
+func TestService_Create_IncrementsMetric(t *testing.T) {
+	svc, _, prop, hostID := setup(t)
+	metrics := &fakeOfferMetrics{}
+	svc = svc.WithPublisher(event.NewDispatcher()).WithMetrics(metrics)
+	ctx := context.Background()
+
+	if _, err := svc.Create(ctx, offerapp.CreateInput{
+		HostID: hostID, PropertyID: prop.ID, GuestID: uuid.New(),
+		CheckIn: days(1), CheckOut: days(3), Guests: 1,
+	}); err != nil {
+		t.Fatalf("create offer: %v", err)
+	}
+
+	if len(metrics.calls) != 1 {
+		t.Fatalf("IncOffer call count = %d, want 1 (calls = %v)", len(metrics.calls), metrics.calls)
+	}
+	if metrics.calls[0] != "offer.created" {
+		t.Fatalf("IncOffer label = %q, want %q", metrics.calls[0], "offer.created")
+	}
+}
+
 func TestOffer_OnlyHostCreatesOnlyGuestActs(t *testing.T) {
 	svc, _, prop, hostID := setup(t)
 	ctx := context.Background()
