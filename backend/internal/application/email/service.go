@@ -135,6 +135,22 @@ func (s *Service) EventHandler() event.Handler {
 			// S93 / WF-GAP-011 — fan email out to organizer + payers.
 			s.handleSplitCompleted(ctx, ev)
 
+		// Per-share split-payment lifecycle (S116 — follow-on to S88).
+		// SplitPaymentCompleted (above) only fires once everyone has paid;
+		// individual payers also deserve a confirmation the moment their
+		// share clears the gateway, and a refund notice if a cancellation
+		// later releases that hold. Same opt-out category as the rest of
+		// the booking flow so a payer who muted booking emails on web
+		// isn't surprised by these.
+		case event.SplitShareAuthorized:
+			amount := fmt.Sprintf("%.2f %s", float64(ev.AmountCents)/100, ev.Currency)
+			s.send(ctx, ev.PayerID, catBookings, "Your share of a group booking is on hold",
+				fmt.Sprintf("We've placed a hold of %s for your share of a group booking. The trip is booked once everyone pays.", amount))
+
+		case event.SplitShareRefunded:
+			s.send(ctx, ev.PayerID, catBookings, "Your share was refunded",
+				"We've refunded your portion of a cancelled booking. Funds should reach your card within a few business days.")
+
 		// Offer lifecycle (S106 — WF-GAP-008 email arm). S99 wired the
 		// in-app notification + realtime push; this is the transactional
 		// email so a guest who muted in-app push but kept email opt-in

@@ -403,6 +403,77 @@ func TestEventHandler_CohostInvitedEmail(t *testing.T) {
 	}
 }
 
+// TestEventHandler_SplitShareEvents — S116 (follow-on to S88). The aggregate
+// SplitPaymentCompleted event already triggers an organizer + payer fanout;
+// this test covers the per-share arm: each payer should be told the moment
+// their hold clears the gateway, and again if a later cancellation refunds
+// that hold. Both rides the catBookings channel so booking opt-outs apply.
+func TestEventHandler_SplitShareEvents(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	payer1 := mustUser(t, users, "payer1@test.dev", user.RoleGuest)
+	payer2 := mustUser(t, users, "payer2@test.dev", user.RoleGuest)
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	dispatcher.Publish(ctx, event.SplitShareAuthorized{
+		SplitPaymentID: uuid.New(),
+		BookingID:      uuid.New(),
+		ShareID:        uuid.New(),
+		PayerID:        payer1.ID,
+		AmountCents:    4250,
+		Currency:       "EUR",
+		GatewayRef:     "auth_abc123",
+	})
+	dispatcher.Publish(ctx, event.SplitShareRefunded{
+		SplitPaymentID: uuid.New(),
+		BookingID:      uuid.New(),
+		ShareID:        uuid.New(),
+		PayerID:        payer2.ID,
+		AmountCents:    3300,
+		Currency:       "USD",
+		GatewayRef:     "ref_xyz789",
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 2 {
+		t.Fatalf("sent %d emails, want 2 (%+v)", len(sent), sent)
+	}
+
+	// Payer 1 — authorized hold.
+	var auth, refund *email.Sent
+	for i := range sent {
+		switch sent[i].To {
+		case payer1.Email:
+			auth = &sent[i]
+		case payer2.Email:
+			refund = &sent[i]
+		}
+	}
+	if auth == nil {
+		t.Fatalf("no email to payer1 (%s) in %+v", payer1.Email, sent)
+	}
+	if auth.Subject != "Your share of a group booking is on hold" {
+		t.Fatalf("payer1 subject = %q", auth.Subject)
+	}
+	if !strings.Contains(auth.Text, "42.50") || !strings.Contains(auth.Text, "EUR") {
+		t.Fatalf("payer1 body should mention amount + currency, got %q", auth.Text)
+	}
+
+	// Payer 2 — refund notice.
+	if refund == nil {
+		t.Fatalf("no email to payer2 (%s) in %+v", payer2.Email, sent)
+	}
+	if refund.Subject != "Your share was refunded" {
+		t.Fatalf("payer2 subject = %q", refund.Subject)
+	}
+	if !strings.Contains(refund.Text, "refunded") {
+		t.Fatalf("payer2 body should mention the refund, got %q", refund.Text)
+	}
+}
+
 // TestSendArrivalInfoEmail — S107. Direct call (not event-driven) used by the
 // arrival-info scheduler to mirror the in-app notification.
 func TestSendArrivalInfoEmail(t *testing.T) {
