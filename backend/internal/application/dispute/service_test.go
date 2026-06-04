@@ -368,6 +368,77 @@ func TestOpen_EventsHitOutbox(t *testing.T) {
 	}
 }
 
+// fakeDisputeMetrics records IncDispute calls so the test can assert the
+// counter was bumped with the expected event label (S117).
+type fakeDisputeMetrics struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (f *fakeDisputeMetrics) IncDispute(eventName string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, eventName)
+}
+
+func (f *fakeDisputeMetrics) names() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.calls))
+	copy(out, f.calls)
+	return out
+}
+
+// TestService_Open_IncrementsMetric verifies that a successful Open bumps
+// the DisputeLifecycleTotal counter via the DisputeMetrics sink, labeled
+// with the dispatched event's EventName ("dispute.opened"). Mirrors the
+// offer-service S113 test (S117 — follow-on to S29/S89/WF-GAP-013).
+func TestService_Open_IncrementsMetric(t *testing.T) {
+	f := newFixture(t)
+	metrics := &fakeDisputeMetrics{}
+	svc := f.newService().WithMetrics(metrics)
+
+	// Seed a second booking on the same property so we can open against
+	// it (the fixture's existing dispute already occupies the first).
+	in := time.Now().UTC().AddDate(0, 0, 5)
+	out := time.Now().UTC().AddDate(0, 0, 7)
+	dates, _ := booking.NewDateRange(in, out)
+	price, _ := shared.NewMoney(10000, "EUR")
+	cleaning, _ := shared.NewMoney(0, "EUR")
+	b2, err := booking.NewBooking(f.prop.ID, f.guestID, dates, 1, price, cleaning, 0.10, booking.Discounts{})
+	if err != nil {
+		t.Fatalf("new booking: %v", err)
+	}
+	if err := b2.Confirm(); err != nil {
+		t.Fatalf("confirm booking: %v", err)
+	}
+	if err := b2.Complete(); err != nil {
+		t.Fatalf("complete booking: %v", err)
+	}
+	if err := f.bookings.Create(f.ctx, b2); err != nil {
+		t.Fatalf("save booking: %v", err)
+	}
+
+	if _, err := svc.Open(f.ctx, disputeapp.OpenInput{
+		BookingID:            b2.ID,
+		OpenerID:             f.guestID,
+		Kind:                 dispute.KindRefund,
+		Reason:               "noisy neighbours",
+		RequestedAmountCents: 3000,
+		Currency:             "EUR",
+	}); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	calls := metrics.names()
+	if len(calls) != 1 {
+		t.Fatalf("IncDispute call count = %d, want 1 (calls = %v)", len(calls), calls)
+	}
+	if calls[0] != "dispute.opened" {
+		t.Fatalf("IncDispute label = %q, want %q", calls[0], "dispute.opened")
+	}
+}
+
 // TestOpen_TransactionalRollback parallels TestResolve_TransactionalRollback:
 // a commit-time failure rolls the open back so no subscriber sees an event.
 func TestOpen_TransactionalRollback(t *testing.T) {

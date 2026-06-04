@@ -400,6 +400,13 @@ func run() error {
 	// observability package; the adapter below satisfies it by
 	// forwarding to the OffersTotal CounterVec.
 	offerSvc.WithMetrics(offerMetricsAdapter{m: metrics})
+	// S117 — count dispute lifecycle events (dispute.opened/.resolved/
+	// .rejected) so ops can graph the open→decide flow and the
+	// open→resolved ratio. The plain DisputesOpened counter from S29
+	// stays as-is so existing dashboards keep working; the labeled
+	// vector below is additive. The dispute package declares a
+	// DisputeMetrics interface to avoid importing observability.
+	disputeSvc.WithMetrics(disputeMetricsAdapter{m: metrics})
 	// S97 — outbox DLQ + depth metric (WF-GAP-018). After 5 failed
 	// delivery attempts the relay promotes the record to dead-letter
 	// state, keeping the recovery scan cheap and surfacing stuck events
@@ -651,4 +658,19 @@ func (a offerMetricsAdapter) IncOffer(eventName string) {
 		return
 	}
 	a.m.OffersTotal.WithLabelValues(eventName).Inc()
+}
+
+// disputeMetricsAdapter satisfies disputeapp.DisputeMetrics by forwarding
+// to the observability DisputeLifecycleTotal CounterVec. Kept at the
+// composition root so the dispute application package never imports
+// observability (S117 — follow-on to S29/S89/WF-GAP-013).
+type disputeMetricsAdapter struct {
+	m *observability.Metrics
+}
+
+func (a disputeMetricsAdapter) IncDispute(eventName string) {
+	if a.m == nil || a.m.DisputeLifecycleTotal == nil {
+		return
+	}
+	a.m.DisputeLifecycleTotal.WithLabelValues(eventName).Inc()
 }

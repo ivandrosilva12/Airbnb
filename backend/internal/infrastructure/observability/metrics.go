@@ -38,6 +38,15 @@ type Metrics struct {
 	// publisher, so subscriber failures don't suppress the metric and
 	// ops can graph the offer flow rate.
 	OffersTotal *prometheus.CounterVec
+	// S117 — dispute lifecycle events (WF-GAP-013 follow-on to S29/S89),
+	// labeled by event (dispute.opened / .resolved / .rejected). The
+	// plain DisputesOpened counter above is preserved so existing
+	// dashboards keep working; this labeled vector is additive and lets
+	// ops graph the full open→resolve/reject flow plus the
+	// open→resolved ratio. Incremented after the dispute service hands
+	// the event to the publisher / outbox, so a subscriber failure
+	// downstream cannot suppress the metric.
+	DisputeLifecycleTotal *prometheus.CounterVec
 	// S97 — outbox observability (WF-GAP-018). OutboxPending tracks the
 	// number of records the recovery scan would still pick up; spikes mean
 	// the dispatcher is falling behind or a subscriber is stuck. DLQ
@@ -141,6 +150,13 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			prometheus.CounterOpts{
 				Name: "airhost_offers_total",
 				Help: "Total offer lifecycle events published, labeled by EventName (offer.created / .declined / .withdrawn) — follow-on to S99/WF-GAP-008 (S113).",
+			},
+			[]string{"event"},
+		),
+		DisputeLifecycleTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "airhost_dispute_lifecycle_total",
+				Help: "Total dispute lifecycle events published, labeled by event (dispute.opened / .resolved / .rejected) so ops can graph the full open→decide flow plus the open→resolved ratio — follow-on to S29/S89/WF-GAP-013 (S117).",
 			},
 			[]string{"event"},
 		),

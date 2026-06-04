@@ -36,6 +36,19 @@ import (
 // platform considers the matter closed.
 const PostStayWindow = 14 * 24 * time.Hour
 
+// DisputeMetrics is the optional Prometheus sink for dispute lifecycle
+// events. It is defined here (rather than imported from the observability
+// package) so the application layer does not depend on infrastructure:
+// the wiring in main.go passes the concrete *observability.Metrics, which
+// satisfies this interface via an inline adapter. eventName is one of
+// "dispute.opened", "dispute.resolved", "dispute.rejected" — derived from
+// the dispatched event's name plus the resolved/rejected outcome on
+// DisputeResolved, since the domain event itself shares EventName() for
+// both decisions (S117 — follow-on to S29/S89/WF-GAP-013).
+type DisputeMetrics interface {
+	IncDispute(eventName string)
+}
+
 // Service orchestrates dispute use cases.
 type Service struct {
 	repo       dispute.Repository
@@ -50,6 +63,11 @@ type Service struct {
 	// composition roots that don't wire transactions still work).
 	uow    port.UnitOfWork
 	outbox event.OutboxStore
+	// metrics, when wired via WithMetrics, counts each persisted dispute
+	// lifecycle event so ops can graph open→resolve/reject flow and the
+	// open→resolved ratio. Optional — nil keeps observability off, which
+	// matches the pre-S117 behaviour for focused unit tests (S117).
+	metrics DisputeMetrics
 }
 
 // NewService wires the dispute application service. When pub is nil events are
@@ -85,6 +103,16 @@ func (s *Service) WithUnitOfWork(u port.UnitOfWork) *Service {
 // inside the unit of work. Pair with WithUnitOfWork.
 func (s *Service) WithOutbox(o event.OutboxStore) *Service {
 	s.outbox = o
+	return s
+}
+
+// WithMetrics plugs in the Prometheus sink so every persisted dispute
+// lifecycle event increments the DisputeLifecycleTotal counter labeled
+// by event name (S117). Nil leaves observability off. Returns the
+// receiver for fluent wiring — main.go calls .WithMetrics right after
+// .WithOutbox, mirroring the offer/fraud services.
+func (s *Service) WithMetrics(m DisputeMetrics) *Service {
+	s.metrics = m
 	return s
 }
 
@@ -157,6 +185,11 @@ func (s *Service) Open(ctx context.Context, in OpenInput) (*dispute.Dispute, err
 	}
 	if err := s.persistAndEmit(ctx, d, ev); err != nil {
 		return nil, err
+	}
+	// S117 — count after the dispute write + event commit succeed, so a
+	// rollback (transactional path) does not leave a phantom metric tick.
+	if s.metrics != nil {
+		s.metrics.IncDispute(ev.EventName())
 	}
 	return d, nil
 }
@@ -367,6 +400,13 @@ func (s *Service) adminDecide(ctx context.Context, in ResolveInput, sideWithOpen
 	}
 	if err := s.persistAndEmit(ctx, d, ev); err != nil {
 		return nil, err
+	}
+	// S117 — DisputeResolved.EventName() collapses both decisions to
+	// "dispute.resolved", but ops care about resolved vs rejected as
+	// separate series. Derive the metric label from ev.Outcome so the
+	// counter splits into "dispute.resolved" / "dispute.rejected".
+	if s.metrics != nil {
+		s.metrics.IncDispute("dispute." + ev.Outcome)
 	}
 	return d, nil
 }
