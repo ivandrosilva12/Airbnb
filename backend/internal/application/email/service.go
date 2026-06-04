@@ -222,6 +222,22 @@ func propertyTitleOr(title, fallback string) string {
 	return title
 }
 
+// SendArrivalInfoEmail emails the guest that their check-in details are now
+// visible in the listing (S107 — mirror of the S102 in-app notification).
+// Uses catBookings so the existing "mute booking emails" preference applies.
+func (s *Service) SendArrivalInfoEmail(ctx context.Context, guestID uuid.UUID, propertyTitle string) error {
+	title := propertyTitleOr(propertyTitle, "your stay")
+	subject := "Check-in details available"
+	body := "Your check-in instructions and wifi details for " + title + " are now visible in the listing."
+	s.send(ctx, guestID, catBookings, subject, body)
+	// send() doesn't surface a structured error — but the interface in
+	// arrivalapp.Emailer expects one. The send helper logs internally; we
+	// return nil here so the arrival scheduler's loop continues. If a
+	// future revision needs hard error propagation, send can grow a
+	// returning twin.
+	return nil
+}
+
 func (s *Service) send(ctx context.Context, userID uuid.UUID, cat category, subject, body string) {
 	u, err := s.users.FindByID(ctx, userID)
 	if err != nil {

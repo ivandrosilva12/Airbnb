@@ -519,7 +519,11 @@ func run() error {
 	// arrival-info reveal window and create a one-off notification per
 	// guest. Dedupe via the notification table guarantees only-once even
 	// if the scheduler ticks many times inside the window.
-	arrivalSvc := arrivalapp.NewService(bookingRepo, propertyRepo, notificationSvc)
+	arrivalSvc := arrivalapp.NewService(bookingRepo, propertyRepo, notificationSvc).
+		// S107 — mirror the in-app notification to a transactional email
+		// so a guest who muted in-app push (FCM/APNs/web push) but kept
+		// catBookings email opt-in still gets the arrival-info nudge.
+		WithEmailer(emailSvc)
 	sched.Add(scheduler.Job{
 		Name:     "arrival-info-availability-notify",
 		Interval: 15 * time.Minute,

@@ -358,3 +358,48 @@ func TestEventHandler_OfferCreatedPreApprovalSubject(t *testing.T) {
 	}
 	assertSent(t, sent, guest.Email, "You're pre-approved")
 }
+
+// TestSendArrivalInfoEmail — S107. Direct call (not event-driven) used by the
+// arrival-info scheduler to mirror the in-app notification.
+func TestSendArrivalInfoEmail(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	guest := mustUser(t, users, "guest@test.dev", user.RoleGuest)
+	mailer := email.NewRecordingMailer()
+	svc := emailapp.NewService(users, mailer)
+
+	if err := svc.SendArrivalInfoEmail(ctx, guest.ID, "Atlantic Loft"); err != nil {
+		t.Fatalf("SendArrivalInfoEmail: %v", err)
+	}
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("emails sent = %d, want 1", len(sent))
+	}
+	if sent[0].To != guest.Email || sent[0].Subject != "Check-in details available" {
+		t.Fatalf("got %+v, want one to %s with subject 'Check-in details available'", sent[0], guest.Email)
+	}
+	if !strings.Contains(sent[0].Text, "Atlantic Loft") {
+		t.Fatalf("body should mention the property title, got %q", sent[0].Text)
+	}
+}
+
+// TestSendArrivalInfoEmail_RespectsBookingOptOut — a guest who muted booking
+// emails doesn't get the arrival-info nudge.
+func TestSendArrivalInfoEmail_RespectsBookingOptOut(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	guest := mustUser(t, users, "guest@test.dev", user.RoleGuest)
+	guest.SetEmailPreferences(user.EmailPreferences{Bookings: false, Messages: true})
+	if err := users.Update(ctx, guest); err != nil {
+		t.Fatalf("update prefs: %v", err)
+	}
+	mailer := email.NewRecordingMailer()
+	svc := emailapp.NewService(users, mailer)
+
+	if err := svc.SendArrivalInfoEmail(ctx, guest.ID, "Atlantic Loft"); err != nil {
+		t.Fatalf("SendArrivalInfoEmail: %v", err)
+	}
+	if len(mailer.Sent()) != 0 {
+		t.Fatalf("opt-out: sent %d, want 0", len(mailer.Sent()))
+	}
+}

@@ -175,3 +175,84 @@ func mustCreateBooking(t *testing.T, repo booking.Repository, propertyID, guestI
 	}
 	return b
 }
+
+// fakeEmailer records the calls the arrival scheduler makes to the emailer
+// port (S107). Used to assert the scheduler mirrors each in-app notification
+// to a transactional email when an emailer is wired.
+type fakeEmailer struct {
+	calls []struct {
+		guestID uuid.UUID
+		title   string
+	}
+}
+
+func (f *fakeEmailer) SendArrivalInfoEmail(_ context.Context, guestID uuid.UUID, title string) error {
+	f.calls = append(f.calls, struct {
+		guestID uuid.UUID
+		title   string
+	}{guestID, title})
+	return nil
+}
+
+// TestService_EmailMirrorsNotificationsWhenWired — S107. The Emailer is
+// optional; when set, the scheduler emails every guest it also notified.
+func TestService_EmailMirrorsNotificationsWhenWired(t *testing.T) {
+	ctx := context.Background()
+	bookings := memory.NewBookingRepository()
+	properties := memory.NewPropertyRepository()
+	notif := notificationapp.NewService(memory.NewNotificationRepository())
+	emailer := &fakeEmailer{}
+
+	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
+	hostID := uuid.New()
+	guest1 := uuid.New()
+	guest2 := uuid.New()
+	prop := newSeedProperty(t, properties, hostID, "Atlantic Loft")
+	mustCreateBooking(t, bookings, prop.ID, guest1, now.Add(20*time.Hour), now.Add(3*24*time.Hour))
+	mustCreateBooking(t, bookings, prop.ID, guest2, now.Add(40*time.Hour), now.Add(5*24*time.Hour))
+
+	svc := arrivalapp.NewService(bookings, properties, notif).
+		WithEmailer(emailer).
+		WithClock(pinClock(now))
+
+	sent, err := svc.Run(ctx)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if sent != 2 {
+		t.Fatalf("notifications = %d, want 2", sent)
+	}
+	if len(emailer.calls) != 2 {
+		t.Fatalf("emailer calls = %d, want 2 (one per notified guest)", len(emailer.calls))
+	}
+	// Each call must carry the property title so the email body isn't generic.
+	for i, c := range emailer.calls {
+		if c.title != "Atlantic Loft" {
+			t.Errorf("emailer call[%d] title = %q, want %q", i, c.title, "Atlantic Loft")
+		}
+	}
+}
+
+// TestService_NoEmailerStillNotifies — WithEmailer is optional; pre-S107
+// harnesses that don't wire one still work.
+func TestService_NoEmailerStillNotifies(t *testing.T) {
+	ctx := context.Background()
+	bookings := memory.NewBookingRepository()
+	properties := memory.NewPropertyRepository()
+	notif := notificationapp.NewService(memory.NewNotificationRepository())
+
+	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
+	hostID := uuid.New()
+	guest := uuid.New()
+	prop := newSeedProperty(t, properties, hostID, "Atlantic Loft")
+	mustCreateBooking(t, bookings, prop.ID, guest, now.Add(20*time.Hour), now.Add(3*24*time.Hour))
+
+	svc := arrivalapp.NewService(bookings, properties, notif).WithClock(pinClock(now))
+	sent, err := svc.Run(ctx)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if sent != 1 {
+		t.Fatalf("notifications = %d, want 1", sent)
+	}
+}

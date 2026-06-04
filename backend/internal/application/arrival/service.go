@@ -27,11 +27,23 @@ type Notifier interface {
 	NotifyArrivalAvailable(ctx context.Context, guestID, bookingID uuid.UUID, propertyTitle string) error
 }
 
+// Emailer is the subset of emailapp.Service the scheduler uses. S107 — when
+// wired via WithEmailer the scheduler sends a transactional email alongside
+// the in-app/push notification, so a guest who muted push but kept email
+// opt-in still gets nudged when their arrival info becomes visible.
+type Emailer interface {
+	SendArrivalInfoEmail(ctx context.Context, guestID uuid.UUID, propertyTitle string) error
+}
+
 // Service runs the periodic sweep.
 type Service struct {
 	bookings   booking.Repository
 	properties property.Repository
 	notif      Notifier
+	// email, when wired, fans the arrival nudge out as a transactional
+	// email as well as a notification (S107). Optional — older harnesses
+	// leave it nil and the email path becomes a no-op.
+	email Emailer
 	// clock returns "now" — replaceable so unit tests pin a specific
 	// instant inside the 48h reveal window.
 	clock func() time.Time
@@ -45,6 +57,14 @@ func NewService(bookings booking.Repository, properties property.Repository, not
 // WithClock injects a fake clock for tests.
 func (s *Service) WithClock(now func() time.Time) *Service {
 	s.clock = now
+	return s
+}
+
+// WithEmailer wires the transactional emailer (S107). When set, every
+// arrival-info notification is mirrored to a transactional email; when nil,
+// the email path is skipped (no panic, no error).
+func (s *Service) WithEmailer(e Emailer) *Service {
+	s.email = e
 	return s
 }
 
@@ -77,6 +97,17 @@ func (s *Service) Run(ctx context.Context) (int, error) {
 		if err := s.notif.NotifyArrivalAvailable(ctx, b.GuestID, b.ID, title); err != nil {
 			slog.Warn("arrival: notify failed", "booking", b.ID, "guest", b.GuestID, "error", err)
 			continue
+		}
+		// S107 — mirror the in-app notification to a transactional email
+		// when an emailer is wired. Best-effort: a mailer failure is
+		// logged but doesn't cancel the counter or stop the loop — the
+		// guest already has the in-app push and the dedupe key on the
+		// notification side prevents a follow-up tick from re-creating
+		// the in-app notification, so the email won't keep retrying.
+		if s.email != nil {
+			if err := s.email.SendArrivalInfoEmail(ctx, b.GuestID, title); err != nil {
+				slog.Warn("arrival: email send failed", "booking", b.ID, "guest", b.GuestID, "error", err)
+			}
 		}
 		sent++
 	}
