@@ -74,6 +74,18 @@ type PushConfig struct {
 	APNsPrivateKeyPEM string // .p8 file contents (PEM)
 	APNsBundleID      string
 	APNsUseSandbox    bool
+
+	// Web Push (S96) — VAPID identifies the application server to the user-
+	// agent's Push Service. Public is exposed via GET /push/vapid-public-key
+	// so the browser can call pushManager.subscribe; Private signs the JWT
+	// embedded in every dispatch. Subject is a mailto: or https: URL the
+	// Push Service uses to contact us about abuse. WebPushEnabled is a
+	// feature flag (default OFF) so a partial deployment cannot trigger
+	// sends with mismatched / placeholder keys.
+	WebPushEnabled    bool
+	WebPushPublicKey  string
+	WebPushPrivateKey string
+	WebPushSubject    string
 }
 
 // IdentityConfig holds the KYC gating policy. When a flag is on, the matching
@@ -341,6 +353,10 @@ func Load() (*Config, error) {
 			APNsPrivateKeyPEM:     getEnv("APNS_PRIVATE_KEY", ""),
 			APNsBundleID:          getEnv("APNS_BUNDLE_ID", ""),
 			APNsUseSandbox:        getBool("APNS_USE_SANDBOX", false),
+			WebPushEnabled:        getBool("WEB_PUSH_ENABLED", false),
+			WebPushPublicKey:      getEnv("WEB_PUSH_PUBLIC_KEY", ""),
+			WebPushPrivateKey:     getEnv("WEB_PUSH_PRIVATE_KEY", ""),
+			WebPushSubject:        getEnv("WEB_PUSH_SUBJECT", "mailto:admin@airhost.dev"),
 		},
 		Tracing: TracingConfig{
 			Exporter:     getEnv("TRACING_EXPORTER", "noop"),

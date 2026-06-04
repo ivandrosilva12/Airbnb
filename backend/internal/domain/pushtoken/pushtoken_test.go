@@ -56,3 +56,18 @@ func TestTouch_UpdatesLastSeen(t *testing.T) {
 		t.Fatalf("expected LastSeen to advance, got %v", tok.LastSeen)
 	}
 }
+
+// TestWithEndpoint_RoundTripsWebSubscription verifies the JSON keys blob can be
+// stashed on the aggregate and survives a trim. The Web Push sender reads it
+// back via json.Unmarshal so the test mirrors the production shape.
+func TestWithEndpoint_RoundTripsWebSubscription(t *testing.T) {
+	tok, err := pushtoken.New(uuid.New(), pushtoken.PlatformWeb,
+		"https://fcm.googleapis.com/fcm/send/abc")
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	tok.WithEndpoint(`  {"p256dh":"AAA","auth":"BBB"}  `)
+	if tok.Endpoint != `{"p256dh":"AAA","auth":"BBB"}` {
+		t.Fatalf("expected endpoint to be trimmed, got %q", tok.Endpoint)
+	}
+}

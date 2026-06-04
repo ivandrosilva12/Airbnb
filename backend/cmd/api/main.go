@@ -413,7 +413,7 @@ func run() error {
 			Offer:          handler.NewOfferHandler(offerSvc),
 			SavedSearch:    handler.NewSavedSearchHandler(savedSearchSvc),
 			PriceRule:      handler.NewPriceRuleHandler(priceRuleSvc),
-			PushToken:      handler.NewPushTokenHandler(pushTokenSvc),
+			PushToken:      handler.NewPushTokenHandler(pushTokenSvc).WithVAPIDPublicKey(cfg.Push.WebPushPublicKey),
 			Audit:          handler.NewAuditHandler(auditSvc),
 			Dispute:        handler.NewDisputeHandler(disputeSvc, metrics).WithAudit(auditSvc),
 			Cohost:          handler.NewCohostHandler(cohostSvc, userRepo, metrics),

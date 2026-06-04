@@ -1998,6 +1998,7 @@ func (r *PushTokenRepository) Save(_ context.Context, t *pushtoken.Token) error 
 		if existing.Platform == t.Platform && existing.Token == t.Token {
 			existing.UserID = t.UserID
 			existing.LastSeen = t.LastSeen
+			existing.Endpoint = t.Endpoint
 			r.m[id] = existing
 			t.ID = existing.ID
 			return nil

@@ -42,12 +42,15 @@ func NewService(tokens pushtoken.Repository, users user.Repository, sender port.
 
 // Register stores a device token, upserting on (platform, token) so the same
 // device re-registering only refreshes LastSeen (and switches owner if the
-// device was previously linked to a different user).
-func (s *Service) Register(ctx context.Context, userID uuid.UUID, platform pushtoken.Platform, token string) (*pushtoken.Token, error) {
+// device was previously linked to a different user). endpoint is the optional
+// Web Push subscription metadata (JSON-encoded {p256dh, auth}); empty for
+// FCM/APNs registrations.
+func (s *Service) Register(ctx context.Context, userID uuid.UUID, platform pushtoken.Platform, token, endpoint string) (*pushtoken.Token, error) {
 	t, err := pushtoken.New(userID, platform, token)
 	if err != nil {
 		return nil, err
 	}
+	t.WithEndpoint(endpoint)
 	if err := s.tokens.Save(ctx, t); err != nil {
 		return nil, err
 	}

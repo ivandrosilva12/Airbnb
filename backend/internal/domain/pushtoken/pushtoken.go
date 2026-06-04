@@ -32,12 +32,16 @@ func (p Platform) Valid() bool {
 	}
 }
 
-// Token is the aggregate root for one device registration.
+// Token is the aggregate root for one device registration. Endpoint carries
+// the Web Push subscription metadata (a JSON blob with p256dh + auth) when
+// Platform == "web"; it is empty for FCM/APNs rows whose `Token` field already
+// holds everything the provider needs.
 type Token struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID
 	Platform  Platform
 	Token     string
+	Endpoint  string
 	LastSeen  time.Time
 	CreatedAt time.Time
 }
@@ -63,6 +67,13 @@ func New(userID uuid.UUID, platform Platform, token string) (*Token, error) {
 		LastSeen:  now,
 		CreatedAt: now,
 	}, nil
+}
+
+// WithEndpoint attaches the optional Web Push endpoint metadata (a JSON-
+// encoded {p256dh, auth} blob). Returns the token for fluent chaining.
+func (t *Token) WithEndpoint(endpoint string) *Token {
+	t.Endpoint = strings.TrimSpace(endpoint)
+	return t
 }
 
 // Touch refreshes LastSeen — used when the same (platform, token) re-registers

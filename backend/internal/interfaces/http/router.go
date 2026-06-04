@@ -171,6 +171,12 @@ func NewRouter(d Deps) *gin.Engine {
 		// Publicly shared wishlist collection (anyone with the link).
 		api.GET("/shared/collections/:token", h.Favorite.GetShared)
 
+	// Web Push VAPID public key (S96) — the browser fetches this before
+	// calling pushManager.subscribe so it can authenticate the application
+	// server. Public on purpose (the key is, by definition, public) and
+	// served as plain text so the JS side can decode it directly.
+	api.GET("/push/vapid-public-key", h.PushToken.VAPIDPublicKey)
+
 	// Payment gateway webhooks (authenticated by per-provider signature, not by a
 	// user token, so they live outside the auth group). Rate-limited per IP to
 	// blunt floods/replay storms against the unauthenticated route; rejections

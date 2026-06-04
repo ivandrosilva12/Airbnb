@@ -45,10 +45,10 @@ func TestRegister_StoresTokenAndUpsertsOnReRegister(t *testing.T) {
 
 	u := mustUser(t, users, "guest@example.com", domainuser.RoleGuest)
 
-	if _, err := svc.Register(context.Background(), u.ID, pushtoken.PlatformAndroid, "abc"); err != nil {
+	if _, err := svc.Register(context.Background(), u.ID, pushtoken.PlatformAndroid, "abc", ""); err != nil {
 		t.Fatalf("register #1: %v", err)
 	}
-	if _, err := svc.Register(context.Background(), u.ID, pushtoken.PlatformAndroid, "abc"); err != nil {
+	if _, err := svc.Register(context.Background(), u.ID, pushtoken.PlatformAndroid, "abc", ""); err != nil {
 		t.Fatalf("register #2: %v", err)
 	}
 
@@ -72,7 +72,7 @@ func TestPush_RespectsCategoryOptOuts(t *testing.T) {
 	if err := users.Update(context.Background(), u); err != nil {
 		t.Fatalf("update prefs: %v", err)
 	}
-	if _, err := svc.Register(context.Background(), u.ID, pushtoken.PlatformIOS, "ios-1"); err != nil {
+	if _, err := svc.Register(context.Background(), u.ID, pushtoken.PlatformIOS, "ios-1", ""); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 
@@ -110,10 +110,10 @@ func TestPush_PrunesInvalidTokensReportedByProvider(t *testing.T) {
 	svc := pushtokenapp.NewService(tokens, users, sender)
 
 	u := mustUser(t, users, "g3@example.com", domainuser.RoleGuest)
-	if _, err := svc.Register(context.Background(), u.ID, pushtoken.PlatformAndroid, "dead"); err != nil {
+	if _, err := svc.Register(context.Background(), u.ID, pushtoken.PlatformAndroid, "dead", ""); err != nil {
 		t.Fatalf("register dead: %v", err)
 	}
-	if _, err := svc.Register(context.Background(), u.ID, pushtoken.PlatformAndroid, "live"); err != nil {
+	if _, err := svc.Register(context.Background(), u.ID, pushtoken.PlatformAndroid, "live", ""); err != nil {
 		t.Fatalf("register live: %v", err)
 	}
 	sender.invalid["dead"] = true

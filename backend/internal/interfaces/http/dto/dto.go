@@ -152,23 +152,27 @@ func FromDispute(d *dispute.Dispute) DisputeView {
 	}
 }
 
-// PushTokenView renders a registered device token.
+// PushTokenView renders a registered device token. HasEndpoint is true for
+// rows that carry Web Push subscription metadata; the raw keys are NOT
+// exposed in the view (they are server-side material only).
 type PushTokenView struct {
-	ID        uuid.UUID `json:"id"`
-	Platform  string    `json:"platform"`
-	Token     string    `json:"token"`
-	LastSeen  time.Time `json:"lastSeen"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID          uuid.UUID `json:"id"`
+	Platform    string    `json:"platform"`
+	Token       string    `json:"token"`
+	HasEndpoint bool      `json:"hasEndpoint,omitempty"`
+	LastSeen    time.Time `json:"lastSeen"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 // FromPushToken maps a push-token aggregate to its view.
 func FromPushToken(t *pushtoken.Token) PushTokenView {
 	return PushTokenView{
-		ID:        t.ID,
-		Platform:  string(t.Platform),
-		Token:     t.Token,
-		LastSeen:  t.LastSeen,
-		CreatedAt: t.CreatedAt,
+		ID:          t.ID,
+		Platform:    string(t.Platform),
+		Token:       t.Token,
+		HasEndpoint: t.Endpoint != "",
+		LastSeen:    t.LastSeen,
+		CreatedAt:   t.CreatedAt,
 	}
 }
 
