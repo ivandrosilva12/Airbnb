@@ -541,10 +541,31 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	// All three (booking row + split row + outbox events) commit atomically
 	// or roll back together, so a crash mid-flow can no longer leave a
 	// booking flagged Split=true with no corresponding split row.
+	// redeemedInTx tracks whether the in-transaction redemption path ran
+	// inside the closure. The fallback post-commit path only fires when this
+	// stays false (i.e. tx.Coupons was nil — typically a test-only UoW).
+	redeemedInTx := false
 	if err := s.emit(ctx,
 		func(tx port.Tx) error {
 			if err := tx.Bookings.Create(ctx, b); err != nil {
 				return err
+			}
+			// S101 / WF-GAP-006 — bump the coupon's uses_count inside the
+			// same tx as the booking write. If tx.Coupons is wired (the
+			// production memory/postgres UoW both wire it) we use it; if a
+			// test-only UoW doesn't, we fall through to the post-commit
+			// path further down so older harnesses keep working. A failure
+			// here rolls the booking back — the guest is told the code is
+			// no longer redeemable rather than getting a discount that
+			// pushes the coupon past its cap.
+			if appliedCoupon != nil && tx.Coupons != nil {
+				if err := appliedCoupon.Redeem(); err != nil {
+					return err
+				}
+				if err := tx.Coupons.Update(ctx, appliedCoupon); err != nil {
+					return err
+				}
+				redeemedInTx = true
 			}
 			if useSplit {
 				return s.splitter.CreateInTx(ctx, tx, SplitterCreateInput{
@@ -562,10 +583,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	); err != nil {
 		return nil, err
 	}
-	// Record the redemption once the booking is safely persisted. Best-effort: a
-	// failure here must not undo a confirmed reservation. (Under heavy concurrency
-	// this can slightly overshoot MaxRedemptions; acceptable for a promo code.)
-	if appliedCoupon != nil {
+	// Fallback redemption path (pre-S101): covers test-only UoW shapes where
+	// tx.Coupons is nil. Best-effort — a failure here must not undo a
+	// confirmed reservation, so the error is swallowed. Production now goes
+	// through the in-tx path above which closes the overshoot window.
+	if appliedCoupon != nil && !redeemedInTx {
 		if err := appliedCoupon.Redeem(); err == nil {
 			_ = s.coupons.Update(ctx, appliedCoupon)
 		}

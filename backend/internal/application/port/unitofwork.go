@@ -5,6 +5,7 @@ import (
 
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/coupon"
 	"github.com/airhost/backend/internal/domain/dispute"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/identity"
@@ -30,7 +31,13 @@ type Tx struct {
 	// Disputes, when wired, lets the dispute service write Open / admin
 	// decisions atomically with the outbox (S89 — WF-GAP-003/013).
 	Disputes dispute.Repository
-	Outbox   event.OutboxStore
+	// Coupons, when wired, lets the booking service record a promo-code
+	// redemption inside the same transaction as the booking write — so a
+	// crash between persisting the booking and incrementing uses_count
+	// can no longer let the same code be redeemed past its cap (S101 —
+	// WF-GAP-006).
+	Coupons coupon.Repository
+	Outbox  event.OutboxStore
 }
 
 // UnitOfWork runs a function inside a transaction. On success the writes and the

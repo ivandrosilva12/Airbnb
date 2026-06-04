@@ -159,7 +159,10 @@ func newHarness(t *testing.T) *harness {
 	// same atomic-commit-with-outbox path as the property-booking flow).
 	experienceBookingRepoMem := memory.NewExperienceBookingRepository()
 	uow := memory.NewUnitOfWork(bookingRepo, messageRepo, identityRepo, splitPaymentRepo, disputeRepo, outbox, relay).
-		WithExperienceBookings(experienceBookingRepoMem)
+		WithExperienceBookings(experienceBookingRepoMem).
+		// S101 — wire coupon repo into the UoW so coupon redemption commits
+		// atomically with the booking write (WF-GAP-006).
+		WithCoupons(couponRepo)
 
 	userSvc := userapp.NewService(userRepo)
 	identitySvc := identityapp.NewService(identityRepo, uow)

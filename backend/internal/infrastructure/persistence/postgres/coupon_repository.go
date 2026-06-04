@@ -6,17 +6,28 @@ import (
 	"github.com/airhost/backend/internal/domain/coupon"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// CouponRepository is the Postgres implementation of coupon.Repository.
+// CouponRepository is the Postgres implementation of coupon.Repository. It
+// runs against the querier interface so the same type can serve either the
+// pool (standalone reads/writes) or an outer UnitOfWork transaction (S101 —
+// the booking service redeems the coupon inside the same tx as the booking
+// write to close WF-GAP-006).
 type CouponRepository struct {
-	pool *pgxpool.Pool
+	pool querier
 }
 
-// NewCouponRepository builds a CouponRepository.
+// NewCouponRepository builds a CouponRepository against the connection pool.
 func NewCouponRepository(pool *pgxpool.Pool) *CouponRepository {
 	return &CouponRepository{pool: pool}
+}
+
+// NewCouponTxRepository binds the repository to an active pgx.Tx so the
+// caller's UnitOfWork commits the redemption + the booking write together.
+func NewCouponTxRepository(tx pgx.Tx) *CouponRepository {
+	return &CouponRepository{pool: tx}
 }
 
 const couponColumns = `id, code, kind, percent, amount_cents, currency, min_nights, max_redemptions, redemptions, expires_at, active, created_at`

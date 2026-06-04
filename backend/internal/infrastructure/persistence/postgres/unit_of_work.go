@@ -46,6 +46,7 @@ func (u *UnitOfWork) Run(ctx context.Context, fn func(tx port.Tx) error) error {
 		SplitPayments:      NewSplitPaymentTxRepository(tx),
 		Disputes:           NewDisputeTxRepository(tx),
 		ExperienceBookings: NewExperienceBookingRepository(tx),
+		Coupons:            NewCouponTxRepository(tx),
 		Outbox:             outbox,
 	}
 	if err := fn(repos); err != nil {

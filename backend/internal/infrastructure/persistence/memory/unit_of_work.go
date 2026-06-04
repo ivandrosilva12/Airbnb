@@ -6,6 +6,7 @@ import (
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/coupon"
 	"github.com/airhost/backend/internal/domain/dispute"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/identity"
@@ -25,6 +26,7 @@ type UnitOfWork struct {
 	splitPayments      splitpayment.Repository
 	disputes           dispute.Repository
 	experienceBookings experiencebooking.Repository
+	coupons            coupon.Repository
 	outbox             event.OutboxStore
 	relay              *event.DurablePublisher
 	// commitErr, when non-nil, is returned after fn ran successfully — as if
@@ -61,6 +63,15 @@ func (u *UnitOfWork) WithExperienceBookings(repo experiencebooking.Repository) *
 	return u
 }
 
+// WithCoupons wires the coupon repository so the booking service can record
+// a promo-code redemption atomically with the booking write (S101 —
+// WF-GAP-006). Pre-existing call sites that don't apply codes leave it nil
+// and the booking service falls back to the post-commit best-effort path.
+func (u *UnitOfWork) WithCoupons(repo coupon.Repository) *UnitOfWork {
+	u.coupons = repo
+	return u
+}
+
 // Run executes fn against the shared repositories, then dispatches any recorded
 // events. A failure in fn is returned without dispatching. When the unit was
 // configured with WithCommitError, fn's outputs are discarded and the configured
@@ -75,6 +86,7 @@ func (u *UnitOfWork) Run(ctx context.Context, fn func(tx port.Tx) error) error {
 		SplitPayments:      u.splitPayments,
 		Disputes:           u.disputes,
 		ExperienceBookings: u.experienceBookings,
+		Coupons:            u.coupons,
 		Outbox:             outbox,
 	}); err != nil {
 		return err
