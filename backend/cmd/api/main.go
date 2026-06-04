@@ -456,6 +456,11 @@ func run() error {
 			Fraud:           handler.NewFraudHandler(fraudSvc),
 			Experience:      handler.NewExperienceHandler(experienceSvc),
 			ExperienceBooking: handler.NewExperienceBookingHandler(experienceBookingSvc),
+			// S100 — outbox DLQ admin endpoint. The handler depends on the
+			// DeadLetterStore interface; the postgres OutboxRepository
+			// satisfies it (S97). Operators can list stuck records + requeue
+			// from /admin/outbox/dlq without psql.
+			OutboxAdmin: handler.NewOutboxAdminHandler(outboxRepo),
 		},
 	})
 

@@ -52,6 +52,9 @@ type Handlers struct {
 	Fraud           *handler.FraudHandler
 	Experience      *handler.ExperienceHandler
 	ExperienceBooking *handler.ExperienceBookingHandler
+	// OutboxAdmin (S100) exposes the dead-letter queue + requeue affordance
+	// behind /admin so operators can recover stuck events without psql.
+	OutboxAdmin *handler.OutboxAdminHandler
 }
 
 // Deps are the dependencies required to build the router.
@@ -470,6 +473,15 @@ func NewRouter(d Deps) *gin.Engine {
 
 			// Webhook dedupe-table retention/cleanup.
 			admin.POST("/webhooks/events/cleanup", h.PaymentWebhook.Cleanup)
+
+			// S100 — outbox dead-letter queue admin (WF-GAP-018 follow-on).
+			// List shows stuck records + the current pending count; Requeue
+			// pulls one back into the live queue. Guarded by RequireAdmin
+			// like every other /admin route.
+			if h.OutboxAdmin != nil {
+				admin.GET("/outbox/dlq", h.OutboxAdmin.List)
+				admin.POST("/outbox/dlq/:id/requeue", h.OutboxAdmin.Requeue)
+			}
 
 			// Live alert states (firing + recently resolved) for the console.
 			admin.GET("/alerts", h.Alert.ListAlerts)
