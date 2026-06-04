@@ -200,6 +200,24 @@ export function createApi(getAccessToken) {
     myCohostListings: () => request('GET', '/me/cohost-listings', { auth: true }),
     myCohostMailbox: () => request('GET', '/me/cohost-mailbox', { auth: true }),
 
+    // Primary-host editor (S104 mobile parity with web's CohostsPanel).
+    // The host lists, invites and revokes co-hosts on listings they own;
+    // updating an existing grant's permission set replaces the full set
+    // (matches the backend's PATCH semantics — empty sets are rejected).
+    // Route paths sit under /host/properties/:id/cohosts to match the
+    // backend router and the existing web client.
+    listCohosts: (propertyId) =>
+      request('GET', `/host/properties/${propertyId}/cohosts`, { auth: true }),
+    inviteCohost: (propertyId, body) =>
+      request('POST', `/host/properties/${propertyId}/cohosts`, { body, auth: true }),
+    updateCohostPermissions: (propertyId, cohostId, permissions) =>
+      request('PATCH', `/host/properties/${propertyId}/cohosts/${cohostId}`, {
+        body: { permissions },
+        auth: true,
+      }),
+    revokeCohost: (propertyId, cohostId) =>
+      request('DELETE', `/host/properties/${propertyId}/cohosts/${cohostId}`, { auth: true }),
+
     // Split payment between travellers (read + authorize + cancel on mobile).
     mySplits: () => request('GET', '/me/splits', { auth: true }),
     getSplit: (id) => request('GET', `/splits/${id}`, { auth: true }),

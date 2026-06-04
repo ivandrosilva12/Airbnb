@@ -290,6 +290,22 @@ export default function HostListingFormScreen({ route, navigation }) {
             <Text style={styles.linkChevron}>›</Text>
           </Pressable>
 
+          {/* Co-host editor — S104 mobile parity with web's CohostsPanel.
+              Sits next to House rules so all per-listing sub-editors live
+              in one place. Title stays hardcoded here (the underlying
+              screen translates via t('cohosts.title')) to match the
+              "House rules" row's untranslated label and avoid touching
+              the surrounding form's i18n posture (it carries a
+              TODO(i18n) sweep at the file top). */}
+          <Pressable
+            style={styles.linkRow}
+            onPress={() => navigation.navigate('HostCohosts', { propertyId: propId })}
+          >
+            <Text style={styles.linkIcon}>👥</Text>
+            <Text style={styles.linkLabel}>Co-hosts</Text>
+            <Text style={styles.linkChevron}>›</Text>
+          </Pressable>
+
           <Text style={styles.sectionTitle}>Photos</Text>
           {photos.length > 1 && (
             <Text style={styles.meta}>The first photo is the cover. Use ← → to reorder.</Text>

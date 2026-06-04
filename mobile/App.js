@@ -20,6 +20,7 @@ import HostPropertyBookingsScreen from './src/screens/HostPropertyBookingsScreen
 import HostCalendarScreen from './src/screens/HostCalendarScreen';
 import HostListingFormScreen from './src/screens/HostListingFormScreen';
 import HostHouseRulesScreen from './src/screens/HostHouseRulesScreen';
+import HostCohostsScreen from './src/screens/HostCohostsScreen';
 import SplitsScreen from './src/screens/SplitsScreen';
 import DisputeScreen from './src/screens/DisputeScreen';
 import MyDisputesScreen from './src/screens/MyDisputesScreen';
@@ -73,6 +74,7 @@ function AppNavigator() {
         <Stack.Screen name="HostCalendar" component={HostCalendarScreen} options={{ title: t('ical.title') }} />
         <Stack.Screen name="HostListingForm" component={HostListingFormScreen} options={{ title: t('admin.listing') }} />
         <Stack.Screen name="HostHouseRules" component={HostHouseRulesScreen} options={{ title: t('houseRules.title') }} />
+        <Stack.Screen name="HostCohosts" component={HostCohostsScreen} options={{ title: t('cohosts.title') }} />
         {/* TODO(i18n): the screens below were added after the S91 base; titles still hardcoded. */}
         <Stack.Screen name="Splits" component={SplitsScreen} options={{ title: 'Split payments' }} />
         <Stack.Screen name="Dispute" component={DisputeScreen} options={{ title: 'Resolution case' }} />
