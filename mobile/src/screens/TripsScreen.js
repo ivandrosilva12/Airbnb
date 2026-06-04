@@ -9,6 +9,28 @@ import { useT } from '../i18n/I18nContext';
 // of the form. The dotted-key namespace matches the web's review.cat.* set.
 const REVIEW_CATEGORIES = ['cleanliness', 'accuracy', 'communication', 'location', 'checkIn', 'value'];
 
+// ARRIVAL_LINK_WINDOW_DAYS is the client-side gate on the "Check-in details"
+// CTA. The backend already enforces the strict 48-hour reveal window on
+// /bookings/:id/arrival, but we don't want a CTA dangling on bookings that
+// are months away — surface it only when the stay is imminent (roughly the
+// next week). The ArrivalInfoScreen itself handles the server-side 403 by
+// showing a "available 48 h before check-in" message, so being a few days
+// early here is fine.
+const ARRIVAL_LINK_WINDOW_DAYS = 7;
+
+// daysUntilCheckIn parses the booking's check-in date (YYYY-MM-DD from the
+// API) and returns the number of whole days until it. Returns a large
+// positive number when the input can't be parsed so the comparison below
+// fails closed (no CTA on garbage data).
+function daysUntilCheckIn(checkIn) {
+  if (!checkIn) return Infinity;
+  const ci = new Date(`${checkIn}T00:00:00`);
+  if (Number.isNaN(ci.getTime())) return Infinity;
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((ci.getTime() - startOfToday.getTime()) / 86400000);
+}
+
 export default function TripsScreen({ navigation }) {
   const api = useApi();
   const { authenticated, login } = useAuth();
@@ -392,6 +414,20 @@ export default function TripsScreen({ navigation }) {
                 </Pressable>
               )}
 
+              {/* Check-in details link — only visible on confirmed bookings
+                  whose check-in falls within the next ~week. The 48-hour
+                  reveal window is enforced server-side; if the user taps
+                  earlier than that, ArrivalInfoScreen renders a friendly
+                  "available soon" panel instead of an error. */}
+              {item.status === 'confirmed' &&
+                daysUntilCheckIn(item.checkIn) <= ARRIVAL_LINK_WINDOW_DAYS &&
+                daysUntilCheckIn(item.checkIn) >= 0 && (
+                  <Pressable onPress={() => navigation.navigate('ArrivalInfo', { bookingId: item.id })}>
+                    {/* TODO(i18n): no key for the trips-side CTA yet. */}
+                    <Text style={styles.arrivalCta}>Check-in details</Text>
+                  </Pressable>
+                )}
+
               {splits[item.id] && (
                 <Pressable onPress={() => navigation.navigate('Splits', { splitId: splits[item.id].id })}>
                   <Text style={styles.splitCta}>
@@ -469,4 +505,5 @@ const styles = StyleSheet.create({
   kindPicked: { color: '#ff385c', fontWeight: '700', textTransform: 'capitalize' },
   disputeBadge: { color: '#a05a00', fontWeight: '700', marginTop: 8 },
   splitCta: { color: '#ff385c', fontWeight: '700', marginTop: 8 },
+  arrivalCta: { color: '#ff385c', fontWeight: '700', marginTop: 8 },
 });

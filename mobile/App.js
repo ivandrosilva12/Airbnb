@@ -28,6 +28,7 @@ import SavedRepliesScreen from './src/screens/SavedRepliesScreen';
 import ExperiencesScreen from './src/screens/ExperiencesScreen';
 import ExperienceDetailScreen from './src/screens/ExperienceDetailScreen';
 import MyExperienceBookingsScreen from './src/screens/MyExperienceBookingsScreen';
+import ArrivalInfoScreen from './src/screens/ArrivalInfoScreen';
 import { HeaderAuthButton } from './src/screens/HeaderAuthButton';
 
 const Stack = createNativeStackNavigator();
@@ -83,6 +84,8 @@ function AppNavigator() {
         <Stack.Screen name="Experiences" component={ExperiencesScreen} options={{ title: 'Experiences' }} />
         <Stack.Screen name="ExperienceDetail" component={ExperienceDetailScreen} options={{ title: 'Experience' }} />
         <Stack.Screen name="MyExperienceBookings" component={MyExperienceBookingsScreen} options={{ title: 'My experiences' }} />
+        {/* TODO(i18n): no key for the arrival screen title yet — see ArrivalInfoScreen. */}
+        <Stack.Screen name="ArrivalInfo" component={ArrivalInfoScreen} options={{ title: 'Check-in details' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
