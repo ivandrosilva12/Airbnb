@@ -4,6 +4,9 @@ import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../api/RealtimeContext';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (msg.*).
+
 export default function MessagesScreen({ navigation }) {
   const api = useApi();
   const { authenticated, login } = useAuth();

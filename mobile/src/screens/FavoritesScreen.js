@@ -4,6 +4,9 @@ import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
 import { WEB_BASE_URL } from '../config';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (fav.*).
+
 export default function FavoritesScreen({ navigation }) {
   const api = useApi();
   const { authenticated, login } = useAuth();

@@ -2,16 +2,17 @@ import { useEffect, useState, useCallback } from 'react';
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, TextInput } from 'react-native';
 import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
+import { useT } from '../i18n/I18nContext';
 
+// Review category keys come from the backend in this exact order; the labels
+// are looked up from t() at render time so they translate alongside the rest
+// of the form. The dotted-key namespace matches the web's review.cat.* set.
 const REVIEW_CATEGORIES = ['cleanliness', 'accuracy', 'communication', 'location', 'checkIn', 'value'];
-const CATEGORY_LABELS = {
-  cleanliness: 'Cleanliness', accuracy: 'Accuracy', communication: 'Communication',
-  location: 'Location', checkIn: 'Check-in', value: 'Value',
-};
 
 export default function TripsScreen({ navigation }) {
   const api = useApi();
   const { authenticated, login } = useAuth();
+  const { t } = useT();
   const [items, setItems] = useState([]);
   const [payments, setPayments] = useState({});
   const [expanded, setExpanded] = useState({});
@@ -173,8 +174,8 @@ export default function TripsScreen({ navigation }) {
   if (!authenticated) {
     return (
       <View style={styles.center}>
-        <Text style={styles.meta}>Sign in to see your trips.</Text>
-        <Pressable style={styles.btn} onPress={login}><Text style={styles.btnText}>Sign in</Text></Pressable>
+        <Text style={styles.meta}>{t('detail.signInReserve')}</Text>
+        <Pressable style={styles.btn} onPress={login}><Text style={styles.btnText}>{t('nav.signIn')}</Text></Pressable>
       </View>
     );
   }
@@ -187,9 +188,10 @@ export default function TripsScreen({ navigation }) {
       <FlatList
         data={items}
         keyExtractor={(i) => i.id}
-        ListEmptyComponent={<Text style={styles.meta}>No trips yet.</Text>}
+        ListEmptyComponent={<Text style={styles.meta}>{t('trips.none')}</Text>}
         ListHeaderComponent={offers.length > 0 ? (
           <View style={styles.offers}>
+            {/* TODO(i18n): offers.* keys not in translations.js yet */}
             <Text style={styles.offersTitle}>Offers from a host</Text>
             {offers.map((o) => (
               <View key={o.id} style={styles.offerCard}>
@@ -213,22 +215,25 @@ export default function TripsScreen({ navigation }) {
               <View style={styles.rowTop}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.dates}>{item.checkIn} → {item.checkOut} ({item.nights}n)</Text>
-                  <Text style={styles.meta}>{item.guests} guest(s) · {item.totalPrice.display} · {item.status}</Text>
+                  <Text style={styles.meta}>{item.guests} {t('common.guests').toLowerCase()} · {item.totalPrice.display} · {t(`status.${item.status}`)}</Text>
                   {pay && (
                     <Text style={styles.payLine}>
-                      Payment: {pay.status}
-                      {pay.refundedCents > 0 ? ` · refunded ${(pay.refundedCents / 100).toFixed(2)} ${pay.amount.currency}` : ''}
+                      {t('trips.payment')}: {t(`pay.${pay.status}`)}
+                      {pay.refundedCents > 0
+                        ? ` · ${t('trips.refunded', { amount: `${(pay.refundedCents / 100).toFixed(2)} ${pay.amount.currency}` })}`
+                        : ''}
                     </Text>
                   )}
                 </View>
                 <View style={styles.rowActions}>
                   {item.status === 'pending' && (
                     <Pressable onPress={() => (modifying === item.id ? setModifying(null) : openModify(item))}>
+                      {/* TODO(i18n): no key for "Change" yet */}
                       <Text style={styles.change}>Change</Text>
                     </Pressable>
                   )}
                   {(item.status === 'pending' || item.status === 'confirmed') && (
-                    <Pressable onPress={() => cancel(item.id)}><Text style={styles.cancel}>Cancel</Text></Pressable>
+                    <Pressable onPress={() => cancel(item.id)}><Text style={styles.cancel}>{t('common.cancel')}</Text></Pressable>
                   )}
                 </View>
               </View>
@@ -266,25 +271,38 @@ export default function TripsScreen({ navigation }) {
               )}
 
               <Pressable onPress={() => toggle(item.id)}>
-                <Text style={styles.receiptToggle}>{open ? 'Hide receipt' : 'View receipt'}</Text>
+                <Text style={styles.receiptToggle}>{t('trips.receipt')}</Text>
               </Pressable>
               {open && (
                 <View style={styles.receipt}>
-                  <Receipt label={`${item.nights} night(s)`} value={item.subtotal.display} />
-                  {item.discount?.amountCents > 0 && <Receipt label="Discount" value={`-${item.discount.display}`} />}
-                  {item.cleaningFee?.amountCents > 0 && <Receipt label="Cleaning fee" value={item.cleaningFee.display} />}
+                  {/* Receipt lines reuse shared dotted keys where they
+                      exist on the web bundle. "Service fee" and "Tax" do
+                      not yet have dedicated keys on either platform, so
+                      they stay English with a TODO until the web grows
+                      one (key parity first — translating in only one
+                      platform would create drift). */}
+                  <Receipt label={`${item.nights} ×`} value={item.subtotal.display} />
+                  {item.discount?.amountCents > 0 && (
+                    <Receipt
+                      label={t('detail.discount', { pct: item.discount.pct ?? '' })}
+                      value={`-${item.discount.display}`}
+                    />
+                  )}
+                  {item.cleaningFee?.amountCents > 0 && <Receipt label={t('detail.cleaningFee')} value={item.cleaningFee.display} />}
+                  {/* TODO(i18n): add a shared `fee.service` key on the web + here */}
                   {item.serviceFee?.amountCents > 0 && <Receipt label="Service fee" value={item.serviceFee.display} />}
+                  {/* TODO(i18n): add a shared `fee.tax` key */}
                   {item.tax?.amountCents > 0 && <Receipt label="Tax" value={item.tax.display} />}
-                  <Receipt label="Total" value={item.totalPrice.display} bold />
+                  <Receipt label={t('trips.total')} value={item.totalPrice.display} bold />
                 </View>
               )}
 
               {reviewed[item.id] ? (
-                <Text style={styles.reviewedText}>Reviewed ✓</Text>
+                <Text style={styles.reviewedText}>{t('trips.reviewed')}</Text>
               ) : item.status === 'completed' && pending[item.id] ? (
                 reviewing === item.id ? (
                   <View style={styles.reviewForm}>
-                    <Text style={styles.reviewFormLabel}>Overall</Text>
+                    <Text style={styles.reviewFormLabel}>{t('review.overall')}</Text>
                     <View style={styles.starRow}>
                       {[1, 2, 3, 4, 5].map((n) => (
                         <Pressable key={n} onPress={() => setDraft((d) => ({ ...d, rating: n }))}>
@@ -294,7 +312,7 @@ export default function TripsScreen({ navigation }) {
                     </View>
                     {REVIEW_CATEGORIES.map((k) => (
                       <View key={k} style={styles.catPickRow}>
-                        <Text style={styles.catPickLabel}>{CATEGORY_LABELS[k]}</Text>
+                        <Text style={styles.catPickLabel}>{t(`review.cat.${k}`)}</Text>
                         <View style={styles.starRow}>
                           {[1, 2, 3, 4, 5].map((n) => (
                             <Pressable key={n} onPress={() => setDraft((d) => ({ ...d, cats: { ...d.cats, [k]: n } }))}>
@@ -306,16 +324,16 @@ export default function TripsScreen({ navigation }) {
                     ))}
                     <View style={styles.reviewFormActions}>
                       <Pressable style={styles.btnSm} onPress={() => submitReview(item.id)}>
-                        <Text style={styles.btnText}>Submit review</Text>
+                        <Text style={styles.btnText}>{t('common.submit')}</Text>
                       </Pressable>
                       <Pressable onPress={() => setReviewing(null)}>
-                        <Text style={styles.cancel}>Cancel</Text>
+                        <Text style={styles.cancel}>{t('common.cancel')}</Text>
                       </Pressable>
                     </View>
                   </View>
                 ) : (
                   <Pressable onPress={() => openReview(item.id)}>
-                    <Text style={styles.reviewCta}>Leave a review</Text>
+                    <Text style={styles.reviewCta}>{t('trips.leaveReview')}</Text>
                   </Pressable>
                 )
               ) : null}

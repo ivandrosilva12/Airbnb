@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback, useLayoutEffect } from 'react';
 import { View, Text, FlatList, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useApi } from '../api/useApi';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (host.block*, ical.*).
+
 // HostCalendarScreen lets a host block date ranges on a listing (e.g. for
 // maintenance or personal use) and import an external iCal feed. Blocked ranges
 // behave like bookings: they make those dates unavailable to guests.

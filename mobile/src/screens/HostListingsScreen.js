@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useApi } from '../api/useApi';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (host.*, host.metric.*).
+
 export default function HostListingsScreen({ navigation }) {
   const api = useApi();
   const [listings, setListings] = useState([]);

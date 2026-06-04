@@ -3,6 +3,9 @@ import { View, Text, Image, ScrollView, TextInput, Pressable, StyleSheet, Activi
 import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (detail.*, review.*, policy.*, arrival.*).
+
 export default function PropertyScreen({ route, navigation }) {
   const { id } = route.params;
   const api = useApi();

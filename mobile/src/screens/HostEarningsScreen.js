@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator, Linking, RefreshControl } from 'react-native';
 import { useApi } from '../api/useApi';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (earnings.*).
+
 // HostEarningsScreen mirrors the web payouts panel: balances, payout-account
 // onboarding (opens the hosted link in the browser), requesting a payout, and
 // the disbursement history. Pull to refresh re-checks the account state.

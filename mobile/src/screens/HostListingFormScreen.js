@@ -3,6 +3,9 @@ import { View, Text, TextInput, Pressable, Image, ScrollView, StyleSheet, Activi
 import * as ImagePicker from 'expo-image-picker';
 import { useApi } from '../api/useApi';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (create.*, edit.*, photos.*).
+
 const TYPES = ['apartment', 'house', 'room', 'villa', 'cabin'];
 const POLICIES = ['flexible', 'moderate', 'strict'];
 

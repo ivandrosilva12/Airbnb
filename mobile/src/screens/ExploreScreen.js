@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, FlatList, TextInput, Image, Pressable, StyleSheet, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { useApi } from '../api/useApi';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (home.*, type.*, amenity.*, fav.*).
+
 const PAGE_SIZE = 12;
 
 // Serialise a cleaned params object to a URL query string, and back.

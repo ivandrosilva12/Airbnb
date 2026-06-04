@@ -3,6 +3,9 @@ import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator } from '
 import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (notif.*).
+
 export default function NotificationsScreen() {
   const api = useApi();
   const { authenticated, login } = useAuth();

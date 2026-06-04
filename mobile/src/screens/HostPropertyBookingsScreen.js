@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback, useLayoutEffect } from 'react';
 import { View, Text, FlatList, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useApi } from '../api/useApi';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (host.*, status.*).
+
 export default function HostPropertyBookingsScreen({ route, navigation }) {
   const { id, title } = route.params;
   const api = useApi();

@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
 import { useApi } from '../api/useApi';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (verify.*, kyc.*).
+
 const DOC_TYPES = [
   { value: 'passport', label: 'Passport' },
   { value: 'id_card', label: 'ID card' },

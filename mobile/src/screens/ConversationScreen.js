@@ -14,6 +14,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { useApi } from '../api/useApi';
 import { useRealtime } from '../api/RealtimeContext';
 
+// TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
+// Key namespace mirrors the web (msg.*, msg.qr.*).
+
 export default function ConversationScreen({ route, navigation }) {
   const { id, title, isTeamMailbox } = route.params;
   const api = useApi();
