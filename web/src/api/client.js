@@ -248,6 +248,16 @@ export const api = {
   adminCreateCoupon: (body) => request('POST', '/admin/coupons', { body, auth: true }),
   adminDeactivateCoupon: (id) => request('POST', `/admin/coupons/${id}/deactivate`, { auth: true }),
 
+  // Outbox dead-letter queue (S100 backend; S103 UI). listOutboxDLQ returns
+  // { items, pending } where `pending` is the live outbox depth so the page
+  // can flag a stuck relay alongside the DLQ rows. Requeue is idempotent —
+  // already-live records are a no-op so a double-click is harmless.
+  listOutboxDLQ: (params = {}) => {
+    const qs = buildQuery(params);
+    return request('GET', `/admin/outbox/dlq${qs ? `?${qs}` : ''}`, { auth: true });
+  },
+  requeueOutbox: (id) => request('POST', `/admin/outbox/dlq/${id}/requeue`, { auth: true }),
+
   // Live alert state (firing + recently resolved), pushed by Alertmanager
   adminListAlerts: () => request('GET', '/admin/alerts', { auth: true }),
 

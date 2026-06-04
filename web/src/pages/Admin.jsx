@@ -10,6 +10,11 @@ export default function Admin() {
   return (
     <div className="container">
       <h1>{t('admin.title')}</h1>
+      {/* Sub-nav (S103): only sibling admin pages mounted at their own routes.
+          Everything below this header is rendered inline on /admin itself. */}
+      <nav className="admin-subnav" aria-label={t('admin.subnav')}>
+        <Link to="/admin/outbox">{t('admin.outbox.title')}</Link>
+      </nav>
       <ActiveAlertsPanel />
       <VerificationQueue />
       <ReportQueue />

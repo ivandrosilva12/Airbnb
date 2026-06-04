@@ -17,6 +17,7 @@ import HostPhotos from './pages/HostPhotos';
 import HostEarnings from './pages/HostEarnings';
 import Settings from './pages/Settings';
 import Admin from './pages/Admin';
+import AdminOutbox from './pages/AdminOutbox';
 import SharedWishlist from './pages/SharedWishlist';
 import SplitPay from './pages/SplitPay';
 import DisputeDetail from './pages/DisputeDetail';
@@ -64,6 +65,7 @@ export default function App() {
             <Route path="/notifications" element={<Protected><Notifications /></Protected>} />
             <Route path="/settings" element={<Protected><Settings /></Protected>} />
             <Route path="/admin" element={<Protected requireAdmin><Admin /></Protected>} />
+            <Route path="/admin/outbox" element={<Protected requireAdmin><AdminOutbox /></Protected>} />
             <Route path="/host" element={<Protected requireHost><HostDashboard /></Protected>} />
             <Route path="/host/experiences" element={<Protected requireHost><HostExperiences /></Protected>} />
             <Route path="/host/experiences/new" element={<Protected requireHost><HostExperienceForm /></Protected>} />
