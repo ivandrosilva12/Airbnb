@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/observability/logctx"
@@ -83,8 +84,84 @@ func (s *Service) EventHandler() event.Handler {
 			s.releaseDepositHold(ctx, ev.BookingID)
 		case event.BookingCompleted:
 			s.releaseDepositHold(ctx, ev.BookingID)
+		case experiencebooking.ExperienceBookingCreated:
+			// S87 — WF-GAP-015. An experience booking authorises the same
+			// way a property booking does: by BookingID, for the all-in
+			// total. The payment repo keys on BookingID alone so the two
+			// flows share storage without colliding (experience bookings
+			// generate fresh UUIDs from a different table).
+			s.authorizeExperience(ctx, ev)
+		case experiencebooking.ExperienceBookingConfirmed:
+			// Capture mirrors BookingConfirmed: turn the authorised hold
+			// into a charge. No deposit hold here — experiences are not
+			// physical stays so there's nothing to claim against.
+			s.transition(ctx, ev.BookingID, "capture", func(p *payment.Payment) error {
+				if err := s.gateway.Capture(ctx, p.GatewayRef); err != nil {
+					return err
+				}
+				return p.Capture()
+			})
+		case experiencebooking.ExperienceBookingCancelled:
+			// Refund mirrors the BookingCancelled conditional pattern: only
+			// act when a payment record exists for the booking (it is
+			// missing for experience bookings that pre-date the payment
+			// subscriber, or whose Created event failed authorisation).
+			// Experiences have no cancellation-policy ladder in this slice
+			// — release authorised holds in full and refund captured
+			// charges in full. A future slice can plug in a fraction.
+			s.refundExperience(ctx, ev.BookingID)
 		}
 	}
+}
+
+// authorizeExperience places a hold for an experience booking. It mirrors
+// the property-booking authorize() exactly — same idempotency on a
+// duplicate Created delivery, same Fail-on-gateway-error path so the
+// payment row records the outcome — only the source event type differs.
+func (s *Service) authorizeExperience(ctx context.Context, ev experiencebooking.ExperienceBookingCreated) {
+	if _, err := s.repo.FindByBookingID(ctx, ev.BookingID); err == nil {
+		return
+	} else if !errors.Is(err, shared.ErrNotFound) {
+		logctx.LoggerFrom(ctx).Error("payment: lookup failed", "booking", ev.BookingID, "error", err)
+		return
+	}
+	amount, err := shared.NewMoney(ev.TotalCents, ev.Currency)
+	if err != nil {
+		logctx.LoggerFrom(ctx).Error("payment: invalid amount", "booking", ev.BookingID, "error", err)
+		return
+	}
+	p := payment.New(ev.BookingID, ev.GuestID, amount)
+	ref, err := s.gateway.Authorize(ctx, amount, ev.BookingID.String())
+	if err != nil {
+		p.Fail(err.Error())
+	} else if err := p.Authorize(ref); err != nil {
+		p.Fail(err.Error())
+	}
+	if err := s.repo.Create(ctx, p); err != nil {
+		logctx.LoggerFrom(ctx).Error("payment: failed to persist authorization", "booking", ev.BookingID, "error", err)
+	}
+}
+
+// refundExperience releases an authorised hold or refunds a captured
+// charge in full. Missing payment (gateway never authorised) is a no-op,
+// keeping the handler safe against duplicate event deliveries.
+func (s *Service) refundExperience(ctx context.Context, bookingID uuid.UUID) {
+	s.transition(ctx, bookingID, "refund", func(p *payment.Payment) error {
+		switch p.Status {
+		case payment.StatusAuthorized:
+			if err := s.gateway.Refund(ctx, p.GatewayRef, p.Amount.AmountCents()); err != nil {
+				return err
+			}
+			return p.Refund(p.Amount.AmountCents())
+		case payment.StatusCaptured:
+			if err := s.gateway.Refund(ctx, p.GatewayRef, p.Amount.AmountCents()); err != nil {
+				return err
+			}
+			return p.Refund(p.Amount.AmountCents())
+		default:
+			return nil // pending / refunded / failed: nothing to do
+		}
+	})
 }
 
 // placeDepositHold authorizes a security-deposit hold when the property is

@@ -3,10 +3,12 @@ package paymentapp_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/airhost/backend/internal/application/event"
 	paymentapp "github.com/airhost/backend/internal/application/payment"
 	"github.com/airhost/backend/internal/application/port"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/shared"
 	infrapayment "github.com/airhost/backend/internal/infrastructure/payment"
@@ -203,4 +205,118 @@ func TestReconcileGatewayEvent_FailedAuthorization(t *testing.T) {
 	if p.Status != payment.StatusFailed || p.FailureReason != "bank declined" {
 		t.Fatalf("after fail = status %s reason %q, want failed/bank declined", p.Status, p.FailureReason)
 	}
+}
+
+// TestEventHandler_ExperienceBookingLifecycle drives the payment subscriber
+// off the three experiencebooking lifecycle events (Created → Confirmed →
+// Cancelled) and asserts authorize / capture / refund were called with the
+// expected amount and booking id (S87, WF-GAP-015). The previous slice left
+// the payment subscriber blind to experience bookings, so a guest could
+// reserve a session and never be charged.
+func TestEventHandler_ExperienceBookingLifecycle(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewPaymentRepository()
+	svc := paymentapp.NewService(repo, infrapayment.NewFakeGateway(), memory.NewBookingRepository(), memory.NewPropertyRepository())
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	bookingID := uuid.New()
+	guestID := uuid.New()
+	hostID := uuid.New()
+	experienceID := uuid.New()
+	const totalCents = 12500
+	const currency = "EUR"
+
+	// Created → authorized.
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingCreated{
+		BookingID:       bookingID,
+		ExperienceID:    experienceID,
+		ExperienceTitle: "Pasta workshop",
+		HostID:          hostID,
+		GuestID:         guestID,
+		TotalCents:      totalCents,
+		Currency:        currency,
+		OccurredAt:      time.Now().UTC(),
+	})
+
+	p, err := svc.GetForBooking(ctx, guestID, bookingID)
+	if err != nil {
+		t.Fatalf("get payment after Created: %v", err)
+	}
+	if p.Status != payment.StatusAuthorized {
+		t.Fatalf("status after Created = %s, want authorized", p.Status)
+	}
+	if p.Amount.AmountCents() != totalCents {
+		t.Fatalf("amount after Created = %d, want %d", p.Amount.AmountCents(), totalCents)
+	}
+	if p.Amount.Currency() != currency {
+		t.Fatalf("currency after Created = %s, want %s", p.Amount.Currency(), currency)
+	}
+	if p.BookingID != bookingID {
+		t.Fatalf("payment BookingID = %s, want %s", p.BookingID, bookingID)
+	}
+	if p.GuestID != guestID {
+		t.Fatalf("payment GuestID = %s, want %s", p.GuestID, guestID)
+	}
+	if p.GatewayRef == "" {
+		t.Fatal("expected a gateway reference after authorization")
+	}
+
+	// A second Created delivery (at-least-once outbox) must NOT re-authorise:
+	// the existing payment row is idempotently kept.
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingCreated{
+		BookingID: bookingID, ExperienceID: experienceID, HostID: hostID, GuestID: guestID,
+		TotalCents: totalCents, Currency: currency, OccurredAt: time.Now().UTC(),
+	})
+	pReplay, _ := svc.GetForBooking(ctx, guestID, bookingID)
+	if pReplay.GatewayRef != p.GatewayRef {
+		t.Fatalf("redelivered Created changed gateway ref %q -> %q", p.GatewayRef, pReplay.GatewayRef)
+	}
+
+	// Confirmed → captured.
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingConfirmed{
+		BookingID: bookingID, ExperienceID: experienceID, HostID: hostID, GuestID: guestID,
+		OccurredAt: time.Now().UTC(),
+	})
+	p, _ = svc.GetForBooking(ctx, guestID, bookingID)
+	if p.Status != payment.StatusCaptured {
+		t.Fatalf("status after Confirmed = %s, want captured", p.Status)
+	}
+
+	// Cancelled → refunded in full (no cancellation-policy ladder for
+	// experiences yet).
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingCancelled{
+		BookingID: bookingID, ExperienceID: experienceID, HostID: hostID, GuestID: guestID,
+		CancelledBy: guestID, OccurredAt: time.Now().UTC(),
+	})
+	p, _ = svc.GetForBooking(ctx, guestID, bookingID)
+	if p.Status != payment.StatusRefunded {
+		t.Fatalf("status after Cancelled = %s, want refunded", p.Status)
+	}
+	if p.RefundedCents != totalCents {
+		t.Fatalf("refunded after Cancelled = %d, want %d", p.RefundedCents, totalCents)
+	}
+}
+
+// TestEventHandler_ExperienceBookingCancelled_NoPaymentIsSafe ensures a
+// Cancelled event for a booking that never reached the payment subscriber
+// (e.g. an old booking pre-dating S87) is a silent no-op rather than an
+// error — the conditional pattern matches the property-booking case.
+func TestEventHandler_ExperienceBookingCancelled_NoPaymentIsSafe(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewPaymentRepository()
+	svc := paymentapp.NewService(repo, infrapayment.NewFakeGateway(), memory.NewBookingRepository(), memory.NewPropertyRepository())
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	// No prior Created event: no payment row exists. The Cancelled handler
+	// must not panic and must not create a phantom payment.
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingCancelled{
+		BookingID:   uuid.New(),
+		GuestID:     uuid.New(),
+		CancelledBy: uuid.New(),
+		OccurredAt:  time.Now().UTC(),
+	})
+	// Nothing to assert beyond "didn't crash".
 }

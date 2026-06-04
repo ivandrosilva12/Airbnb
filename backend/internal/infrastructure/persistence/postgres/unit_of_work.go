@@ -40,11 +40,12 @@ func (u *UnitOfWork) Run(ctx context.Context, fn func(tx port.Tx) error) error {
 
 	outbox := event.NewRecordingOutbox(NewOutboxRepository(tx))
 	repos := port.Tx{
-		Bookings:      NewBookingRepository(tx),
-		Messages:      NewMessageRepository(tx),
-		Identity:      NewIdentityRepository(tx),
-		SplitPayments: NewSplitPaymentTxRepository(tx),
-		Outbox:        outbox,
+		Bookings:           NewBookingRepository(tx),
+		Messages:           NewMessageRepository(tx),
+		Identity:           NewIdentityRepository(tx),
+		SplitPayments:      NewSplitPaymentTxRepository(tx),
+		ExperienceBookings: NewExperienceBookingRepository(tx),
+		Outbox:             outbox,
 	}
 	if err := fn(repos); err != nil {
 		return err

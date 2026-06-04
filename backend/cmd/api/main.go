@@ -292,7 +292,13 @@ func run() error {
 	// bookings.
 	experienceBookingRepo := postgres.NewExperienceBookingRepository(pool)
 	experienceBookingSvc := experiencebookingapp.NewService(experienceBookingRepo, experienceRepo, cfg.Pricing.ServiceFeeRate).
-		WithDispatcher(dispatcher)
+		WithDispatcher(dispatcher).
+		// S87 — route the lifecycle writes through the same UoW the
+		// property-booking service uses so a payment-subscriber crash
+		// mid-publish can never lose an ExperienceBookingCreated event
+		// (WF-GAP-020). The outbox table is shared; the UoW already
+		// dispatches recorded events post-commit through `dispatcher`.
+		WithUnitOfWork(uow)
 	// Plug the verifier into the booking service so Create enforces the
 	// guest acknowledged the listing's current rules version (S47). The
 	// BookingHandler below records the per-booking acceptance row right

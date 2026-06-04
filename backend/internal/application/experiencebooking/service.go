@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/experience"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -52,6 +53,12 @@ type Service struct {
 	// metrics counts each published event by name. Optional — nil
 	// keeps observability off for focused unit tests (S85).
 	metrics *observability.Metrics
+	// uow, when set, routes every Create/Confirm/Cancel/Complete write
+	// through an atomic transaction that also appends the lifecycle
+	// event to the outbox. Without it (the legacy fluent-test path),
+	// the service falls back to repo write + best-effort publisher,
+	// matching the original S80 behaviour (S87 — WF-GAP-020).
+	uow port.UnitOfWork
 }
 
 // Option mutates the Service at construction time.
@@ -106,6 +113,46 @@ func (s *Service) WithDispatcher(p event.Publisher) *Service {
 func (s *Service) WithMetrics(m *observability.Metrics) *Service {
 	s.metrics = m
 	return s
+}
+
+// WithUnitOfWork routes lifecycle writes through a transaction that
+// atomically commits the repo change and the outbox event (S87 —
+// WF-GAP-020). A nil uow keeps the legacy publish-after-write path the
+// in-memory unit tests rely on. Returns the receiver for chained
+// construction, matching the booking service's setters.
+func (s *Service) WithUnitOfWork(uow port.UnitOfWork) *Service {
+	s.uow = uow
+	return s
+}
+
+// emit runs the repo write and appends the lifecycle event(s) inside
+// the same UoW, so the durable record is written atomically with the
+// domain change. The post-commit relay (DurablePublisher) then fans
+// them out to subscribers; the in-process s.publish path is bypassed
+// here because the relay already dispatches and increments the metric
+// via the dispatcher subscription chain.
+//
+// The metrics counter is bumped explicitly per event so the count stays
+// accurate even when the relay is nil (e.g. recovery-only deployments).
+func (s *Service) emit(ctx context.Context, write func(tx port.Tx) error, evs ...event.Event) error {
+	return s.uow.Run(ctx, func(tx port.Tx) error {
+		if err := write(tx); err != nil {
+			return err
+		}
+		for _, ev := range evs {
+			rec, err := event.NewRecord(ev)
+			if err != nil {
+				return err
+			}
+			if err := tx.Outbox.Append(ctx, rec); err != nil {
+				return err
+			}
+			if s.metrics != nil {
+				s.metrics.ExperienceBookingEventsTotal.WithLabelValues(ev.EventName()).Inc()
+			}
+		}
+		return nil
+	})
 }
 
 // publish fans out an event through the wired publisher and, when a
@@ -176,12 +223,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*experiencebookin
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.Create(ctx, b); err != nil {
-		return nil, err
-	}
-	// Publish AFTER the repo write so a persistence failure doesn't
-	// leak a Created event for a booking that doesn't exist.
-	s.publish(ctx, experiencebooking.ExperienceBookingCreated{
+	createdEv := experiencebooking.ExperienceBookingCreated{
 		BookingID:       b.ID,
 		ExperienceID:    b.ExperienceID,
 		ExperienceTitle: exp.Title,
@@ -190,7 +232,26 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*experiencebookin
 		TotalCents:      b.Pricing.Total.AmountCents(),
 		Currency:        b.Pricing.Total.Currency(),
 		OccurredAt:      b.CreatedAt,
-	})
+	}
+	// S87 — when wired, route the write + event through the outbox so a
+	// payment-subscriber crash mid-publish can never lose the Created
+	// event (WF-GAP-020). The pre-S87 in-memory test path (uow nil)
+	// falls back to repo.Create + best-effort dispatcher.
+	if s.uow != nil {
+		if err := s.emit(ctx,
+			func(tx port.Tx) error { return tx.ExperienceBookings.Create(ctx, b) },
+			createdEv,
+		); err != nil {
+			return nil, err
+		}
+		return b, nil
+	}
+	if err := s.repo.Create(ctx, b); err != nil {
+		return nil, err
+	}
+	// Publish AFTER the repo write so a persistence failure doesn't
+	// leak a Created event for a booking that doesn't exist.
+	s.publish(ctx, createdEv)
 	return b, nil
 }
 
@@ -227,12 +288,34 @@ func (s *Service) Confirm(ctx context.Context, actorID, id uuid.UUID) (*experien
 	if err := b.Confirm(); err != nil {
 		return nil, err
 	}
+	// A second host Confirm on an already-confirmed booking is a no-op:
+	// no transition happened so the event must not re-fire (subscribers
+	// would otherwise double-charge or double-notify).
+	transitioned := priorStatus != experiencebooking.StatusConfirmed && b.Status == experiencebooking.StatusConfirmed
+	if s.uow != nil {
+		var events []event.Event
+		if transitioned {
+			events = append(events, experiencebooking.ExperienceBookingConfirmed{
+				BookingID:       b.ID,
+				ExperienceID:    b.ExperienceID,
+				ExperienceTitle: s.lookupTitle(ctx, b.ExperienceID),
+				HostID:          b.HostID,
+				GuestID:         b.GuestID,
+				OccurredAt:      b.UpdatedAt,
+			})
+		}
+		if err := s.emit(ctx,
+			func(tx port.Tx) error { return tx.ExperienceBookings.Update(ctx, b) },
+			events...,
+		); err != nil {
+			return nil, err
+		}
+		return b, nil
+	}
 	if err := s.repo.Update(ctx, b); err != nil {
 		return nil, err
 	}
-	// Only fire the event on a real transition — re-confirming an
-	// already-confirmed booking must not double-charge or double-notify.
-	if priorStatus != experiencebooking.StatusConfirmed && b.Status == experiencebooking.StatusConfirmed {
+	if transitioned {
 		s.publish(ctx, experiencebooking.ExperienceBookingConfirmed{
 			BookingID:       b.ID,
 			ExperienceID:    b.ExperienceID,
@@ -261,10 +344,32 @@ func (s *Service) Cancel(ctx context.Context, actorID, id uuid.UUID) (*experienc
 	if err := b.Cancel(s.now()); err != nil {
 		return nil, err
 	}
+	transitioned := priorStatus != experiencebooking.StatusCancelled && b.Status == experiencebooking.StatusCancelled
+	if s.uow != nil {
+		var events []event.Event
+		if transitioned {
+			events = append(events, experiencebooking.ExperienceBookingCancelled{
+				BookingID:       b.ID,
+				ExperienceID:    b.ExperienceID,
+				ExperienceTitle: s.lookupTitle(ctx, b.ExperienceID),
+				HostID:          b.HostID,
+				GuestID:         b.GuestID,
+				CancelledBy:     actorID,
+				OccurredAt:      b.UpdatedAt,
+			})
+		}
+		if err := s.emit(ctx,
+			func(tx port.Tx) error { return tx.ExperienceBookings.Update(ctx, b) },
+			events...,
+		); err != nil {
+			return nil, err
+		}
+		return b, nil
+	}
 	if err := s.repo.Update(ctx, b); err != nil {
 		return nil, err
 	}
-	if priorStatus != experiencebooking.StatusCancelled && b.Status == experiencebooking.StatusCancelled {
+	if transitioned {
 		s.publish(ctx, experiencebooking.ExperienceBookingCancelled{
 			BookingID:       b.ID,
 			ExperienceID:    b.ExperienceID,
@@ -272,7 +377,7 @@ func (s *Service) Cancel(ctx context.Context, actorID, id uuid.UUID) (*experienc
 			HostID:          b.HostID,
 			GuestID:         b.GuestID,
 			CancelledBy:     actorID,
-			OccurredAt:   b.UpdatedAt,
+			OccurredAt:      b.UpdatedAt,
 		})
 	}
 	return b, nil
@@ -281,6 +386,12 @@ func (s *Service) Cancel(ctx context.Context, actorID, id uuid.UUID) (*experienc
 // Complete flips a confirmed booking to completed once the session
 // window has elapsed. Intended to be called by the scheduler, but the
 // host may also call to nudge the post-stay review flow forward.
+//
+// No ExperienceBookingCompleted event is published in this slice — the
+// post-stay review prompt is driven off the StatusCompleted column by a
+// future BC. The UoW path still runs the write inside a transaction so
+// it stays atomic with anything else the caller might layer in later
+// (S87).
 func (s *Service) Complete(ctx context.Context, actorID, id uuid.UUID) (*experiencebooking.Booking, error) {
 	b, err := s.repo.FindByID(ctx, id)
 	if err != nil {
@@ -291,6 +402,9 @@ func (s *Service) Complete(ctx context.Context, actorID, id uuid.UUID) (*experie
 	}
 	if err := b.Complete(s.now()); err != nil {
 		return nil, err
+	}
+	if s.uow != nil {
+		return b, s.emit(ctx, func(tx port.Tx) error { return tx.ExperienceBookings.Update(ctx, b) })
 	}
 	if err := s.repo.Update(ctx, b); err != nil {
 		return nil, err
@@ -322,8 +436,20 @@ func (s *Service) AutoCompleteOverdue(ctx context.Context) (int, error) {
 			log.Warn("experiencebooking: auto-complete skipped booking", "booking_id", b.ID, "status", b.Status, "error", err)
 			continue
 		}
-		if err := s.repo.Update(ctx, b); err != nil {
-			log.Error("experiencebooking: auto-complete update failed", "booking_id", b.ID, "error", err)
+		var updateErr error
+		if s.uow != nil {
+			// Route each completion through its own tiny UoW so an error
+			// on one booking rolls back only that row (rather than aborting
+			// the whole batch). The outbox is unused here — there is no
+			// Completed event in this slice — but the write still benefits
+			// from running against a tx-bound repo.
+			b := b
+			updateErr = s.emit(ctx, func(tx port.Tx) error { return tx.ExperienceBookings.Update(ctx, b) })
+		} else {
+			updateErr = s.repo.Update(ctx, b)
+		}
+		if updateErr != nil {
+			log.Error("experiencebooking: auto-complete update failed", "booking_id", b.ID, "error", updateErr)
 			continue
 		}
 		completed++

@@ -154,7 +154,12 @@ func newHarness(t *testing.T) *harness {
 	dispatcher := event.NewDispatcher()
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, dispatcher)
-	uow := memory.NewUnitOfWork(bookingRepo, messageRepo, identityRepo, splitPaymentRepo, outbox, relay)
+	// experienceBookingRepoMem is declared up here so the UoW can include
+	// it in its Tx (S87 — experiencebooking writes now participate in the
+	// same atomic-commit-with-outbox path as the property-booking flow).
+	experienceBookingRepoMem := memory.NewExperienceBookingRepository()
+	uow := memory.NewUnitOfWork(bookingRepo, messageRepo, identityRepo, splitPaymentRepo, outbox, relay).
+		WithExperienceBookings(experienceBookingRepoMem)
 
 	userSvc := userapp.NewService(userRepo)
 	identitySvc := identityapp.NewService(identityRepo, uow)
@@ -208,8 +213,9 @@ func newHarness(t *testing.T) *harness {
 	// S80 — ExperienceBooking BC. Memory-only repo until the postgres
 	// impl lands. The same service fee rate as property bookings is
 	// reused so receipts and payouts split the same way.
-	experienceBookingSvc := experiencebookingapp.NewService(memory.NewExperienceBookingRepository(), experienceRepoMem, 0.10).
-		WithDispatcher(dispatcher)
+	experienceBookingSvc := experiencebookingapp.NewService(experienceBookingRepoMem, experienceRepoMem, 0.10).
+		WithDispatcher(dispatcher).
+		WithUnitOfWork(uow)
 	// Plug the verifier into the booking service so the gate fires when a
 	// listing has rules; the BookingHandler below records the per-booking
 	// acceptance row right after Create succeeds (S47).

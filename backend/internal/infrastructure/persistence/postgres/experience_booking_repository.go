@@ -8,7 +8,6 @@ import (
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ExperienceBookingRepository is the Postgres implementation of
@@ -19,12 +18,19 @@ import (
 // doesn't reshuffle paged views or change the overlap-check semantics
 // the service relies on at Create time. The memory adapter remains
 // available for the e2e test harness.
+//
+// The querier dependency lets the repo run either against the pool or
+// inside a pgx.Tx — the UnitOfWork (S87) uses the tx-bound form so an
+// ExperienceBooking write and its outbox event commit atomically.
 type ExperienceBookingRepository struct {
-	pool *pgxpool.Pool
+	pool querier
 }
 
-func NewExperienceBookingRepository(pool *pgxpool.Pool) *ExperienceBookingRepository {
-	return &ExperienceBookingRepository{pool: pool}
+// NewExperienceBookingRepository builds a repo. db may be the pool (for
+// reads outside any UoW) or a pgx.Tx (so the UoW can atomically commit
+// the booking write alongside the outbox event).
+func NewExperienceBookingRepository(db querier) *ExperienceBookingRepository {
+	return &ExperienceBookingRepository{pool: db}
 }
 
 var _ experiencebooking.Repository = (*ExperienceBookingRepository)(nil)

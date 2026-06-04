@@ -6,6 +6,7 @@ import (
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/splitpayment"
@@ -17,12 +18,13 @@ import (
 // repositories and the outbox, then drains the relay so events are dispatched
 // synchronously (matching the previous behavior the tests rely on).
 type UnitOfWork struct {
-	bookings      booking.Repository
-	messages      message.Repository
-	identity      identity.Repository
-	splitPayments splitpayment.Repository
-	outbox        event.OutboxStore
-	relay         *event.DurablePublisher
+	bookings           booking.Repository
+	messages           message.Repository
+	identity           identity.Repository
+	splitPayments      splitpayment.Repository
+	experienceBookings experiencebooking.Repository
+	outbox             event.OutboxStore
+	relay              *event.DurablePublisher
 }
 
 // NewUnitOfWork builds an in-memory UnitOfWork. relay may be nil to skip
@@ -33,16 +35,27 @@ func NewUnitOfWork(bookings booking.Repository, messages message.Repository, ide
 	return &UnitOfWork{bookings: bookings, messages: messages, identity: identity, splitPayments: splitPayments, outbox: outbox, relay: relay}
 }
 
+// WithExperienceBookings wires the ExperienceBooking repository into the UoW so
+// the experiencebookingapp service can route its writes through the same
+// atomic-commit-with-outbox path as the property-booking service (S87). Nil
+// leaves the tx.ExperienceBookings field unset — callers that touch it will
+// panic clearly, matching the pre-existing splitPayments contract.
+func (u *UnitOfWork) WithExperienceBookings(repo experiencebooking.Repository) *UnitOfWork {
+	u.experienceBookings = repo
+	return u
+}
+
 // Run executes fn against the shared repositories, then dispatches any recorded
 // events. A failure in fn is returned without dispatching.
 func (u *UnitOfWork) Run(ctx context.Context, fn func(tx port.Tx) error) error {
 	outbox := event.NewRecordingOutbox(u.outbox)
 	if err := fn(port.Tx{
-		Bookings:      u.bookings,
-		Messages:      u.messages,
-		Identity:      u.identity,
-		SplitPayments: u.splitPayments,
-		Outbox:        outbox,
+		Bookings:           u.bookings,
+		Messages:           u.messages,
+		Identity:           u.identity,
+		SplitPayments:      u.splitPayments,
+		ExperienceBookings: u.experienceBookings,
+		Outbox:             outbox,
 	}); err != nil {
 		return err
 	}

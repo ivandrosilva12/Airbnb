@@ -1,6 +1,9 @@
 package event
 
-import "github.com/google/uuid"
+import (
+	"github.com/airhost/backend/internal/domain/experiencebooking"
+	"github.com/google/uuid"
+)
 
 // init registers a JSON decoder for every event type so the outbox can
 // reconstruct persisted records for re-delivery.
@@ -15,6 +18,14 @@ func init() {
 	Register(DisputeOpened{}.EventName(), jsonDecoder[DisputeOpened]())
 	Register(DisputeResolved{}.EventName(), jsonDecoder[DisputeResolved]())
 	Register(SplitPaymentCompleted{}.EventName(), jsonDecoder[SplitPaymentCompleted]())
+	// S87 — ExperienceBooking lifecycle events now flow through the outbox
+	// (WF-GAP-020). They live in domain/experiencebooking (the BC owns its
+	// own event types) but the decoder registration belongs alongside the
+	// other property-booking decoders so a single place lists every event
+	// the outbox knows how to re-hydrate.
+	Register(experiencebooking.ExperienceBookingCreated{}.EventName(), jsonDecoder[experiencebooking.ExperienceBookingCreated]())
+	Register(experiencebooking.ExperienceBookingConfirmed{}.EventName(), jsonDecoder[experiencebooking.ExperienceBookingConfirmed]())
+	Register(experiencebooking.ExperienceBookingCancelled{}.EventName(), jsonDecoder[experiencebooking.ExperienceBookingCancelled]())
 }
 
 // BookingRequested is published when a guest creates a booking. The host should
