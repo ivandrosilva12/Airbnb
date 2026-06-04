@@ -3,6 +3,8 @@ import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import * as Storage from './storage';
 import { KEYCLOAK_ISSUER, KEYCLOAK_CLIENT_ID } from '../config';
+import { createApi } from '../api/client';
+import { unregisterPushTokenForCurrentDevice } from '../notifications/pushBootstrap';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -124,6 +126,18 @@ export function AuthProvider({ children }) {
   }
 
   async function logout() {
+    // Unregister this device's push token BEFORE clearing auth state, so
+    // the api call still carries a valid bearer. If it fails (network,
+    // backend hiccup, no token cached), logout must still proceed — a
+    // stale token is a smaller problem than a user trapped in the app.
+    try {
+      const api = createApi(getAccessToken);
+      await unregisterPushTokenForCurrentDevice(api);
+    } catch {
+      // unregisterPushTokenForCurrentDevice already swallows its own
+      // errors; this catch guards against a synchronous throw from
+      // createApi itself (it shouldn't, but logout is non-negotiable).
+    }
     await clearSession();
   }
 

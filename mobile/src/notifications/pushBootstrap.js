@@ -15,6 +15,13 @@ import { useAuth } from '../auth/AuthContext';
 
 let warned = false;
 
+// cachedRegistration stores the most recently registered (platform, token)
+// pair so logout can explicitly tear it down BEFORE the auth state is
+// cleared — at which point the api client would no longer have a usable
+// bearer token. The hook keeps this in sync with whatever it told the
+// backend; unregisterPushTokenForCurrentDevice consumes and clears it.
+let cachedRegistration = null;
+
 function loadNotifications() {
   try {
     // Dynamic require so a missing dep gracefully degrades to a noop in dev.
@@ -99,6 +106,7 @@ export function useRegisterPushToken() {
       try {
         await api.registerPushToken(platform, token);
         registered = { platform, token };
+        cachedRegistration = { platform, token };
       } catch (e) {
         // eslint-disable-next-line no-console
         console.warn('push: registerPushToken failed', e?.message);
@@ -107,8 +115,30 @@ export function useRegisterPushToken() {
     return () => {
       cancelled = true;
       if (registered) {
+        // Best-effort cleanup if the auth state flips without going through
+        // the explicit logout path (e.g. refresh-token rejected). The same
+        // shape as unregisterPushTokenForCurrentDevice — kept inline because
+        // the api client closes over the now-stale token getter.
         api.unregisterPushToken(registered.platform, registered.token).catch(() => {});
+        cachedRegistration = null;
       }
     };
   }, [authenticated, api]);
+}
+
+// unregisterPushTokenForCurrentDevice is called by the logout flow BEFORE
+// the auth state is cleared, so the api client passed in still carries a
+// valid bearer token. It is best-effort: a failure to unregister must not
+// block the user from signing out. The cached registration is cleared
+// regardless so a later sign-in starts from a clean slate.
+export async function unregisterPushTokenForCurrentDevice(api) {
+  const reg = cachedRegistration;
+  cachedRegistration = null;
+  if (!reg || !api || typeof api.unregisterPushToken !== 'function') return;
+  try {
+    await api.unregisterPushToken(reg.platform, reg.token);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('push: unregisterPushToken on logout failed', e?.message);
+  }
 }
