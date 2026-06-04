@@ -152,6 +152,43 @@ export default function HostListingFormScreen({ route, navigation }) {
     }
   }
 
+  // movePhoto reorders a single photo by delta (-1 = up/left, +1 =
+  // down/right). The first slot is the listing's cover, so moving a
+  // photo into index 0 promotes it. Mirrors the web's HostPhotos page
+  // (S60), minus the drag-and-drop affordance — RN doesn't have a
+  // built-in DnD and we're not adding a new dep for this PR.
+  // S95 mobile parity: PATCH /properties/:id/photos/order with the new
+  // id list; the backend returns the full property so the photo grid
+  // refresh is one round-trip.
+  async function movePhoto(index, delta) {
+    const target = index + delta;
+    if (target < 0 || target >= photos.length) return;
+    const ids = photos.map((p) => p.id);
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    setError(null);
+    try {
+      const updated = await api.reorderPhotos(propId, ids);
+      setPhotos(updated.photos || []);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  // makeCover lifts a photo into the first slot in one call. The user
+  // could chain "up" arrow taps, but a single-tap shortcut matches the
+  // web ("Make cover" button) and avoids N reorder round-trips.
+  async function makeCover(photoId) {
+    const ids = photos.map((p) => p.id);
+    const reordered = [photoId, ...ids.filter((x) => x !== photoId)];
+    setError(null);
+    try {
+      const updated = await api.reorderPhotos(propId, reordered);
+      setPhotos(updated.photos || []);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   async function publish() {
     setError(null);
     setMessage(null);
@@ -241,14 +278,64 @@ export default function HostListingFormScreen({ route, navigation }) {
 
       {propId && (
         <View style={styles.photoSection}>
+          {/* House rules editor — S95 mobile parity with web S56. Lives
+              under the listing form so the host has one entry point for
+              everything that hangs off a listing. */}
+          <Pressable
+            style={styles.linkRow}
+            onPress={() => navigation.navigate('HostHouseRules', { propertyId: propId })}
+          >
+            <Text style={styles.linkIcon}>📜</Text>
+            <Text style={styles.linkLabel}>House rules</Text>
+            <Text style={styles.linkChevron}>›</Text>
+          </Pressable>
+
           <Text style={styles.sectionTitle}>Photos</Text>
+          {photos.length > 1 && (
+            <Text style={styles.meta}>The first photo is the cover. Use ← → to reorder.</Text>
+          )}
           <View style={styles.photoGrid}>
-            {photos.map((ph) => (
+            {photos.map((ph, i) => (
               <View key={ph.id} style={styles.photoItem}>
                 <Image source={{ uri: ph.url }} style={styles.photo} />
+                {i === 0 && (
+                  <View style={styles.coverBadge}>
+                    <Text style={styles.coverBadgeText}>Cover</Text>
+                  </View>
+                )}
                 <Pressable style={styles.photoDelete} onPress={() => removePhoto(ph.id)}>
                   <Text style={styles.photoDeleteText}>✕</Text>
                 </Pressable>
+                {photos.length > 1 && (
+                  <View style={styles.photoMoveRow}>
+                    <Pressable
+                      style={[styles.moveBtn, i === 0 && styles.moveBtnDisabled]}
+                      disabled={i === 0 || saving}
+                      onPress={() => movePhoto(i, -1)}
+                      accessibilityLabel="Move photo left"
+                    >
+                      <Text style={styles.moveBtnText}>←</Text>
+                    </Pressable>
+                    {i !== 0 && (
+                      <Pressable
+                        style={styles.coverBtn}
+                        disabled={saving}
+                        onPress={() => makeCover(ph.id)}
+                        accessibilityLabel="Make cover"
+                      >
+                        <Text style={styles.coverBtnText}>★</Text>
+                      </Pressable>
+                    )}
+                    <Pressable
+                      style={[styles.moveBtn, i === photos.length - 1 && styles.moveBtnDisabled]}
+                      disabled={i === photos.length - 1 || saving}
+                      onPress={() => movePhoto(i, 1)}
+                      accessibilityLabel="Move photo right"
+                    >
+                      <Text style={styles.moveBtnText}>→</Text>
+                    </Pressable>
+                  </View>
+                )}
               </View>
             ))}
           </View>
@@ -319,11 +406,28 @@ const styles = StyleSheet.create({
   btnGhostText: { color: '#222', fontWeight: '700' },
   photoSection: { marginTop: 24, borderTopWidth: 1, borderColor: '#eee', paddingTop: 16 },
   sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 8 },
-  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  photoItem: { position: 'relative' },
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 8 },
+  photoItem: { position: 'relative', width: 100 },
   photo: { width: 100, height: 100, borderRadius: 8 },
   photoDelete: { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 999, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
   photoDeleteText: { color: '#fff', fontWeight: '700' },
+  // Photo reorder controls — left/right arrows live under each photo
+  // tile so a host can step a tile through positions without leaving
+  // the listing form. The ★ button promotes a photo to cover in one tap.
+  photoMoveRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+  moveBtn: { backgroundColor: '#f7f7f7', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 4, minWidth: 28, alignItems: 'center' },
+  moveBtnDisabled: { opacity: 0.3 },
+  moveBtnText: { color: '#222', fontWeight: '700', fontSize: 14 },
+  coverBtn: { backgroundColor: '#fff7e6', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 4, minWidth: 24, alignItems: 'center', borderWidth: 1, borderColor: '#f0c674' },
+  coverBtnText: { color: '#b8860b', fontWeight: '700', fontSize: 12 },
+  coverBadge: { position: 'absolute', top: 4, left: 4, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  coverBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  // Inline link row — used for "House rules" nav under the photo section
+  // (matches the AccountScreen row affordance for familiarity).
+  linkRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderColor: '#eee', marginBottom: 12 },
+  linkIcon: { fontSize: 18, width: 32 },
+  linkLabel: { flex: 1, fontSize: 16, fontWeight: '600' },
+  linkChevron: { fontSize: 22, color: '#bbb' },
   statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 },
   meta: { color: '#717171' },
   deleteLink: { color: '#c0392b', textDecorationLine: 'underline', marginTop: 20, textAlign: 'center' },

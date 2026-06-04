@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Alert, ScrollView, Share } from 'react-native';
 import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
 import { useT } from '../i18n/I18nContext';
@@ -55,6 +55,34 @@ export default function AccountScreen({ navigation }) {
       navigation.navigate('HostListings');
     } catch (e) {
       Alert.alert(t('host.becomeBtn'), e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // exportData mirrors the web's GDPR right-of-access flow (S109): a
+  // POST-but-actually-GET (the backend uses GET /me/export) that returns
+  // the user's full data bundle as JSON. Web triggers a file download via
+  // a hidden <a>; on mobile we hand the serialized JSON to React Native's
+  // built-in Share API so the user can save it to Files / email it /
+  // forward it to a regulator. The built-in Share is enough for textual
+  // content; we deliberately avoid pulling in expo-file-system or
+  // expo-sharing for this PR to stay inside the existing dep manifest.
+  // TODO(i18n): no toast / success-string key on mobile yet — using the
+  // privacy.export label for both button and feedback to avoid adding new
+  // keys mid-PR; a follow-up i18n sweep will add privacy.exportSuccess.
+  async function exportData() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const data = await api.exportMyData();
+      const json = JSON.stringify(data, null, 2);
+      await Share.share({
+        message: json,
+        title: t('privacy.export'),
+      });
+    } catch (e) {
+      Alert.alert(t('privacy.export'), e.message || String(e));
     } finally {
       setBusy(false);
     }
@@ -161,6 +189,11 @@ export default function AccountScreen({ navigation }) {
       >
         <Text style={styles.icon}>🔐</Text>
         <Text style={styles.label}>{t('security.title')}</Text>
+        <Text style={styles.chevron}>›</Text>
+      </Pressable>
+      <Pressable style={styles.row} onPress={exportData} disabled={busy}>
+        <Text style={styles.icon}>📤</Text>
+        <Text style={styles.label}>{t('privacy.export')}</Text>
         <Text style={styles.chevron}>›</Text>
       </Pressable>
       <Pressable style={styles.row} onPress={confirmDelete}>

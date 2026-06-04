@@ -79,7 +79,13 @@ export function createApi(getAccessToken) {
     getReviewSummary: (id) => request('GET', `/properties/${id}/reviews/summary`),
     // House rules (S64 mobile parity). Public read — anonymous-friendly
     // so the rules render alongside the listing without forcing a login.
+    // setHouseRules (S95 mobile parity with web S56) — host-only PATCH
+    // that replaces the full rule set and bumps the version on the server.
+    // Clients send the complete intent (not a patch) because the
+    // versioned-history schema makes incremental edits unsafe.
     getHouseRules: (id) => request('GET', `/properties/${id}/house-rules`),
+    setHouseRules: (id, items) =>
+      request('PATCH', `/properties/${id}/house-rules`, { body: { items }, auth: true }),
     // Tax quote — public preview of the per-jurisdiction tax breakdown
     // (S64 mobile parity). Anonymous-friendly so the booking screen can
     // render lines before sign-in.
@@ -92,6 +98,11 @@ export function createApi(getAccessToken) {
     me: () => request('GET', '/me', { auth: true }),
     becomeHost: () => request('POST', '/me/become-host', { auth: true }),
     updatePreferences: (prefs) => request('PATCH', '/me/preferences', { body: prefs, auth: true }),
+    // exportMyData (S95 mobile parity with web S109) — GDPR right of
+    // access. Server returns the full personal-data bundle as JSON; we
+    // hand the parsed object back to the caller so it can serialize and
+    // share/copy as appropriate for the platform.
+    exportMyData: () => request('GET', '/me/export', { auth: true }),
     deleteAccount: () => request('DELETE', '/me', { auth: true }),
 
     // Push notification device registration
@@ -166,6 +177,12 @@ export function createApi(getAccessToken) {
     // the new id is returned so the caller can navigate to its edit form.
     duplicateProperty: (id) => request('POST', `/properties/${id}/duplicate`, { auth: true }),
     uploadPhoto: (id, file) => upload(`/properties/${id}/photos`, 'photo', file),
+    // reorderPhotos (S95 mobile parity with web S60) — replaces the
+    // listing's photo order. The first id becomes the cover. Server
+    // returns the full property so callers can drop the response
+    // straight into their existing photo grid state.
+    reorderPhotos: (id, photoIds) =>
+      request('PATCH', `/properties/${id}/photos/order`, { body: { photoIds }, auth: true }),
     deletePhoto: (id, photoId) => request('DELETE', `/properties/${id}/photos/${photoId}`, { auth: true }),
 
     // Calendar blocks (host)
