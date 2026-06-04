@@ -3,12 +3,15 @@ package notificationapp_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/airhost/backend/internal/application/event"
 	notificationapp "github.com/airhost/backend/internal/application/notification"
+	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 	"github.com/google/uuid"
 )
@@ -186,5 +189,135 @@ func TestEventHandler_ExperienceBookingTitleFallback(t *testing.T) {
 	}
 	if page.Items[0].Body == "" {
 		t.Error("notification body should not be empty when title is missing")
+	}
+}
+
+// TestEventHandler_SplitPaymentCompletedNotifiesOrganizerAndPayers covers
+// WF-GAP-011: when every share of a split-payment plan is authorised, the
+// organizer (booking.GuestID) is told their trip is booked, and every other
+// payer is told the group plan they contributed to is now fully funded.
+func TestEventHandler_SplitPaymentCompletedNotifiesOrganizerAndPayers(t *testing.T) {
+	ctx := context.Background()
+	notifRepo := memory.NewNotificationRepository()
+	bookingRepo := memory.NewBookingRepository()
+	splitRepo := memory.NewSplitPaymentRepository()
+	svc := notificationapp.NewService(notifRepo).
+		WithBookings(bookingRepo).
+		WithSplitPayments(splitRepo)
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	organizerID := uuid.New()
+	payerID := uuid.New()
+	bookingID := uuid.New()
+
+	// Seed a confirmed booking owned by the organizer.
+	b := &booking.Booking{
+		ID:         bookingID,
+		PropertyID: uuid.New(),
+		GuestID:    organizerID,
+		Status:     booking.StatusConfirmed,
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
+	}
+	if err := bookingRepo.Create(ctx, b); err != nil {
+		t.Fatalf("seed booking: %v", err)
+	}
+
+	// Seed a completed split with both shares paid: organizer + one payer.
+	splitID := uuid.New()
+	now := time.Now().UTC()
+	sp := &splitpayment.SplitPayment{
+		ID:          splitID,
+		BookingID:   bookingID,
+		OrganizerID: organizerID,
+		Currency:    "EUR",
+		TotalCents:  10000,
+		Status:      splitpayment.StatusCompleted,
+		Shares: []splitpayment.Share{
+			{
+				ID:             uuid.New(),
+				SplitPaymentID: splitID,
+				PayerEmail:     "alice@test.dev",
+				PayerUserID:    &organizerID,
+				AmountCents:    5000,
+				Status:         splitpayment.SharePaid,
+				PaidAt:         &now,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+			{
+				ID:             uuid.New(),
+				SplitPaymentID: splitID,
+				PayerEmail:     "bob@test.dev",
+				PayerUserID:    &payerID,
+				AmountCents:    5000,
+				Status:         splitpayment.SharePaid,
+				PaidAt:         &now,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+		},
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		CompletedAt: &now,
+	}
+	if err := splitRepo.Create(ctx, sp); err != nil {
+		t.Fatalf("seed split: %v", err)
+	}
+
+	dispatcher.Publish(ctx, event.SplitPaymentCompleted{
+		SplitPaymentID: splitID,
+		BookingID:      bookingID,
+	})
+
+	// Organizer gets exactly one TypeSplitPaymentCompleted notification.
+	orgPage, err := svc.List(ctx, organizerID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list organizer: %v", err)
+	}
+	if len(orgPage.Items) != 1 {
+		t.Fatalf("organizer notifications = %d, want 1", len(orgPage.Items))
+	}
+	if orgPage.Items[0].Type != notification.TypeSplitPaymentCompleted {
+		t.Fatalf("organizer notification type = %q, want %q", orgPage.Items[0].Type, notification.TypeSplitPaymentCompleted)
+	}
+	if orgPage.Items[0].RelatedID != bookingID {
+		t.Fatalf("organizer notification related = %s, want booking %s", orgPage.Items[0].RelatedID, bookingID)
+	}
+
+	// Other payer also gets a TypeSplitPaymentCompleted notification.
+	payerPage, err := svc.List(ctx, payerID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list payer: %v", err)
+	}
+	if len(payerPage.Items) != 1 {
+		t.Fatalf("payer notifications = %d, want 1", len(payerPage.Items))
+	}
+	if payerPage.Items[0].Type != notification.TypeSplitPaymentCompleted {
+		t.Fatalf("payer notification type = %q, want %q", payerPage.Items[0].Type, notification.TypeSplitPaymentCompleted)
+	}
+}
+
+// TestEventHandler_SplitPaymentCompletedSkipsWhenReposMissing guards the
+// fluent-setter contract: the subscriber must not panic and must not create
+// notifications when the optional repos haven't been wired. Older call sites
+// (and most existing tests) depend on this.
+func TestEventHandler_SplitPaymentCompletedSkipsWhenReposMissing(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewNotificationRepository()
+	svc := notificationapp.NewService(repo) // no WithBookings / WithSplitPayments
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	dispatcher.Publish(ctx, event.SplitPaymentCompleted{
+		SplitPaymentID: uuid.New(),
+		BookingID:      uuid.New(),
+	})
+	// No panic and no notifications created.
+	if c, _ := svc.UnreadCount(ctx, uuid.New()); c != 0 {
+		t.Fatalf("notifications created without repos: count=%d", c)
 	}
 }

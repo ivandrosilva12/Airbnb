@@ -8,6 +8,7 @@ import (
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/notification"
+	"github.com/google/uuid"
 )
 
 // EventHandler returns an event.Handler that creates notifications in reaction
@@ -112,6 +113,54 @@ func (s *Service) EventHandler() event.Handler {
 			err = s.create(ctx, recipient, notification.TypeExperienceBookingCancelled,
 				"Experience booking cancelled",
 				fmt.Sprintf("A booking for %q was cancelled.", title), ev.BookingID, PushCatBookings)
+
+		case event.SplitPaymentCompleted:
+			// S93 / WF-GAP-011. Every share is now authorised, so the
+			// booking confirms. Notify the organizer (resolved from the
+			// booking aggregate, which is where the authoritative "who
+			// owns this reservation" lives) and every other payer who
+			// pitched in. Repo dependencies are optional — if the wiring
+			// hasn't supplied them (older tests), silently skip.
+			if s.bookings == nil || s.splits == nil {
+				break
+			}
+			b, e1 := s.bookings.FindByID(ctx, ev.BookingID)
+			if e1 != nil {
+				logctx.LoggerFrom(ctx).Error("split-completed: booking lookup failed", "event", e.EventName(), "booking", ev.BookingID, "error", e1)
+				break
+			}
+			sp, e1 := s.splits.FindByID(ctx, ev.SplitPaymentID)
+			if e1 != nil {
+				logctx.LoggerFrom(ctx).Error("split-completed: split lookup failed", "event", e.EventName(), "split", ev.SplitPaymentID, "error", e1)
+				break
+			}
+			// Organizer (booking.GuestID) gets the headline message.
+			if e1 := s.create(ctx, b.GuestID, notification.TypeSplitPaymentCompleted,
+				"Your trip is booked",
+				"Everyone paid their share — your reservation is confirmed.",
+				ev.BookingID, PushCatBookings); e1 != nil {
+				logctx.LoggerFrom(ctx).Error("failed to create notification", "event", e.EventName(), "error", e1)
+			}
+			// Bonus: notify every other payer who authorised a share.
+			// Dedup against the organizer (whose share is also in the list)
+			// so they don't receive two notifications.
+			seen := map[uuid.UUID]struct{}{b.GuestID: {}}
+			for _, share := range sp.Shares {
+				if share.PayerUserID == nil {
+					continue
+				}
+				payerID := *share.PayerUserID
+				if _, dup := seen[payerID]; dup {
+					continue
+				}
+				seen[payerID] = struct{}{}
+				if e1 := s.create(ctx, payerID, notification.TypeSplitPaymentCompleted,
+					"Group trip booked",
+					"The split-payment plan you contributed to is now fully funded — the trip is confirmed.",
+					ev.BookingID, PushCatBookings); e1 != nil {
+					logctx.LoggerFrom(ctx).Error("failed to create notification", "event", e.EventName(), "error", e1)
+				}
+			}
 		}
 		if err != nil {
 			logctx.LoggerFrom(ctx).Error("failed to create notification", "event", e.EventName(), "error", err)

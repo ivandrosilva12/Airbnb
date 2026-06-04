@@ -6,8 +6,10 @@ import (
 	"context"
 	"github.com/airhost/backend/internal/observability/logctx"
 
+	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/notification"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/google/uuid"
 )
 
@@ -34,8 +36,10 @@ type PushNotifier interface {
 
 // Service orchestrates notification use cases.
 type Service struct {
-	repo notification.Repository
-	push PushNotifier // optional
+	repo     notification.Repository
+	push     PushNotifier            // optional
+	bookings booking.Repository      // optional — only used by the split-payment subscriber
+	splits   splitpayment.Repository // optional — only used by the split-payment subscriber
 }
 
 // NewService wires the notification application service.
@@ -47,6 +51,23 @@ func NewService(repo notification.Repository) *Service {
 // mirrored as native pushes. Returns the same service for chained wiring.
 func (s *Service) WithPush(p PushNotifier) *Service {
 	s.push = p
+	return s
+}
+
+// WithBookings attaches a booking repository so the event subscriber can look
+// up booking-context fields (organizer / GuestID) on events that carry only
+// the booking id. Optional — handlers that need it short-circuit when nil.
+func (s *Service) WithBookings(r booking.Repository) *Service {
+	s.bookings = r
+	return s
+}
+
+// WithSplitPayments attaches a split-payment repository so the event
+// subscriber can fan out SplitPaymentCompleted notifications to every payer.
+// Optional — the handler short-circuits when nil so existing call sites keep
+// working without re-wiring.
+func (s *Service) WithSplitPayments(r splitpayment.Repository) *Service {
+	s.splits = r
 	return s
 }
 

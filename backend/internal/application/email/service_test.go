@@ -4,10 +4,13 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	emailapp "github.com/airhost/backend/internal/application/email"
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/infrastructure/email"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
@@ -176,4 +179,120 @@ func assertSent(t *testing.T, sent []email.Sent, to, subject string) {
 		}
 	}
 	t.Fatalf("expected an email to %s with subject %q, got %+v", to, subject, sent)
+}
+
+// TestEventHandler_SplitPaymentCompletedEmails closes WF-GAP-011 on the
+// email side: the organizer is emailed "Your trip is booked" and every
+// other payer gets "Group trip booked" when their split fully funds.
+func TestEventHandler_SplitPaymentCompletedEmails(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	organizer := mustUser(t, users, "alice@test.dev", user.RoleGuest)
+	payer := mustUser(t, users, "bob@test.dev", user.RoleGuest)
+
+	bookingRepo := memory.NewBookingRepository()
+	splitRepo := memory.NewSplitPaymentRepository()
+	mailer := email.NewRecordingMailer()
+	svc := emailapp.NewService(users, mailer).
+		WithBookings(bookingRepo).
+		WithSplitPayments(splitRepo)
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	bookingID := uuid.New()
+	b := &booking.Booking{
+		ID:         bookingID,
+		PropertyID: uuid.New(),
+		GuestID:    organizer.ID,
+		Status:     booking.StatusConfirmed,
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
+	}
+	if err := bookingRepo.Create(ctx, b); err != nil {
+		t.Fatalf("seed booking: %v", err)
+	}
+
+	splitID := uuid.New()
+	now := time.Now().UTC()
+	sp := &splitpayment.SplitPayment{
+		ID:          splitID,
+		BookingID:   bookingID,
+		OrganizerID: organizer.ID,
+		Currency:    "EUR",
+		TotalCents:  10000,
+		Status:      splitpayment.StatusCompleted,
+		Shares: []splitpayment.Share{
+			{ID: uuid.New(), SplitPaymentID: splitID, PayerEmail: organizer.Email, PayerUserID: &organizer.ID, AmountCents: 5000, Status: splitpayment.SharePaid, PaidAt: &now, CreatedAt: now, UpdatedAt: now},
+			{ID: uuid.New(), SplitPaymentID: splitID, PayerEmail: payer.Email, PayerUserID: &payer.ID, AmountCents: 5000, Status: splitpayment.SharePaid, PaidAt: &now, CreatedAt: now, UpdatedAt: now},
+		},
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		CompletedAt: &now,
+	}
+	if err := splitRepo.Create(ctx, sp); err != nil {
+		t.Fatalf("seed split: %v", err)
+	}
+
+	dispatcher.Publish(ctx, event.SplitPaymentCompleted{SplitPaymentID: splitID, BookingID: bookingID})
+
+	sent := mailer.Sent()
+	if len(sent) != 2 {
+		t.Fatalf("sent %d emails, want 2 (%+v)", len(sent), sent)
+	}
+	assertSent(t, sent, organizer.Email, "Your trip is booked")
+	assertSent(t, sent, payer.Email, "Group trip booked")
+}
+
+// TestEventHandler_SplitPaymentCompletedRespectsOptOut confirms split-payment
+// emails ride the catBookings channel — a user who muted booking emails sees
+// nothing land in their inbox.
+func TestEventHandler_SplitPaymentCompletedRespectsOptOut(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	organizer := mustUser(t, users, "alice@test.dev", user.RoleGuest)
+	payer := mustUser(t, users, "bob@test.dev", user.RoleGuest)
+	payer.SetEmailPreferences(user.EmailPreferences{Bookings: false, Messages: true})
+	if err := users.Update(ctx, payer); err != nil {
+		t.Fatalf("update prefs: %v", err)
+	}
+
+	bookingRepo := memory.NewBookingRepository()
+	splitRepo := memory.NewSplitPaymentRepository()
+	mailer := email.NewRecordingMailer()
+	svc := emailapp.NewService(users, mailer).
+		WithBookings(bookingRepo).
+		WithSplitPayments(splitRepo)
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	bookingID := uuid.New()
+	if err := bookingRepo.Create(ctx, &booking.Booking{
+		ID: bookingID, PropertyID: uuid.New(), GuestID: organizer.ID,
+		Status: booking.StatusConfirmed, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("seed booking: %v", err)
+	}
+	splitID := uuid.New()
+	now := time.Now().UTC()
+	if err := splitRepo.Create(ctx, &splitpayment.SplitPayment{
+		ID: splitID, BookingID: bookingID, OrganizerID: organizer.ID,
+		Currency: "EUR", TotalCents: 10000, Status: splitpayment.StatusCompleted,
+		Shares: []splitpayment.Share{
+			{ID: uuid.New(), SplitPaymentID: splitID, PayerEmail: organizer.Email, PayerUserID: &organizer.ID, AmountCents: 5000, Status: splitpayment.SharePaid, PaidAt: &now, CreatedAt: now, UpdatedAt: now},
+			{ID: uuid.New(), SplitPaymentID: splitID, PayerEmail: payer.Email, PayerUserID: &payer.ID, AmountCents: 5000, Status: splitpayment.SharePaid, PaidAt: &now, CreatedAt: now, UpdatedAt: now},
+		},
+		CreatedAt: now, UpdatedAt: now, CompletedAt: &now,
+	}); err != nil {
+		t.Fatalf("seed split: %v", err)
+	}
+
+	dispatcher.Publish(ctx, event.SplitPaymentCompleted{SplitPaymentID: splitID, BookingID: bookingID})
+
+	sent := mailer.Sent()
+	// Only the organizer (who didn't opt out) receives mail.
+	if len(sent) != 1 || sent[0].To != organizer.Email {
+		t.Fatalf("opt-out: sent = %+v, want only the organizer's email", sent)
+	}
 }

@@ -31,6 +31,11 @@ const (
 	TypeExperienceBookingRequested Type = "experience_booking_requested"
 	TypeExperienceBookingConfirmed Type = "experience_booking_confirmed"
 	TypeExperienceBookingCancelled Type = "experience_booking_cancelled"
+	// TypeSplitPaymentCompleted fires when every share of a split-payment
+	// plan has been authorised (S93 — WF-GAP-011). The organizer (who set
+	// the split up) and every other payer receive one, so the whole group
+	// knows the trip is booked.
+	TypeSplitPaymentCompleted Type = "split_payment_completed"
 )
 
 // Notification is the aggregate root for a single in-app notification.

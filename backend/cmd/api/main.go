@@ -250,7 +250,12 @@ func run() error {
 	// honouring per-category opt-outs on the user aggregate.
 	pushSender := infrapush.NewSender(cfg.Push)
 	pushTokenSvc := pushtokenapp.NewService(pushTokenRepo, userRepo, pushSender)
-	notificationSvc := notificationapp.NewService(notificationRepo).WithPush(pushTokenSvc.AsNotifier())
+	notificationSvc := notificationapp.NewService(notificationRepo).
+		WithPush(pushTokenSvc.AsNotifier()).
+		// S93 / WF-GAP-011 — split-payment completion subscriber needs
+		// these to resolve the organizer + payer list.
+		WithBookings(bookingRepo).
+		WithSplitPayments(splitPaymentRepo)
 	// S88 — share one PaymentGateway instance across the payment subscriber
 	// AND the split-payment service so the per-share authorize/refund flow
 	// hits the same provider as the regular booking flow.
@@ -311,7 +316,10 @@ func run() error {
 	// BookingHandler below records the per-booking acceptance row right
 	// after a successful Create.
 	bookingSvc.WithHouseRules(houseRulesSvc)
-	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
+	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email)).
+		// S93 / WF-GAP-011 — same split-completion fan-out as notifications.
+		WithBookings(bookingRepo).
+		WithSplitPayments(splitPaymentRepo)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment)).
 		WithSplitPayments(splitPaymentRepo) // S88 — credit per-share on split bookings
 	// privacySvc orchestrates GDPR self-service (export + erase). The erase
@@ -343,7 +351,9 @@ func run() error {
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
 	alertStateSvc := alertstateapp.NewService()
 	realtimeHub := realtime.NewHub()
-	realtimeSvc := realtimeapp.NewService(realtimeHub)
+	realtimeSvc := realtimeapp.NewService(realtimeHub).
+		WithBookings(bookingRepo).
+		WithSplitPayments(splitPaymentRepo)
 
 	// Notifications, payments, emails, host payouts and live updates are produced
 	// by reacting to domain events.

@@ -10,20 +10,40 @@ import (
 
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/application/port"
+	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/google/uuid"
 )
 
 // Service sends event-driven emails.
 type Service struct {
-	users  user.Repository
-	mailer port.Mailer
+	users    user.Repository
+	mailer   port.Mailer
+	bookings booking.Repository      // optional — only used by the split-payment subscriber
+	splits   splitpayment.Repository // optional — only used by the split-payment subscriber
 }
 
 // NewService wires the email application service.
 func NewService(users user.Repository, mailer port.Mailer) *Service {
 	return &Service{users: users, mailer: mailer}
+}
+
+// WithBookings attaches a booking repository so the event subscriber can
+// resolve organizer/guest identities on split-payment events. Optional — the
+// matching handler short-circuits when the dep is nil.
+func (s *Service) WithBookings(r booking.Repository) *Service {
+	s.bookings = r
+	return s
+}
+
+// WithSplitPayments attaches a split-payment repository so the email
+// subscriber can fan out a "trip is booked" notice to every payer when a
+// split completes. Optional — the handler short-circuits when nil.
+func (s *Service) WithSplitPayments(r splitpayment.Repository) *Service {
+	s.splits = r
+	return s
 }
 
 // category groups emails so a recipient can opt out per kind.
@@ -109,7 +129,49 @@ func (s *Service) EventHandler() event.Handler {
 			}
 			s.send(ctx, recipient, catBookings, "Experience booking cancelled",
 				fmt.Sprintf("A booking for %q was cancelled.", title))
+
+		case event.SplitPaymentCompleted:
+			// S93 / WF-GAP-011 — fan email out to organizer + payers.
+			s.handleSplitCompleted(ctx, ev)
 		}
+	}
+}
+
+// handleSplitCompleted emails the organizer and every other payer that the
+// group's split-payment plan is now fully funded. Routed through catBookings
+// so users who muted booking emails are respected. The handler is a no-op if
+// the booking/split repositories haven't been wired (kept optional so older
+// tests don't need to plumb them through).
+func (s *Service) handleSplitCompleted(ctx context.Context, ev event.SplitPaymentCompleted) {
+	if s.bookings == nil || s.splits == nil {
+		return
+	}
+	b, err := s.bookings.FindByID(ctx, ev.BookingID)
+	if err != nil {
+		slog.Error("email split-completed: booking lookup failed", "booking", ev.BookingID, "error", err)
+		return
+	}
+	sp, err := s.splits.FindByID(ctx, ev.SplitPaymentID)
+	if err != nil {
+		slog.Error("email split-completed: split lookup failed", "split", ev.SplitPaymentID, "error", err)
+		return
+	}
+	// Organizer.
+	s.send(ctx, b.GuestID, catBookings, "Your trip is booked",
+		"Good news — everyone paid their share of the split. Your reservation is confirmed.")
+	// Other payers (dedup against the organizer, whose share is also in the list).
+	seen := map[uuid.UUID]struct{}{b.GuestID: {}}
+	for _, share := range sp.Shares {
+		if share.PayerUserID == nil {
+			continue
+		}
+		payerID := *share.PayerUserID
+		if _, dup := seen[payerID]; dup {
+			continue
+		}
+		seen[payerID] = struct{}{}
+		s.send(ctx, payerID, catBookings, "Group trip booked",
+			"The split-payment plan you contributed to is now fully funded — the trip is confirmed.")
 	}
 }
 
