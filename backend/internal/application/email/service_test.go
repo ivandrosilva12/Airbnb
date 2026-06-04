@@ -296,3 +296,65 @@ func TestEventHandler_SplitPaymentCompletedRespectsOptOut(t *testing.T) {
 		t.Fatalf("opt-out: sent = %+v, want only the organizer's email", sent)
 	}
 }
+
+// TestEventHandler_OfferEventsEmails closes the email arm of WF-GAP-008
+// (S106). S99 already wired the in-app notification + realtime push for
+// OfferCreated/Declined/Withdrawn; this asserts the matching transactional
+// emails: Created → guest ("New offer", or "You're pre-approved" for the
+// pre_approval kind), Declined → host, Withdrawn → guest.
+func TestEventHandler_OfferEventsEmails(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	host := mustUser(t, users, "offerhost@test.dev", user.RoleHost)
+	guest := mustUser(t, users, "offerguest@test.dev", user.RoleGuest)
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	dispatcher.Publish(ctx, event.OfferCreated{
+		OfferID: uuid.New(), PropertyTitle: "Loft",
+		HostID: host.ID, GuestID: guest.ID, Kind: "special_offer",
+	})
+	dispatcher.Publish(ctx, event.OfferDeclined{
+		OfferID: uuid.New(), PropertyTitle: "Loft",
+		HostID: host.ID, GuestID: guest.ID,
+	})
+	dispatcher.Publish(ctx, event.OfferWithdrawn{
+		OfferID: uuid.New(), PropertyTitle: "Loft",
+		HostID: host.ID, GuestID: guest.ID,
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 3 {
+		t.Fatalf("sent %d emails, want 3 (%+v)", len(sent), sent)
+	}
+	assertSent(t, sent, guest.Email, "New offer")
+	assertSent(t, sent, host.Email, "Offer declined")
+	assertSent(t, sent, guest.Email, "Offer withdrawn")
+}
+
+// TestEventHandler_OfferCreatedPreApprovalSubject verifies the special
+// "You're pre-approved" subject for the pre_approval offer kind — the
+// guest experience is "you can book now", not "review this offer".
+func TestEventHandler_OfferCreatedPreApprovalSubject(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	host := mustUser(t, users, "prehost@test.dev", user.RoleHost)
+	guest := mustUser(t, users, "preguest@test.dev", user.RoleGuest)
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	dispatcher.Publish(ctx, event.OfferCreated{
+		OfferID: uuid.New(), PropertyTitle: "Loft",
+		HostID: host.ID, GuestID: guest.ID, Kind: "pre_approval",
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want 1 (%+v)", len(sent), sent)
+	}
+	assertSent(t, sent, guest.Email, "You're pre-approved")
+}
