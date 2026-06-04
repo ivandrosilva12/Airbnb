@@ -37,4 +37,9 @@ type Repository interface {
 	// yet. The caller groups by property jurisdiction and aggregates the
 	// JurisdictionTaxLines slice into a per-rule remittance report.
 	ListSettledInPeriod(ctx context.Context, from, to time.Time) ([]*Booking, error)
+	// ListConfirmedStartingBetween returns confirmed bookings whose
+	// check-in falls inside [from, to). Used by the arrival-info
+	// scheduler (S102 — WF-GAP-007) to find guests who have just
+	// crossed into the 48-hour reveal window and need a notification.
+	ListConfirmedStartingBetween(ctx context.Context, from, to time.Time) ([]*Booking, error)
 }

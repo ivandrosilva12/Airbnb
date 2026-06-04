@@ -17,6 +17,7 @@ import (
 	"time"
 
 	alertingapp "github.com/airhost/backend/internal/application/alerting"
+	arrivalapp "github.com/airhost/backend/internal/application/arrival"
 	auditapp "github.com/airhost/backend/internal/application/audit"
 	alertstateapp "github.com/airhost/backend/internal/application/alertstate"
 	analyticsapp "github.com/airhost/backend/internal/application/analytics"
@@ -511,6 +512,19 @@ func run() error {
 		Interval: 5 * time.Minute,
 		Run: func(ctx context.Context) error {
 			_, err := experienceBookingSvc.AutoCompleteOverdue(ctx)
+			return err
+		},
+	})
+	// S102 / WF-GAP-007 — sweep confirmed bookings entering the 48-hour
+	// arrival-info reveal window and create a one-off notification per
+	// guest. Dedupe via the notification table guarantees only-once even
+	// if the scheduler ticks many times inside the window.
+	arrivalSvc := arrivalapp.NewService(bookingRepo, propertyRepo, notificationSvc)
+	sched.Add(scheduler.Job{
+		Name:     "arrival-info-availability-notify",
+		Interval: 15 * time.Minute,
+		Run: func(ctx context.Context) error {
+			_, err := arrivalSvc.Run(ctx)
 			return err
 		},
 	})

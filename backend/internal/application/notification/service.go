@@ -103,6 +103,25 @@ func (s *Service) Notify(ctx context.Context, userID uuid.UUID, title, body stri
 	return s.create(ctx, userID, notification.TypeSavedSearchAlert, title, body, relatedID, PushCatAccount)
 }
 
+// NotifyArrivalAvailable creates a one-off "arrival info is now available"
+// notification for the given guest tied to the booking (S102 — WF-GAP-007).
+// Idempotent: callers check ExistsByUserTypeAndRelated first; this method
+// just produces the notification + push if no dedupe collision is found.
+func (s *Service) NotifyArrivalAvailable(ctx context.Context, guestID, bookingID uuid.UUID, propertyTitle string) error {
+	title := "Check-in details available"
+	body := "Your check-in instructions and wifi details are now visible in the listing."
+	if propertyTitle != "" {
+		body = "Your check-in instructions for " + propertyTitle + " are now visible in the listing."
+	}
+	return s.create(ctx, guestID, notification.TypeArrivalInfoAvailable, title, body, bookingID, PushCatBookings)
+}
+
+// ExistsForUser is a thin pass-through used by the arrival-info scheduler
+// (S102) to dedupe before creating a notification.
+func (s *Service) ExistsForUser(ctx context.Context, userID uuid.UUID, t notification.Type, relatedID uuid.UUID) (bool, error) {
+	return s.repo.ExistsByUserTypeAndRelated(ctx, userID, t, relatedID)
+}
+
 // create is the internal helper used by the event subscriber. cat picks the
 // push opt-out bucket so a user who muted bookings still receives messages and
 // vice-versa.

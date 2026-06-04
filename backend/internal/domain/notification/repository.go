@@ -21,4 +21,11 @@ type Repository interface {
 	MarkAllRead(ctx context.Context, userID uuid.UUID) error
 	// DeleteByUser removes all of a user's notifications (GDPR erasure).
 	DeleteByUser(ctx context.Context, userID uuid.UUID) error
+	// ExistsByUserTypeAndRelated reports whether a notification of the
+	// given (user, type, related) tuple already exists. Used as a dedupe
+	// key by the arrival-info scheduler (S102 — WF-GAP-007) so a guest
+	// gets at most one "arrival info is now available" notice per
+	// booking, even if the scheduler ticks multiple times inside the
+	// 48-hour reveal window.
+	ExistsByUserTypeAndRelated(ctx context.Context, userID uuid.UUID, t Type, relatedID uuid.UUID) (bool, error)
 }

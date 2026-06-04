@@ -47,6 +47,10 @@ const (
 	// permissions on a listing (S99 — WF-GAP-016). The invitee is notified
 	// so the grant doesn't sit silently in their cohost mailbox.
 	TypeCohostInvited Type = "cohost_invited"
+	// TypeArrivalInfoAvailable fires once a confirmed booking crosses
+	// into the 48-hour reveal window (S102 — WF-GAP-007). The guest is
+	// nudged to check the listing for check-in instructions, wifi, etc.
+	TypeArrivalInfoAvailable Type = "arrival_info_available"
 )
 
 // Notification is the aggregate root for a single in-app notification.

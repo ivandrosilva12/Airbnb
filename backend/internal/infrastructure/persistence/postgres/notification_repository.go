@@ -121,6 +121,22 @@ func (r *NotificationRepository) DeleteByUser(ctx context.Context, userID uuid.U
 	return mapError(err)
 }
 
+// ExistsByUserTypeAndRelated reports whether a notification of the given
+// (user, type, related) tuple already exists. S102 — used as dedupe key
+// by the arrival-info scheduler (WF-GAP-007) so a guest gets at most one
+// "arrival info available" notification per booking.
+func (r *NotificationRepository) ExistsByUserTypeAndRelated(ctx context.Context, userID uuid.UUID, t notification.Type, relatedID uuid.UUID) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM notifications WHERE user_id=$1 AND type=$2 AND related_id=$3)`,
+		userID, string(t), relatedID,
+	).Scan(&exists)
+	if err != nil {
+		return false, mapError(err)
+	}
+	return exists, nil
+}
+
 // nilUUID converts the zero UUID to nil so it stores as SQL NULL.
 func nilUUID(id uuid.UUID) *uuid.UUID {
 	if id == uuid.Nil {

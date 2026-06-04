@@ -515,6 +515,28 @@ func (r *BookingRepository) ListSettledInPeriod(_ context.Context, from, to time
 	return out, nil
 }
 
+// ListConfirmedStartingBetween returns confirmed bookings whose check-in
+// falls in [from, to). S102 — drives the arrival-info notification
+// scheduler (WF-GAP-007). Cancelled / pending / completed bookings are
+// excluded — a guest who hasn't paid yet doesn't need check-in details.
+func (r *BookingRepository) ListConfirmedStartingBetween(_ context.Context, from, to time.Time) ([]*booking.Booking, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []*booking.Booking
+	for _, b := range r.m {
+		if b.Status != booking.StatusConfirmed {
+			continue
+		}
+		if b.Dates.CheckIn.Before(from) || !b.Dates.CheckIn.Before(to) {
+			continue
+		}
+		c := b
+		out = append(out, &c)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Dates.CheckIn.Before(out[j].Dates.CheckIn) })
+	return out, nil
+}
+
 func (r *BookingRepository) ListActiveInRange(_ context.Context, propertyID uuid.UUID, from, to time.Time) ([]*booking.Booking, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -1107,6 +1129,20 @@ func (r *NotificationRepository) DeleteByUser(_ context.Context, userID uuid.UUI
 		}
 	}
 	return nil
+}
+
+// ExistsByUserTypeAndRelated reports whether any notification of the given
+// (user, type, related) tuple already exists. Used as a dedupe key by the
+// arrival-info scheduler (S102 — WF-GAP-007).
+func (r *NotificationRepository) ExistsByUserTypeAndRelated(_ context.Context, userID uuid.UUID, t notification.Type, relatedID uuid.UUID) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, n := range r.m {
+		if n.UserID == userID && n.Type == t && n.RelatedID == relatedID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // --- Payments ----------------------------------------------------------------

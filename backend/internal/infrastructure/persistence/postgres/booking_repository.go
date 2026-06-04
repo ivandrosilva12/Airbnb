@@ -174,6 +174,34 @@ func (r *BookingRepository) ListSettledInPeriod(ctx context.Context, from, to ti
 	return items, mapError(rows.Err())
 }
 
+// ListConfirmedStartingBetween returns confirmed bookings whose check-in
+// falls in [from, to). S102 — drives the arrival-info notification
+// scheduler (WF-GAP-007). The check_in column has an index because it's
+// used by HasOverlap; the partial filter on status keeps the scan small.
+func (r *BookingRepository) ListConfirmedStartingBetween(ctx context.Context, from, to time.Time) ([]*booking.Booking, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+bookingColumns+` FROM bookings
+		WHERE status = 'confirmed'
+		  AND check_in >= $1
+		  AND check_in < $2
+		ORDER BY check_in ASC`,
+		from, to,
+	)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+	var items []*booking.Booking
+	for rows.Next() {
+		b, err := scanBooking(rows)
+		if err != nil {
+			return nil, mapError(err)
+		}
+		items = append(items, b)
+	}
+	return items, mapError(rows.Err())
+}
+
 func (r *BookingRepository) HasOverlap(ctx context.Context, propertyID uuid.UUID, dates booking.DateRange) (bool, error) {
 	var exists bool
 	// Half-open overlap: existing.check_in < new.check_out AND new.check_in < existing.check_out.
