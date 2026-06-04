@@ -194,3 +194,87 @@ func TestDurablePublisher_RecoverPreservesAppendOrder(t *testing.T) {
 		}
 	}
 }
+
+// failingMarkStore wraps a memoryOutbox and always returns an error from
+// MarkProcessed, so the relay sees the delivery as never having succeeded —
+// the exact scenario where the S97 retry budget should eventually give up
+// and dead-letter the record.
+type failingMarkStore struct {
+	*memoryOutbox
+}
+
+func (s *failingMarkStore) MarkProcessed(ctx context.Context, id uuid.UUID) error {
+	return errors.New("simulated downstream failure")
+}
+
+func TestDurablePublisher_DeadLettersAfterMaxAttempts(t *testing.T) {
+	store := &failingMarkStore{memoryOutbox: &memoryOutbox{
+		done:     map[uuid.UUID]bool{},
+		attempts: map[uuid.UUID]int{},
+		dlq:      map[uuid.UUID]DeadLetteredRecord{},
+	}}
+	d := NewDispatcher()
+	d.Subscribe(func(_ context.Context, _ Event) {})
+	var dlqCalls []string
+	p := NewDurablePublisher(store, d).
+		WithMaxAttempts(3).
+		WithDLQObserver(func(name, _ string) { dlqCalls = append(dlqCalls, name) })
+
+	ctx := context.Background()
+	rec, _ := NewRecord(BookingRequested{BookingID: uuid.New()})
+	if err := store.Append(ctx, rec); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	// Four Recover passes: attempts 1, 2, 3 deliver, attempt 4 promotes to DLQ.
+	for i := 0; i < 4; i++ {
+		if _, err := p.Recover(ctx, 10); err != nil {
+			t.Fatalf("recover %d: %v", i, err)
+		}
+	}
+
+	dl, _ := store.ListDeadLettered(ctx, 10, 0)
+	if len(dl) != 1 {
+		t.Fatalf("dead-lettered records = %d, want 1 (after %d failed attempts)", len(dl), 4)
+	}
+	wantName := BookingRequested{}.EventName()
+	if len(dlqCalls) != 1 || dlqCalls[0] != wantName {
+		t.Fatalf("dlq observer calls = %v, want one for %q", dlqCalls, wantName)
+	}
+
+	// Requeue + verify it leaves DLQ AND resets attempts.
+	if err := store.Requeue(ctx, rec.ID); err != nil {
+		t.Fatalf("requeue: %v", err)
+	}
+	dl, _ = store.ListDeadLettered(ctx, 10, 0)
+	if len(dl) != 0 {
+		t.Fatalf("after requeue dlq = %d, want 0", len(dl))
+	}
+}
+
+func TestDurablePublisher_DepthObserverSamplesPending(t *testing.T) {
+	store := NewMemoryOutbox()
+	d := NewDispatcher()
+	d.Subscribe(func(_ context.Context, _ Event) {})
+	var lastDepth int
+	p := NewDurablePublisher(store, d).
+		WithMaxAttempts(5).
+		WithDepthObserver(func(n int) { lastDepth = n })
+
+	ctx := context.Background()
+	// Two records — first will be delivered + marked processed; second sits
+	// behind the 30-second grace window only enforced by the postgres impl,
+	// so the in-memory FetchUnprocessed picks it up too.
+	r1, _ := NewRecord(BookingRequested{BookingID: uuid.New()})
+	r2, _ := NewRecord(BookingConfirmed{BookingID: uuid.New()})
+	_ = store.Append(ctx, r1)
+	_ = store.Append(ctx, r2)
+
+	if _, err := p.Recover(ctx, 10); err != nil {
+		t.Fatalf("recover: %v", err)
+	}
+	// Both delivered and marked processed → 0 pending.
+	if lastDepth != 0 {
+		t.Fatalf("post-recover depth = %d, want 0", lastDepth)
+	}
+}

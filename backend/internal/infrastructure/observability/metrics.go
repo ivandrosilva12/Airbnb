@@ -32,6 +32,12 @@ type Metrics struct {
 	// after the application service hands the event to the dispatcher,
 	// so subscriber failures don't suppress the metric.
 	ExperienceBookingEventsTotal *prometheus.CounterVec
+	// S97 — outbox observability (WF-GAP-018). OutboxPending tracks the
+	// number of records the recovery scan would still pick up; spikes mean
+	// the dispatcher is falling behind or a subscriber is stuck. DLQ
+	// counts records promoted to dead-letter, labeled by event name.
+	OutboxPending  prometheus.Gauge
+	OutboxDLQTotal *prometheus.CounterVec
 }
 
 // NewMetrics registers and returns the metric collectors. It uses a dedicated
@@ -124,6 +130,19 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Help: "Total experience-booking domain events dispatched, labeled by EventName (experiencebooking.created / .confirmed / .cancelled) (S85).",
 			},
 			[]string{"event"},
+		),
+		OutboxPending: factory.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "airhost_outbox_pending_count",
+				Help: "Number of outbox records still awaiting delivery — refreshed each recovery cycle (S97).",
+			},
+		),
+		OutboxDLQTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "airhost_outbox_dlq_total",
+				Help: "Outbox records promoted to dead-letter, labeled by event name and reason (S97).",
+			},
+			[]string{"event", "reason"},
 		),
 	}
 }

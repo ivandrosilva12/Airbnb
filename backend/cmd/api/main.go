@@ -386,6 +386,15 @@ func run() error {
 	// events: every dispatched created / confirmed / cancelled bumps
 	// the ExperienceBookingEventsTotal counter labeled by EventName.
 	experienceBookingSvc.WithMetrics(metrics)
+	// S97 — outbox DLQ + depth metric (WF-GAP-018). After 5 failed
+	// delivery attempts the relay promotes the record to dead-letter
+	// state, keeping the recovery scan cheap and surfacing stuck events
+	// to operators via the airhost_outbox_dlq_total counter. The depth
+	// gauge is sampled at the end of each recovery cycle.
+	eventPublisher.
+		WithMaxAttempts(5).
+		WithDepthObserver(func(n int) { metrics.OutboxPending.Set(float64(n)) }).
+		WithDLQObserver(func(name, reason string) { metrics.OutboxDLQTotal.WithLabelValues(name, reason).Inc() })
 
 	// --- HTTP interface ----------------------------------------------------
 	syncFn := func(c *gin.Context, claims auth.Claims) (*domainuser.User, error) {
