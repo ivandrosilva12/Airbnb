@@ -7,9 +7,11 @@ import (
 
 	emailapp "github.com/airhost/backend/internal/application/email"
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/infrastructure/email"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
+	"github.com/google/uuid"
 )
 
 func TestEventHandler_SendsTransactionalEmails(t *testing.T) {
@@ -126,6 +128,44 @@ func mustUser(t *testing.T, repo *memory.UserRepository, email string, role user
 		t.Fatalf("create user: %v", err)
 	}
 	return u
+}
+
+// S86 — ExperienceBooking events trigger transactional emails the same
+// way property booking events do. The created event emails the host, the
+// confirmed event emails the guest, and a cancel emails the OTHER party
+// (whoever didn't trigger the cancel).
+func TestEventHandler_ExperienceBookingEmails(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	host := mustUser(t, users, "exphost@test.dev", user.RoleHost)
+	guest := mustUser(t, users, "expguest@test.dev", user.RoleGuest)
+
+	mailer := email.NewRecordingMailer()
+	svc := emailapp.NewService(users, mailer)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingCreated{
+		BookingID: uuid.New(), ExperienceID: uuid.New(), ExperienceTitle: "Pasta workshop",
+		HostID: host.ID, GuestID: guest.ID, TotalCents: 6600, Currency: "EUR",
+	})
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingConfirmed{
+		BookingID: uuid.New(), ExperienceID: uuid.New(), ExperienceTitle: "Pasta workshop",
+		HostID: host.ID, GuestID: guest.ID,
+	})
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingCancelled{
+		BookingID: uuid.New(), ExperienceID: uuid.New(), ExperienceTitle: "Pasta workshop",
+		HostID: host.ID, GuestID: guest.ID, CancelledBy: host.ID,
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 3 {
+		t.Fatalf("sent %d emails, want 3 (%+v)", len(sent), sent)
+	}
+	assertSent(t, sent, host.Email, "New experience booking")
+	assertSent(t, sent, guest.Email, "Experience booking confirmed")
+	// host cancelled → guest is told
+	assertSent(t, sent, guest.Email, "Experience booking cancelled")
 }
 
 func assertSent(t *testing.T, sent []email.Sent, to, subject string) {

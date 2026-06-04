@@ -119,6 +119,21 @@ func (s *Service) publish(ctx context.Context, e event.Event) {
 	}
 }
 
+// lookupTitle is a best-effort helper that fetches the parent experience's
+// title for denormalisation onto Confirm/Cancel events. A read failure
+// returns an empty string — subscribers degrade gracefully ("Booking
+// confirmed" without the title) rather than abort the transition.
+func (s *Service) lookupTitle(ctx context.Context, experienceID uuid.UUID) string {
+	if s.experiences == nil {
+		return ""
+	}
+	exp, err := s.experiences.FindByID(ctx, experienceID)
+	if err != nil || exp == nil {
+		return ""
+	}
+	return exp.Title
+}
+
 // CreateInput is the guest's booking request. StartAt is the session
 // start; Guests is the headcount. Price/duration/host are sourced from
 // the experience aggregate — the guest never supplies them.
@@ -167,13 +182,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*experiencebookin
 	// Publish AFTER the repo write so a persistence failure doesn't
 	// leak a Created event for a booking that doesn't exist.
 	s.publish(ctx, experiencebooking.ExperienceBookingCreated{
-		BookingID:    b.ID,
-		ExperienceID: b.ExperienceID,
-		HostID:       b.HostID,
-		GuestID:      b.GuestID,
-		TotalCents:   b.Pricing.Total.AmountCents(),
-		Currency:     b.Pricing.Total.Currency(),
-		OccurredAt:   b.CreatedAt,
+		BookingID:       b.ID,
+		ExperienceID:    b.ExperienceID,
+		ExperienceTitle: exp.Title,
+		HostID:          b.HostID,
+		GuestID:         b.GuestID,
+		TotalCents:      b.Pricing.Total.AmountCents(),
+		Currency:        b.Pricing.Total.Currency(),
+		OccurredAt:      b.CreatedAt,
 	})
 	return b, nil
 }
@@ -218,11 +234,12 @@ func (s *Service) Confirm(ctx context.Context, actorID, id uuid.UUID) (*experien
 	// already-confirmed booking must not double-charge or double-notify.
 	if priorStatus != experiencebooking.StatusConfirmed && b.Status == experiencebooking.StatusConfirmed {
 		s.publish(ctx, experiencebooking.ExperienceBookingConfirmed{
-			BookingID:    b.ID,
-			ExperienceID: b.ExperienceID,
-			HostID:       b.HostID,
-			GuestID:      b.GuestID,
-			OccurredAt:   b.UpdatedAt,
+			BookingID:       b.ID,
+			ExperienceID:    b.ExperienceID,
+			ExperienceTitle: s.lookupTitle(ctx, b.ExperienceID),
+			HostID:          b.HostID,
+			GuestID:         b.GuestID,
+			OccurredAt:      b.UpdatedAt,
 		})
 	}
 	return b, nil
@@ -249,9 +266,12 @@ func (s *Service) Cancel(ctx context.Context, actorID, id uuid.UUID) (*experienc
 	}
 	if priorStatus != experiencebooking.StatusCancelled && b.Status == experiencebooking.StatusCancelled {
 		s.publish(ctx, experiencebooking.ExperienceBookingCancelled{
-			BookingID:    b.ID,
-			ExperienceID: b.ExperienceID,
-			CancelledBy:  actorID,
+			BookingID:       b.ID,
+			ExperienceID:    b.ExperienceID,
+			ExperienceTitle: s.lookupTitle(ctx, b.ExperienceID),
+			HostID:          b.HostID,
+			GuestID:         b.GuestID,
+			CancelledBy:     actorID,
 			OccurredAt:   b.UpdatedAt,
 		})
 	}

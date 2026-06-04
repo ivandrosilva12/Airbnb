@@ -7,6 +7,7 @@ import (
 
 	"github.com/airhost/backend/internal/application/event"
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/google/uuid"
 )
 
@@ -68,5 +69,44 @@ func TestEventHandler_CancellationNotifiesOtherParty(t *testing.T) {
 
 	if len(hub.sent) != 1 || hub.sent[0].UserID != host {
 		t.Fatalf("cancellation push = %+v, want one to the host", hub.sent)
+	}
+}
+
+// S86 — ExperienceBooking events fan out the same way:
+// Created → host; Confirmed → guest; Cancelled → the other party.
+func TestEventHandler_ExperienceBookingPushes(t *testing.T) {
+	ctx := context.Background()
+	hub := &fakeBroadcaster{}
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(realtimeapp.NewService(hub).EventHandler())
+
+	host := uuid.New()
+	guest := uuid.New()
+
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingCreated{
+		BookingID: uuid.New(), ExperienceID: uuid.New(),
+		HostID: host, GuestID: guest, TotalCents: 6600, Currency: "EUR",
+	})
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingConfirmed{
+		BookingID: uuid.New(), ExperienceID: uuid.New(), HostID: host, GuestID: guest,
+	})
+	// guest cancels → host is pushed
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingCancelled{
+		BookingID: uuid.New(), ExperienceID: uuid.New(),
+		HostID: host, GuestID: guest, CancelledBy: guest,
+	})
+
+	want := []capture{
+		{UserID: host, Payload: `{"type":"notification"}`},
+		{UserID: guest, Payload: `{"type":"notification"}`},
+		{UserID: host, Payload: `{"type":"notification"}`},
+	}
+	if len(hub.sent) != len(want) {
+		t.Fatalf("sent %d updates, want %d (%+v)", len(hub.sent), len(want), hub.sent)
+	}
+	for i, w := range want {
+		if hub.sent[i] != w {
+			t.Fatalf("update[%d] = %+v, want %+v", i, hub.sent[i], w)
+		}
 	}
 }

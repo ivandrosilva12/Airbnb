@@ -6,6 +6,7 @@ import (
 	"github.com/airhost/backend/internal/observability/logctx"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/notification"
 )
 
@@ -84,9 +85,47 @@ func (s *Service) EventHandler() event.Handler {
 				logctx.LoggerFrom(ctx).Error("failed to create notification", "event", e.EventName(), "error", e1)
 			}
 			err = s.create(ctx, ev.HostID, notification.TypeDisputeResolved, title, body, ev.DisputeID, PushCatAccount)
+
+		// Experience-booking lifecycle (S86) — mirrors the property-booking
+		// fan-out: host learns about the request, guest learns about the
+		// confirmation, the OTHER party learns about a cancellation.
+		case experiencebooking.ExperienceBookingCreated:
+			title := experienceTitleOr(ev.ExperienceTitle, "your experience")
+			err = s.create(ctx, ev.HostID, notification.TypeExperienceBookingRequested,
+				"New experience booking",
+				fmt.Sprintf("A guest just booked %q.", title), ev.BookingID, PushCatBookings)
+
+		case experiencebooking.ExperienceBookingConfirmed:
+			title := experienceTitleOr(ev.ExperienceTitle, "your experience")
+			err = s.create(ctx, ev.GuestID, notification.TypeExperienceBookingConfirmed,
+				"Experience booking confirmed",
+				fmt.Sprintf("Your booking for %q was confirmed.", title), ev.BookingID, PushCatBookings)
+
+		case experiencebooking.ExperienceBookingCancelled:
+			title := experienceTitleOr(ev.ExperienceTitle, "an experience")
+			// The canceller doesn't need to be told what they just did —
+			// the OTHER party does. CancelledBy is the actor.
+			recipient := ev.GuestID
+			if ev.CancelledBy == ev.GuestID {
+				recipient = ev.HostID
+			}
+			err = s.create(ctx, recipient, notification.TypeExperienceBookingCancelled,
+				"Experience booking cancelled",
+				fmt.Sprintf("A booking for %q was cancelled.", title), ev.BookingID, PushCatBookings)
 		}
 		if err != nil {
 			logctx.LoggerFrom(ctx).Error("failed to create notification", "event", e.EventName(), "error", err)
 		}
 	}
+}
+
+// experienceTitleOr returns the experience title from the event when set,
+// or a generic fallback. Belt-and-braces: lookupTitle in the service may
+// have failed (deleted experience, transient repo error) and we'd rather
+// say "your experience" than render an empty pair of quotes.
+func experienceTitleOr(title, fallback string) string {
+	if title == "" {
+		return fallback
+	}
+	return title
 }

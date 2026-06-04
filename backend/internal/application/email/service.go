@@ -10,6 +10,7 @@ import (
 
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/application/port"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/google/uuid"
 )
@@ -86,8 +87,40 @@ func (s *Service) EventHandler() event.Handler {
 			body := fmt.Sprintf("A moderator %s the case on %q.\n\nDecision: %s", ev.Outcome, ev.PropertyTitle, ev.Resolution)
 			s.send(ctx, ev.GuestID, catAccount, "Resolution Center decision", body)
 			s.send(ctx, ev.HostID, catAccount, "Resolution Center decision", body)
+
+		// Experience-booking lifecycle (S86). Same opt-out category as
+		// property bookings so a guest who muted booking emails on web
+		// doesn't suddenly start getting them from experiences.
+		case experiencebooking.ExperienceBookingCreated:
+			title := experienceTitleOr(ev.ExperienceTitle, "your experience")
+			s.send(ctx, ev.HostID, catBookings, "New experience booking",
+				fmt.Sprintf("A guest just booked %q. Review it in your host dashboard.", title))
+
+		case experiencebooking.ExperienceBookingConfirmed:
+			title := experienceTitleOr(ev.ExperienceTitle, "your experience")
+			s.send(ctx, ev.GuestID, catBookings, "Experience booking confirmed",
+				fmt.Sprintf("Good news — your booking for %q is confirmed.", title))
+
+		case experiencebooking.ExperienceBookingCancelled:
+			title := experienceTitleOr(ev.ExperienceTitle, "an experience")
+			recipient := ev.GuestID
+			if ev.CancelledBy == ev.GuestID {
+				recipient = ev.HostID
+			}
+			s.send(ctx, recipient, catBookings, "Experience booking cancelled",
+				fmt.Sprintf("A booking for %q was cancelled.", title))
 		}
 	}
+}
+
+// experienceTitleOr provides a generic fallback when the denormalised
+// event title is empty (the service couldn't fetch the experience, or
+// it was deleted between the booking write and the publish).
+func experienceTitleOr(title, fallback string) string {
+	if title == "" {
+		return fallback
+	}
+	return title
 }
 
 func (s *Service) send(ctx context.Context, userID uuid.UUID, cat category, subject, body string) {

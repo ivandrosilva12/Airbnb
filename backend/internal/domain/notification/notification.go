@@ -25,6 +25,12 @@ const (
 	TypeSavedSearchAlert Type = "saved_search_alert"
 	TypeDisputeOpened    Type = "dispute_opened"
 	TypeDisputeResolved  Type = "dispute_resolved"
+	// Experience-booking lifecycle (S86 — wires ExperienceBooking events
+	// into the notification fan-out so guests/hosts see the same prompts
+	// as for property bookings).
+	TypeExperienceBookingRequested Type = "experience_booking_requested"
+	TypeExperienceBookingConfirmed Type = "experience_booking_confirmed"
+	TypeExperienceBookingCancelled Type = "experience_booking_cancelled"
 )
 
 // Notification is the aggregate root for a single in-app notification.

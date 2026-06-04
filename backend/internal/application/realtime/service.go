@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/google/uuid"
 )
 
@@ -53,6 +54,20 @@ func (s *Service) EventHandler() event.Handler {
 			s.push(ev.RecipientID, Update{Type: "message", ConversationID: ev.ConversationID.String()})
 		case event.IdentityVerified:
 			s.push(ev.UserID, Update{Type: "notification"})
+
+		// Experience-booking lifecycle (S86) — push the same notification
+		// hint as for property bookings so the inbox badge refreshes
+		// without polling.
+		case experiencebooking.ExperienceBookingCreated:
+			s.push(ev.HostID, Update{Type: "notification"})
+		case experiencebooking.ExperienceBookingConfirmed:
+			s.push(ev.GuestID, Update{Type: "notification"})
+		case experiencebooking.ExperienceBookingCancelled:
+			recipient := ev.GuestID
+			if ev.CancelledBy == ev.GuestID {
+				recipient = ev.HostID
+			}
+			s.push(recipient, Update{Type: "notification"})
 		}
 	}
 }
