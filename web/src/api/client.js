@@ -154,11 +154,33 @@ export const api = {
   becomeHost: () => request('POST', '/me/become-host', { auth: true }),
 
   // Push notification device registration (Web Push / mobile native).
+  // For FCM/APNs, callers send {platform, token}. For Web Push (S98) callers
+  // send {platform: 'web', endpoint, keys: {p256dh, auth}} — the helper
+  // accepts a body verbatim so both shapes flow through the same call.
   listPushTokens: () => request('GET', '/me/push-tokens', { auth: true }),
-  registerPushToken: (platform, token) =>
-    request('POST', '/me/push-tokens', { body: { platform, token }, auth: true }),
-  unregisterPushToken: (platform, token) =>
-    request('POST', '/me/push-tokens/unregister', { body: { platform, token }, auth: true }),
+  registerPushToken: (bodyOrPlatform, maybeToken) => {
+    const body =
+      typeof bodyOrPlatform === 'string'
+        ? { platform: bodyOrPlatform, token: maybeToken }
+        : bodyOrPlatform;
+    return request('POST', '/me/push-tokens', { body, auth: true });
+  },
+  unregisterPushToken: (bodyOrPlatform, maybeToken) => {
+    const body =
+      typeof bodyOrPlatform === 'string'
+        ? { platform: bodyOrPlatform, token: maybeToken }
+        : bodyOrPlatform;
+    return request('POST', '/me/push-tokens/unregister', { body, auth: true });
+  },
+  // VAPID public key (S98) — plaintext response so the browser can decode it
+  // directly via urlBase64ToUint8Array. A 503 means the operator has not
+  // configured WEB_PUSH_PUBLIC_KEY on the API; the caller should show the
+  // panel in a disabled state.
+  getVapidPublicKey: async () => {
+    const res = await fetch(`${BASE_URL}/push/vapid-public-key`);
+    if (!res.ok) return '';
+    return res.text();
+  },
 
   // GDPR self-service
   exportMyData: () => downloadFile('/me/export', 'airhost-data-export.json'),

@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import keycloak from '../keycloak';
 import { useConsent } from '../context/ConsentContext';
 import { useT } from '../i18n/I18nContext';
+import { pushSupported, currentSubscription, subscribe, unsubscribe } from '../push/webPush';
 
 export default function Settings() {
   const { t } = useT();
@@ -88,12 +89,111 @@ export default function Settings() {
         </div>
       )}
 
+      <WebPushPanel />
       <VerificationPanel />
       <SecurityPanel />
       <PrivacyPanel />
       <CookieConsentPanel />
       <SavedRepliesPanel />
     </div>
+  );
+}
+
+// WebPushPanel (S98) lets the user opt in/out of native browser push
+// notifications. Surface state machine: "checking" while we read the
+// permission + subscription, "unsupported" on Safari < 16 / in-app webviews,
+// "unconfigured" when the API has no VAPID key, "denied" when the user
+// rejected the permission, "off" when supported but not subscribed, and
+// "subscribed" once we've registered with the Push Service.
+function WebPushPanel() {
+  const { t } = useT();
+  const [state, setState] = useState('checking');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!pushSupported()) {
+        if (!cancelled) setState('unsupported');
+        return;
+      }
+      const vapid = await api.getVapidPublicKey().catch(() => '');
+      if (!vapid) {
+        if (!cancelled) setState('unconfigured');
+        return;
+      }
+      if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+        if (!cancelled) setState('denied');
+        return;
+      }
+      const sub = await currentSubscription().catch(() => null);
+      if (!cancelled) setState(sub ? 'subscribed' : 'off');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function enable() {
+    setBusy(true);
+    setError('');
+    try {
+      const sub = await subscribe();
+      await api.registerPushToken({
+        platform: 'web',
+        endpoint: sub.endpoint,
+        keys: { p256dh: sub.p256dh, auth: sub.auth },
+      });
+      setState('subscribed');
+    } catch (e) {
+      if (e?.name === 'NotAllowedError' || /denied/i.test(e?.message || '')) {
+        setState('denied');
+      } else {
+        setError(e.message || String(e));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disable() {
+    setBusy(true);
+    setError('');
+    try {
+      const sub = await currentSubscription();
+      if (sub) {
+        await api.unregisterPushToken({ platform: 'web', endpoint: sub.endpoint }).catch(() => {});
+      }
+      await unsubscribe();
+      setState('off');
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h2>{t('settings.webPushTitle')}</h2>
+      <p className="muted">{t('settings.webPushHint')}</p>
+      {state === 'checking' && <p>{t('common.loading')}</p>}
+      {state === 'unsupported' && <p className="muted">{t('settings.webPushUnsupported')}</p>}
+      {state === 'unconfigured' && <p className="muted">{t('settings.webPushUnconfigured')}</p>}
+      {state === 'denied' && <p className="muted">{t('settings.webPushDenied')}</p>}
+      {state === 'off' && (
+        <button className="btn-secondary" onClick={enable} disabled={busy}>
+          {busy ? t('common.loading') : t('settings.webPushEnable')}
+        </button>
+      )}
+      {state === 'subscribed' && (
+        <button className="btn-secondary" onClick={disable} disabled={busy}>
+          {busy ? t('common.loading') : t('settings.webPushDisable')}
+        </button>
+      )}
+      {error && <p className="error">{error}</p>}
+    </>
   );
 }
 
