@@ -16,6 +16,7 @@ import (
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/google/uuid"
 )
@@ -51,6 +52,11 @@ type Service struct {
 	users      user.Repository
 	disburser  port.Disburser
 	connect    port.ConnectGateway
+	// splitRepo is set via WithSplitPayments (S88, WF-GAP-004). When wired,
+	// the BookingCompleted handler iterates the booking's shares and emits
+	// one earning per share so the host's ledger reflects each
+	// contributor's slice of the net payout. nil → single-lump behaviour.
+	splitRepo splitpayment.Repository
 	// reserveLocks serialises the available-balance check and pending-disbursement
 	// insert per host, so two concurrent payout requests cannot reserve the same
 	// funds twice.
@@ -73,6 +79,15 @@ func NewService(
 		payouts: payouts, bookings: bookings, properties: properties,
 		users: users, disburser: disburser, connect: connect,
 	}
+}
+
+// WithSplitPayments plugs the split-payment repository into the service so
+// the BookingConfirmed handler can detect split-paid bookings and credit the
+// host one entry per share instead of a single lump (S88 — WF-GAP-004).
+// Returns the same service so construction can be chained.
+func (s *Service) WithSplitPayments(splits splitpayment.Repository) *Service {
+	s.splitRepo = splits
+	return s
 }
 
 // PayoutAccountStatus is the host's payout-onboarding state.

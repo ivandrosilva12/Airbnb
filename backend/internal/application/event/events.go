@@ -26,6 +26,11 @@ func init() {
 	Register(experiencebooking.ExperienceBookingCreated{}.EventName(), jsonDecoder[experiencebooking.ExperienceBookingCreated]())
 	Register(experiencebooking.ExperienceBookingConfirmed{}.EventName(), jsonDecoder[experiencebooking.ExperienceBookingConfirmed]())
 	Register(experiencebooking.ExperienceBookingCancelled{}.EventName(), jsonDecoder[experiencebooking.ExperienceBookingCancelled]())
+	// S88 — split-payment per-share lifecycle events (WF-GAP-001/005). One
+	// SplitShareAuthorized per share when the gateway hold succeeds, one
+	// SplitShareRefunded per share when a cancellation releases it.
+	Register(SplitShareAuthorized{}.EventName(), jsonDecoder[SplitShareAuthorized]())
+	Register(SplitShareRefunded{}.EventName(), jsonDecoder[SplitShareRefunded]())
 }
 
 // BookingRequested is published when a guest creates a booking. The host should
@@ -169,3 +174,37 @@ type SplitPaymentCompleted struct {
 }
 
 func (SplitPaymentCompleted) EventName() string { return "splitpayment.completed" }
+
+// SplitShareAuthorized is published when a single share's gateway hold is
+// successfully placed (WF-GAP-001 / S88). The reference is the per-share
+// transaction id returned by the payment gateway and is what the cancel
+// flow later passes to gateway.Refund to release the hold. Subscribers
+// use this for analytics / audit; the booking confirmation event is
+// SplitPaymentCompleted, fired separately once every share is paid.
+type SplitShareAuthorized struct {
+	SplitPaymentID uuid.UUID
+	BookingID      uuid.UUID
+	ShareID        uuid.UUID
+	PayerID        uuid.UUID
+	AmountCents    int64
+	Currency       string
+	GatewayRef     string
+}
+
+func (SplitShareAuthorized) EventName() string { return "splitpayment.share.authorized" }
+
+// SplitShareRefunded is published when a previously-authorized share has
+// its gateway hold released after a booking cancellation (WF-GAP-005 /
+// S88). One event is emitted per refunded share so downstream consumers
+// (analytics, the payer notification path) can react per contributor.
+type SplitShareRefunded struct {
+	SplitPaymentID uuid.UUID
+	BookingID      uuid.UUID
+	ShareID        uuid.UUID
+	PayerID        uuid.UUID
+	AmountCents    int64
+	Currency       string
+	GatewayRef     string
+}
+
+func (SplitShareRefunded) EventName() string { return "splitpayment.share.refunded" }

@@ -1304,7 +1304,11 @@ type SplitShareView struct {
 	PayerUserID *uuid.UUID `json:"payerUserId,omitempty"`
 	AmountCents int64      `json:"amountCents"`
 	Status      string     `json:"status"`
-	PaidAt      *time.Time `json:"paidAt,omitempty"`
+	// FailureReason is surfaced when the gateway refused the per-share
+	// authorize (S88). The UI shows it next to a "Retry" button on the
+	// failed payer's row.
+	FailureReason *string    `json:"failureReason,omitempty"`
+	PaidAt        *time.Time `json:"paidAt,omitempty"`
 }
 
 // SplitPaymentView is the wire shape for a split-payment plan.
@@ -1326,12 +1330,13 @@ func FromSplitPayment(sp *splitpayment.SplitPayment) SplitPaymentView {
 	shares := make([]SplitShareView, 0, len(sp.Shares))
 	for _, s := range sp.Shares {
 		shares = append(shares, SplitShareView{
-			ID:          s.ID,
-			PayerEmail:  s.PayerEmail,
-			PayerUserID: s.PayerUserID,
-			AmountCents: s.AmountCents,
-			Status:      string(s.Status),
-			PaidAt:      s.PaidAt,
+			ID:            s.ID,
+			PayerEmail:    s.PayerEmail,
+			PayerUserID:   s.PayerUserID,
+			AmountCents:   s.AmountCents,
+			Status:        string(s.Status),
+			FailureReason: s.FailureReason,
+			PaidAt:        s.PaidAt,
 		})
 	}
 	return SplitPaymentView{

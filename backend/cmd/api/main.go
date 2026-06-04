@@ -251,7 +251,11 @@ func run() error {
 	pushSender := infrapush.NewSender(cfg.Push)
 	pushTokenSvc := pushtokenapp.NewService(pushTokenRepo, userRepo, pushSender)
 	notificationSvc := notificationapp.NewService(notificationRepo).WithPush(pushTokenSvc.AsNotifier())
-	paymentSvc := paymentapp.NewService(paymentRepo, paymentgw.NewGateway(cfg.Payment), bookingRepo, propertyRepo).
+	// S88 — share one PaymentGateway instance across the payment subscriber
+	// AND the split-payment service so the per-share authorize/refund flow
+	// hits the same provider as the regular booking flow.
+	paymentGateway := paymentgw.NewGateway(cfg.Payment)
+	paymentSvc := paymentapp.NewService(paymentRepo, paymentGateway, bookingRepo, propertyRepo).
 		WithDeposits(depositRepo)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo)
@@ -259,8 +263,11 @@ func run() error {
 	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo).WithCohosts(cohostSvc)
 	messageSvc.WithCohosts(cohostSvc)
 	// Split payment: wire the SplitPayment service, then plug a tiny adapter
-	// into bookingapp so it can create a split alongside a booking.
-	splitPaymentSvc := splitpaymentapp.NewService(splitPaymentRepo, userRepo, uow)
+	// into bookingapp so it can create a split alongside a booking. S88 —
+	// hook the same PaymentGateway so AuthorizeShare places a real per-share
+	// hold and Cancel / the BookingCancelled subscription release them.
+	splitPaymentSvc := splitpaymentapp.NewService(splitPaymentRepo, userRepo, uow).
+		WithGateway(paymentGateway)
 	bookingSvc.WithSplitter(splitterAdapter{svc: splitPaymentSvc}, userEmailResolver{users: userRepo})
 	dispatcher.Subscribe(bookingSvc.EventHandler())
 	messageTemplateSvc := messagetemplateapp.NewService(messageTemplateRepo)
@@ -305,7 +312,8 @@ func run() error {
 	// after a successful Create.
 	bookingSvc.WithHouseRules(houseRulesSvc)
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email))
-	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment))
+	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment)).
+		WithSplitPayments(splitPaymentRepo) // S88 — credit per-share on split bookings
 	privacySvc := privacyapp.NewService(userRepo, bookingRepo, paymentRepo, favoriteRepo, notificationRepo, payoutRepo, reviewRepo)
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo, reviewRepo)
 	couponSvc := couponapp.NewService(couponRepo)
@@ -325,6 +333,10 @@ func run() error {
 	dispatcher.Subscribe(paymentSvc.EventHandler())
 	dispatcher.Subscribe(emailSvc.EventHandler())
 	dispatcher.Subscribe(payoutSvc.EventHandler())
+	// S88 — release per-share holds on cancellation (WF-GAP-005). Lives
+	// next to the other money-flow subscribers; the split-payment service
+	// reads the share table and calls gateway.Refund per paid share.
+	dispatcher.Subscribe(splitPaymentSvc.EventHandler())
 	dispatcher.Subscribe(realtimeSvc.EventHandler())
 
 	// --- Observability -----------------------------------------------------

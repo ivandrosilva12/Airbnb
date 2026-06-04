@@ -31,11 +31,21 @@ const (
 type ShareStatus string
 
 const (
-	SharePending ShareStatus = "pending" // invited, not yet authorised
-	SharePaid    ShareStatus = "paid"    // payer signed off on their portion
+	SharePending  ShareStatus = "pending"  // invited, payer hasn't authorised yet
+	SharePaid     ShareStatus = "paid"     // payer signed off — gateway hold placed, ref stored
+	ShareFailed   ShareStatus = "failed"   // gateway refused the per-share authorize; payer can retry
+	ShareRefunded ShareStatus = "refunded" // booking cancelled — the previously-authorized hold has been released
 )
 
 // Share is the value object representing one traveller's portion.
+//
+// GatewayRef is the per-share transaction reference returned by the payment
+// gateway when the share's hold was authorized (WF-GAP-001). It is nil while
+// the share is still pending (the per-share authorize has not been issued
+// yet) and on failed/refunded shares whose gateway side has been released.
+//
+// FailureReason carries the gateway's rejection text when a per-share
+// authorize fails — surfaced for operator triage; not shown to payers.
 type Share struct {
 	ID             uuid.UUID
 	SplitPaymentID uuid.UUID
@@ -44,12 +54,14 @@ type Share struct {
 	PayerEmail string
 	// PayerUserID is set once the share is authorised, recording who
 	// actually paid. nil while the share is still pending.
-	PayerUserID *uuid.UUID
-	AmountCents int64
-	Status      ShareStatus
-	PaidAt      *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	PayerUserID   *uuid.UUID
+	AmountCents   int64
+	Status        ShareStatus
+	GatewayRef    *string // S88 — set after a successful per-share gateway authorize
+	FailureReason *string // S88 — set when the gateway refuses authorize/refund
+	PaidAt        *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // SplitPayment is the aggregate root: the per-booking split plan and its
@@ -157,10 +169,16 @@ func New(bookingID, organizerID uuid.UUID, organizerEmail, currency string, tota
 
 // MarkSharePaid authorises one share. The payerEmail (case-folded) must match
 // the share's invited address; payerUserID records the authenticated user
-// who actually paid. Returns ErrNotFound if the shareID is unknown,
-// ErrConflict if the share is already paid or the SplitPayment is no longer
-// pending, and ErrForbidden if the email does not match the share.
-func (sp *SplitPayment) MarkSharePaid(shareID, payerUserID uuid.UUID, payerEmail string) error {
+// who actually paid; gatewayRef is the per-share transaction reference
+// returned by the payment gateway (empty in trust-mode tests, recorded
+// otherwise so the cancel flow can release exactly that hold).
+//
+// A share previously in ShareFailed may be retried back to SharePaid — the
+// payer's earlier card refusal is not terminal. SharePaid → SharePaid is a
+// conflict (already authorized). Returns ErrNotFound if the shareID is
+// unknown, ErrConflict on a non-pending split or already-paid share, and
+// ErrForbidden if the email does not match the share.
+func (sp *SplitPayment) MarkSharePaid(shareID, payerUserID uuid.UUID, payerEmail, gatewayRef string) error {
 	if sp.Status != StatusPending {
 		return shared.ErrConflict
 	}
@@ -169,7 +187,7 @@ func (sp *SplitPayment) MarkSharePaid(shareID, payerUserID uuid.UUID, payerEmail
 		if sp.Shares[i].ID != shareID {
 			continue
 		}
-		if sp.Shares[i].Status == SharePaid {
+		if sp.Shares[i].Status == SharePaid || sp.Shares[i].Status == ShareRefunded {
 			return shared.ErrConflict
 		}
 		if sp.Shares[i].PayerEmail != payerEmail {
@@ -179,6 +197,64 @@ func (sp *SplitPayment) MarkSharePaid(shareID, payerUserID uuid.UUID, payerEmail
 		sp.Shares[i].Status = SharePaid
 		sp.Shares[i].PaidAt = &now
 		sp.Shares[i].PayerUserID = &payerUserID
+		sp.Shares[i].FailureReason = nil
+		if gatewayRef != "" {
+			ref := gatewayRef
+			sp.Shares[i].GatewayRef = &ref
+		}
+		sp.Shares[i].UpdatedAt = now
+		sp.UpdatedAt = now
+		return nil
+	}
+	return shared.ErrNotFound
+}
+
+// MarkShareFailed records a per-share authorize failure. The payerEmail must
+// match the invited address (same authorisation rule as MarkSharePaid). The
+// share moves to ShareFailed and the reason is kept for operator triage. A
+// failed share does NOT progress the split toward completion; the payer can
+// re-attempt later, flipping the share back to SharePaid on success.
+func (sp *SplitPayment) MarkShareFailed(shareID, payerUserID uuid.UUID, payerEmail, reason string) error {
+	if sp.Status != StatusPending {
+		return shared.ErrConflict
+	}
+	payerEmail = strings.TrimSpace(strings.ToLower(payerEmail))
+	for i := range sp.Shares {
+		if sp.Shares[i].ID != shareID {
+			continue
+		}
+		if sp.Shares[i].Status == SharePaid || sp.Shares[i].Status == ShareRefunded {
+			return shared.ErrConflict
+		}
+		if sp.Shares[i].PayerEmail != payerEmail {
+			return shared.ErrForbidden
+		}
+		now := time.Now().UTC()
+		sp.Shares[i].Status = ShareFailed
+		sp.Shares[i].PayerUserID = &payerUserID
+		r := reason
+		sp.Shares[i].FailureReason = &r
+		sp.Shares[i].UpdatedAt = now
+		sp.UpdatedAt = now
+		return nil
+	}
+	return shared.ErrNotFound
+}
+
+// MarkShareRefunded transitions a previously-paid share to ShareRefunded
+// after the gateway-side hold has been released (booking cancelled). A
+// share that is not paid is skipped (returns ErrConflict) — there is
+// nothing to refund.
+func (sp *SplitPayment) MarkShareRefunded(shareID uuid.UUID) error {
+	for i := range sp.Shares {
+		if sp.Shares[i].ID != shareID {
+			continue
+		}
+		if sp.Shares[i].Status != SharePaid {
+			return shared.ErrConflict
+		}
+		now := time.Now().UTC()
+		sp.Shares[i].Status = ShareRefunded
 		sp.Shares[i].UpdatedAt = now
 		sp.UpdatedAt = now
 		return nil

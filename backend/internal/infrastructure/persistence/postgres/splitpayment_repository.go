@@ -47,7 +47,7 @@ const splitPaymentColumns = `id, booking_id, organizer_id, currency, total_cents
 		created_at, updated_at, completed_at, cancelled_at`
 
 const splitShareColumns = `id, split_payment_id, payer_email, payer_user_id, amount_cents,
-		status, paid_at, created_at, updated_at`
+		status, gateway_ref, failure_reason, paid_at, created_at, updated_at`
 
 func (r *SplitPaymentRepository) Create(ctx context.Context, sp *splitpayment.SplitPayment) error {
 	// When bound to a Pool, open an inner tx so the parent + shares are
@@ -120,9 +120,9 @@ func insertShares(ctx context.Context, q querier, shares []splitpayment.Share) e
 	for _, sh := range shares {
 		if _, err := q.Exec(ctx, `
 			INSERT INTO split_payment_shares (`+splitShareColumns+`)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
 			sh.ID, sh.SplitPaymentID, sh.PayerEmail, sh.PayerUserID, sh.AmountCents,
-			string(sh.Status), sh.PaidAt, sh.CreatedAt, sh.UpdatedAt,
+			string(sh.Status), sh.GatewayRef, sh.FailureReason, sh.PaidAt, sh.CreatedAt, sh.UpdatedAt,
 		); err != nil {
 			return mapError(err)
 		}
@@ -167,7 +167,7 @@ func (r *SplitPaymentRepository) loadShares(ctx context.Context, splitID uuid.UU
 		var status string
 		if err := rows.Scan(
 			&sh.ID, &sh.SplitPaymentID, &sh.PayerEmail, &sh.PayerUserID, &sh.AmountCents,
-			&status, &sh.PaidAt, &sh.CreatedAt, &sh.UpdatedAt,
+			&status, &sh.GatewayRef, &sh.FailureReason, &sh.PaidAt, &sh.CreatedAt, &sh.UpdatedAt,
 		); err != nil {
 			return nil, mapError(err)
 		}

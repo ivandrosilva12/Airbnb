@@ -58,8 +58,11 @@ func (h *SplitPaymentHandler) GetForBooking(c *gin.Context) {
 	response.OK(c, dto.FromSplitPayment(sp))
 }
 
-// AuthorizeShare marks one share paid (in this slice, trust-mode: no real
-// gateway capture happens — the payer signing off is the commitment).
+// AuthorizeShare marks one share paid. S88 (WF-GAP-001) — when the
+// service has a payment gateway wired (production), this also places a
+// real per-share hold and stores the returned reference on the share so
+// the cancel flow can release exactly that hold. With no gateway the
+// service runs in trust mode (legacy tests).
 func (h *SplitPaymentHandler) AuthorizeShare(c *gin.Context) {
 	actorID, ok := requireUser(c)
 	if !ok {

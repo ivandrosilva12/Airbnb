@@ -104,30 +104,34 @@ func TestMarkSharePaid(t *testing.T) {
 	friendShare := sp.Shares[1]
 
 	// Wrong email → forbidden.
-	if err := sp.MarkSharePaid(orgShare.ID, uuid.New(), "stranger@test.dev"); !errors.Is(err, shared.ErrForbidden) {
+	if err := sp.MarkSharePaid(orgShare.ID, uuid.New(), "stranger@test.dev", ""); !errors.Is(err, shared.ErrForbidden) {
 		t.Fatalf("wrong email: got %v, want ErrForbidden", err)
 	}
 
 	// Unknown share id → not found.
-	if err := sp.MarkSharePaid(uuid.New(), uuid.New(), "org@test.dev"); !errors.Is(err, shared.ErrNotFound) {
+	if err := sp.MarkSharePaid(uuid.New(), uuid.New(), "org@test.dev", ""); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("unknown share: got %v, want ErrNotFound", err)
 	}
 
-	// First share authorised.
-	if err := sp.MarkSharePaid(orgShare.ID, uuid.New(), "ORG@test.dev"); err != nil {
+	// First share authorised with a gateway ref — the ref must round-trip
+	// onto the share so the cancel flow can release exactly that hold.
+	if err := sp.MarkSharePaid(orgShare.ID, uuid.New(), "ORG@test.dev", "gw_ref_one"); err != nil {
 		t.Fatalf("mark first paid: %v", err)
+	}
+	if sp.Shares[0].GatewayRef == nil || *sp.Shares[0].GatewayRef != "gw_ref_one" {
+		t.Fatalf("gateway ref on org share = %v, want gw_ref_one", sp.Shares[0].GatewayRef)
 	}
 	if sp.AllPaid() {
 		t.Fatalf("AllPaid should be false with one share still pending")
 	}
 
 	// Double-paying the same share rejected.
-	if err := sp.MarkSharePaid(orgShare.ID, uuid.New(), "org@test.dev"); !errors.Is(err, shared.ErrConflict) {
+	if err := sp.MarkSharePaid(orgShare.ID, uuid.New(), "org@test.dev", ""); !errors.Is(err, shared.ErrConflict) {
 		t.Fatalf("double-pay: got %v, want ErrConflict", err)
 	}
 
-	// Second share authorised.
-	if err := sp.MarkSharePaid(friendShare.ID, uuid.New(), "friend@test.dev"); err != nil {
+	// Second share authorised (trust mode: no gateway ref).
+	if err := sp.MarkSharePaid(friendShare.ID, uuid.New(), "friend@test.dev", ""); err != nil {
 		t.Fatalf("mark second paid: %v", err)
 	}
 	if !sp.AllPaid() {
@@ -146,8 +150,72 @@ func TestMarkSharePaid(t *testing.T) {
 	}
 
 	// After completion, no more share mutations.
-	if err := sp.MarkSharePaid(orgShare.ID, uuid.New(), "org@test.dev"); !errors.Is(err, shared.ErrConflict) {
+	if err := sp.MarkSharePaid(orgShare.ID, uuid.New(), "org@test.dev", ""); !errors.Is(err, shared.ErrConflict) {
 		t.Fatalf("post-completion pay: got %v, want ErrConflict", err)
+	}
+}
+
+// TestMarkShareFailedAndRetry — a gateway-refused share moves to ShareFailed,
+// keeps the split pending, and the payer can retry to flip it back to paid.
+func TestMarkShareFailedAndRetry(t *testing.T) {
+	sp, err := New(uuid.New(), uuid.New(), "org@test.dev", "EUR", 30000, []ShareInput{
+		{Email: "org@test.dev", AmountCents: 10000},
+		{Email: "friend@test.dev", AmountCents: 20000},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	friendShare := sp.Shares[1]
+
+	if err := sp.MarkShareFailed(friendShare.ID, uuid.New(), "friend@test.dev", "bank declined"); err != nil {
+		t.Fatalf("MarkShareFailed: %v", err)
+	}
+	if sp.Shares[1].Status != ShareFailed {
+		t.Fatalf("status = %q, want failed", sp.Shares[1].Status)
+	}
+	if sp.Shares[1].FailureReason == nil || *sp.Shares[1].FailureReason != "bank declined" {
+		t.Fatalf("failure reason = %v, want bank declined", sp.Shares[1].FailureReason)
+	}
+	// AllPaid is still false (failed share isn't paid).
+	if sp.AllPaid() {
+		t.Fatalf("AllPaid should be false with a failed share")
+	}
+	// Retry succeeds: failed → paid.
+	if err := sp.MarkSharePaid(friendShare.ID, uuid.New(), "friend@test.dev", "gw_retry"); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if sp.Shares[1].Status != SharePaid {
+		t.Fatalf("after retry status = %q, want paid", sp.Shares[1].Status)
+	}
+	if sp.Shares[1].FailureReason != nil {
+		t.Fatalf("failure reason should be cleared on retry")
+	}
+}
+
+// TestMarkShareRefunded — a paid share is refundable; pending/failed shares
+// are not (nothing to refund).
+func TestMarkShareRefunded(t *testing.T) {
+	sp, _ := New(uuid.New(), uuid.New(), "org@test.dev", "EUR", 30000, []ShareInput{
+		{Email: "org@test.dev", AmountCents: 10000},
+		{Email: "friend@test.dev", AmountCents: 20000},
+	})
+	if err := sp.MarkSharePaid(sp.Shares[0].ID, uuid.New(), "org@test.dev", "gw_a"); err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	// Refund a paid share — OK.
+	if err := sp.MarkShareRefunded(sp.Shares[0].ID); err != nil {
+		t.Fatalf("MarkShareRefunded: %v", err)
+	}
+	if sp.Shares[0].Status != ShareRefunded {
+		t.Fatalf("status = %q, want refunded", sp.Shares[0].Status)
+	}
+	// Double-refund rejected.
+	if err := sp.MarkShareRefunded(sp.Shares[0].ID); !errors.Is(err, shared.ErrConflict) {
+		t.Fatalf("double refund: got %v, want ErrConflict", err)
+	}
+	// Refunding a pending share is also a conflict.
+	if err := sp.MarkShareRefunded(sp.Shares[1].ID); !errors.Is(err, shared.ErrConflict) {
+		t.Fatalf("refund pending: got %v, want ErrConflict", err)
 	}
 }
 

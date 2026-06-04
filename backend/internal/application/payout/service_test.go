@@ -13,6 +13,7 @@ import (
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/domain/user"
 	infrapayment "github.com/airhost/backend/internal/infrastructure/payment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
@@ -471,5 +472,71 @@ func TestEventHandler_NoRefundWithoutPriorEarning(t *testing.T) {
 	}
 	if len(page.Items) != 0 {
 		t.Fatalf("entries = %+v, want none", page.Items)
+	}
+}
+
+// TestEventHandler_SplitBookingCreditsPerShare — S88 / WF-GAP-004. With a
+// split-payment repository wired into the service, a BookingConfirmed for a
+// split-paid booking credits the host one earning per share (each sized to
+// share/total of the net), instead of one lump sum. The total still equals
+// the booking's net payout, but the ledger now shows each contributor's
+// slice — the necessary read-side for accurate dispute / cancel accounting.
+func TestEventHandler_SplitBookingCreditsPerShare(t *testing.T) {
+	ctx := context.Background()
+	props := memory.NewPropertyRepository()
+	bookings := memory.NewBookingRepository()
+	payouts := memory.NewPayoutRepository()
+	splits := memory.NewSplitPaymentRepository()
+	hostID := uuid.New()
+	b := seed(t, props, bookings, hostID)
+
+	// Seed a 60/40 split for this booking. Amounts must sum to the
+	// booking total (36300 cents — see seed: 3 nights × 100.00 + 30.00).
+	totalCents := b.Pricing.Total.AmountCents()
+	share1Cents := totalCents * 60 / 100
+	share2Cents := totalCents - share1Cents
+	sp, err := splitpayment.New(b.ID, b.GuestID, "org@test.dev", "EUR", totalCents, []splitpayment.ShareInput{
+		{Email: "org@test.dev", AmountCents: share1Cents},
+		{Email: "friend@test.dev", AmountCents: share2Cents},
+	})
+	if err != nil {
+		t.Fatalf("new split: %v", err)
+	}
+	if err := splits.Create(ctx, sp); err != nil {
+		t.Fatalf("save split: %v", err)
+	}
+
+	svc := payoutapp.NewService(payouts, bookings, props, memory.NewUserRepository(), infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway()).
+		WithSplitPayments(splits)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	dispatcher.Publish(ctx, event.BookingConfirmed{BookingID: b.ID, PropertyID: b.PropertyID, GuestID: b.GuestID})
+
+	page, err := svc.ListEntries(ctx, hostID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("entries = %d, want 2 (one per share); got %+v", len(page.Items), page.Items)
+	}
+	var sumCents int64
+	for _, e := range page.Items {
+		if e.Kind != payout.KindEarning {
+			t.Fatalf("entry kind = %v, want earning", e.Kind)
+		}
+		sumCents += e.Amount.AmountCents()
+	}
+	// Two earnings still sum to the host's net payout (the 10% service
+	// fee is taken off the booking total: 36300 - 3300 = 33000).
+	if sumCents != 33000 {
+		t.Fatalf("sum of per-share earnings = %d, want 33000", sumCents)
+	}
+	balances, err := svc.Summary(ctx, hostID)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if len(balances) != 1 || balances[0].NetCents() != 33000 {
+		t.Fatalf("host balance = %+v, want net 33000 EUR", balances)
 	}
 }

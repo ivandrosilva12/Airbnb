@@ -2,12 +2,15 @@ package payoutapp
 
 import (
 	"context"
-	"github.com/airhost/backend/internal/observability/logctx"
+	"errors"
 	"math"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/payout"
+	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
+	"github.com/airhost/backend/internal/observability/logctx"
 	"github.com/google/uuid"
 )
 
@@ -51,9 +54,85 @@ func (s *Service) recordEarning(ctx context.Context, ev event.BookingConfirmed) 
 		logctx.LoggerFrom(ctx).Error("payout: invalid net amount", "booking", ev.BookingID, "error", err)
 		return
 	}
+
+	// S88 — WF-GAP-004. If the booking is paid by a split-payment plan and
+	// we have visibility into the share table, credit the host per share
+	// rather than as one lump. Each share contributes its proportional
+	// slice of the *net* payout (i.e. the platform service fee is taken
+	// off the full booking total first; what remains is what the host
+	// actually earns, then distributed per share). The host keeps the
+	// same total — only the bookkeeping shifts — so downstream sums are
+	// unchanged.
+	if s.splitRepo != nil {
+		if persisted := s.recordSplitEarnings(ctx, prop, b, net); persisted {
+			return
+		}
+	}
+
 	if err := s.payouts.Create(ctx, payout.NewEarning(prop.HostID, b.ID, prop.ID, net)); err != nil {
 		logctx.LoggerFrom(ctx).Error("payout: persist earning failed", "booking", ev.BookingID, "error", err)
 	}
+}
+
+// recordSplitEarnings emits one earning entry per share when the booking has
+// a split. Reports whether the per-share path actually ran (true) so the
+// caller can skip the single-lump fallback. A booking with no split, or a
+// split with no paid shares (a still-pending split shouldn't normally see a
+// BookingConfirmed, but be defensive), falls back to the single-lump path
+// to keep the host's balance correct.
+func (s *Service) recordSplitEarnings(ctx context.Context, prop *property.Property, b *booking.Booking, net shared.Money) bool {
+	sp, err := s.splitRepo.FindByBookingID(ctx, b.ID)
+	if err != nil {
+		if !errors.Is(err, shared.ErrNotFound) {
+			logctx.LoggerFrom(ctx).Error("payout: split lookup failed", "booking", b.ID, "error", err)
+		}
+		return false // no split (or lookup failed) — fall back to lump payout
+	}
+	if len(sp.Shares) == 0 {
+		return false
+	}
+
+	// Each share contributes its proportional slice of the net payout,
+	// computed from the share's amount divided by the booking total. The
+	// last share absorbs any rounding remainder so the per-share entries
+	// always sum exactly to net.AmountCents().
+	totalCents := sp.TotalCents
+	if totalCents <= 0 {
+		return false
+	}
+	netCents := net.AmountCents()
+	var allocated int64
+	allocations := make([]int64, len(sp.Shares))
+	for i, sh := range sp.Shares {
+		if i == len(sp.Shares)-1 {
+			allocations[i] = netCents - allocated
+			continue
+		}
+		// Integer math: share.AmountCents * netCents / totalCents.
+		allocations[i] = sh.AmountCents * netCents / totalCents
+		allocated += allocations[i]
+	}
+
+	for i, sh := range sp.Shares {
+		amt := allocations[i]
+		if amt <= 0 {
+			continue
+		}
+		money, err := shared.NewMoney(amt, net.Currency())
+		if err != nil {
+			logctx.LoggerFrom(ctx).Error("payout: per-share amount invalid",
+				"booking", b.ID, "share", sh.ID, "error", err)
+			continue
+		}
+		if err := s.payouts.Create(ctx, payout.NewEarning(prop.HostID, b.ID, prop.ID, money)); err != nil {
+			logctx.LoggerFrom(ctx).Error("payout: persist per-share earning failed",
+				"booking", b.ID, "share", sh.ID, "error", err)
+			// Don't bail mid-loop: the booking-level HasEarningForBooking
+			// guard already protects against the at-least-once retry; an
+			// operator can replay the event after fixing the root cause.
+		}
+	}
+	return true
 }
 
 func (s *Service) recordRefund(ctx context.Context, ev event.BookingCancelled) {
