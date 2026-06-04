@@ -324,6 +324,12 @@ function UsersPanel() {
   // bookmark a filtered users list. The Apply button (or Enter on the
   // input) triggers the fetch.
   const [filters, setFilters] = useState({ email: '', role: '', activeOnly: false });
+  // S109 — client-side instant search across the currently-fetched page,
+  // matching case-insensitively against name OR email substring. The
+  // existing `filters.email` is server-side (used by the Apply button to
+  // narrow the page); this is the "scan the page I just got" affordance
+  // hosts asked for. Empty query → show all.
+  const [search, setSearch] = useState('');
 
   async function load() {
     setLoading(true);
@@ -400,12 +406,28 @@ function UsersPanel() {
         </label>
         <button type="submit" className="btn btn-primary">{t('admin.users.apply')}</button>
       </form>
+      {/* S109 — client-side search box. Filters the already-fetched page
+          by name OR email substring, case-insensitive. Independent from
+          the server-side filter form above (which re-queries the API). */}
+      <input
+        type="search"
+        className="admin-search"
+        placeholder={t('admin.users.searchPlaceholder')}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        aria-label={t('admin.users.searchPlaceholder')}
+      />
       {error && <p className="error" role="alert">{error}</p>}
-      {loading ? (
-        <p role="status">{t('common.loading')}</p>
-      ) : items.length === 0 ? (
-        <p>{t('admin.users.empty')}</p>
-      ) : (
+      {(() => {
+        const q = search.trim().toLowerCase();
+        const filtered = q === '' ? items : items.filter((u) => {
+          const name = (u.name || '').toLowerCase();
+          const email = (u.email || '').toLowerCase();
+          return name.includes(q) || email.includes(q);
+        });
+        if (loading) return <p role="status">{t('common.loading')}</p>;
+        if (filtered.length === 0) return <p>{t('admin.users.empty')}</p>;
+        return (
         <>
           <p className="muted">{t('admin.users.total', { n: total })}</p>
           <table className="admin-table">
@@ -419,7 +441,7 @@ function UsersPanel() {
               </tr>
             </thead>
             <tbody>
-              {items.map((u) => (
+              {filtered.map((u) => (
                 <tr key={u.id}>
                   <td>{u.email}</td>
                   <td>{u.fullName}</td>
@@ -451,7 +473,8 @@ function UsersPanel() {
             </tbody>
           </table>
         </>
-      )}
+        );
+      })()}
     </section>
   );
 }
