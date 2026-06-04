@@ -445,7 +445,7 @@ func newAsyncFixture(t *testing.T) *asyncFixture {
 	dispatcher := event.NewDispatcher()
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, dispatcher)
-	uow := memory.NewUnitOfWork(bookings, nil, nil, outbox, relay)
+	uow := memory.NewUnitOfWork(bookings, nil, nil, nil, nil, outbox, relay)
 	svc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), coupons, priceRules, 0, stubVerifier{}, false, uow)
 	dispatcher.Subscribe(svc.EventHandler())
 
