@@ -67,6 +67,40 @@ func (s *Service) EventHandler() event.Handler {
 				"Identity verified",
 				"Your identity has been verified. You now have a verified badge.", ev.VerificationID, PushCatAccount)
 
+		// Offer lifecycle (S99 — WF-GAP-008). Created → notify guest;
+		// Declined → notify host; Withdrawn → notify guest. PushCatBookings
+		// because the user thinks of these as part of their booking flow.
+		case event.OfferCreated:
+			title := propertyTitleOr(ev.PropertyTitle, "a property")
+			body := fmt.Sprintf("A host sent you an offer for %q.", title)
+			if ev.Kind == "pre_approval" {
+				body = fmt.Sprintf("A host pre-approved you to book %q.", title)
+			}
+			err = s.create(ctx, ev.GuestID, notification.TypeOfferReceived,
+				"New offer", body, ev.OfferID, PushCatBookings)
+		case event.OfferDeclined:
+			title := propertyTitleOr(ev.PropertyTitle, "your property")
+			err = s.create(ctx, ev.HostID, notification.TypeOfferDeclined,
+				"Offer declined",
+				fmt.Sprintf("The guest declined your offer for %q.", title),
+				ev.OfferID, PushCatBookings)
+		case event.OfferWithdrawn:
+			title := propertyTitleOr(ev.PropertyTitle, "a property")
+			err = s.create(ctx, ev.GuestID, notification.TypeOfferWithdrawn,
+				"Offer withdrawn",
+				fmt.Sprintf("The host withdrew their offer for %q.", title),
+				ev.OfferID, PushCatBookings)
+
+		case event.CohostInvited:
+			// S99 / WF-GAP-016 — the invitee is told they have a new
+			// co-host grant. Account-category push because cohosting is a
+			// role change, not a per-booking event.
+			title := propertyTitleOr(ev.PropertyTitle, "a property")
+			err = s.create(ctx, ev.UserID, notification.TypeCohostInvited,
+				"You're now a co-host",
+				fmt.Sprintf("A host added you as a co-host on %q. Check the cohost mailbox to start helping.", title),
+				ev.PropertyID, PushCatAccount)
+
 		case event.DisputeOpened:
 			// The non-opener party is notified so they can respond. We always notify
 			// the opposite side; admins see the case in the moderation queue.
@@ -173,6 +207,16 @@ func (s *Service) EventHandler() event.Handler {
 // have failed (deleted experience, transient repo error) and we'd rather
 // say "your experience" than render an empty pair of quotes.
 func experienceTitleOr(title, fallback string) string {
+	if title == "" {
+		return fallback
+	}
+	return title
+}
+
+// propertyTitleOr is the same fallback dance for property-titled events
+// (offers, in particular — the host may have deleted the listing between
+// dispatching and consuming the event).
+func propertyTitleOr(title, fallback string) string {
 	if title == "" {
 		return fallback
 	}

@@ -36,6 +36,17 @@ const (
 	// the split up) and every other payer receive one, so the whole group
 	// knows the trip is booked.
 	TypeSplitPaymentCompleted Type = "split_payment_completed"
+	// Offer lifecycle (S99 — WF-GAP-008). OfferReceived is sent to the
+	// guest when a host opens a pre-approval / special offer; OfferDeclined
+	// tells the host their offer was rejected; OfferWithdrawn tells the
+	// guest the host took the offer back before they acted on it.
+	TypeOfferReceived  Type = "offer_received"
+	TypeOfferDeclined  Type = "offer_declined"
+	TypeOfferWithdrawn Type = "offer_withdrawn"
+	// TypeCohostInvited fires when a host grants a user one or more cohost
+	// permissions on a listing (S99 — WF-GAP-016). The invitee is notified
+	// so the grant doesn't sit silently in their cohost mailbox.
+	TypeCohostInvited Type = "cohost_invited"
 )
 
 // Notification is the aggregate root for a single in-app notification.

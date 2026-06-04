@@ -268,7 +268,10 @@ func run() error {
 		// booking aggregate directly.
 		WithPublisher(dispatcher)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
-	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo)
+	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo).
+		// S99 / WF-GAP-016 — emit CohostInvited so the invitee gets a
+		// notification + SSE hint when a host grants them access.
+		WithPublisher(dispatcher)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc)
 	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo).WithCohosts(cohostSvc)
 	messageSvc.WithCohosts(cohostSvc)
@@ -339,7 +342,11 @@ func run() error {
 	reportSvc := reportapp.NewService(reportRepo, propertyRepo, reviewRepo)
 	couponSvc := couponapp.NewService(couponRepo)
 	userBlockSvc := userblockapp.NewService(userBlockRepo)
-	offerSvc := offerapp.NewService(offerRepo, propertyRepo, bookingSvc)
+	offerSvc := offerapp.NewService(offerRepo, propertyRepo, bookingSvc).
+		// S99 / WF-GAP-008 — emit OfferCreated/Declined/Withdrawn so the
+		// notification, email and realtime subscribers fan the right
+		// hint out to host or guest.
+		WithPublisher(dispatcher)
 	savedSearchSvc := savedsearchapp.NewService(savedSearchRepo, searchSvc, notificationSvc)
 	// Dispute resolution runs inside a UnitOfWork (S89 — WF-GAP-003 +
 	// WF-GAP-013): the dispute row and its DisputeOpened / DisputeResolved

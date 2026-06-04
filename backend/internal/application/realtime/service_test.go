@@ -185,3 +185,39 @@ func TestEventHandler_SplitPaymentCompletedSkipsWhenReposMissing(t *testing.T) {
 		t.Fatalf("pushes without repos = %+v, want none", hub.sent)
 	}
 }
+
+// TestEventHandler_DisputeEventsPushHints — S99 / WF-GAP-002. When a guest or
+// host opens a Resolution Center case, the OTHER party gets the badge; when
+// a moderator decides it, BOTH parties do.
+func TestEventHandler_DisputeEventsPushHints(t *testing.T) {
+	ctx := context.Background()
+	hub := &fakeBroadcaster{}
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(realtimeapp.NewService(hub).EventHandler())
+
+	hostID := uuid.New()
+	guestID := uuid.New()
+
+	// Guest opens → host (respondent) is pushed.
+	dispatcher.Publish(ctx, event.DisputeOpened{
+		DisputeID: uuid.New(), BookingID: uuid.New(),
+		HostID: hostID, GuestID: guestID, OpenerID: guestID,
+	})
+	if len(hub.sent) != 1 || hub.sent[0].UserID != hostID {
+		t.Fatalf("guest-opens push = %+v, want one to host", hub.sent)
+	}
+
+	// Resolved → both parties pushed.
+	hub.sent = nil
+	dispatcher.Publish(ctx, event.DisputeResolved{
+		DisputeID: uuid.New(), BookingID: uuid.New(),
+		HostID: hostID, GuestID: guestID,
+	})
+	if len(hub.sent) != 2 {
+		t.Fatalf("resolved pushes = %d, want 2 (%+v)", len(hub.sent), hub.sent)
+	}
+	got := map[uuid.UUID]bool{hub.sent[0].UserID: true, hub.sent[1].UserID: true}
+	if !got[hostID] || !got[guestID] {
+		t.Fatalf("resolved pushes targets = %v, want both host and guest", got)
+	}
+}

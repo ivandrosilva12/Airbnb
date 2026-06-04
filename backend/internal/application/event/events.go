@@ -35,6 +35,15 @@ func init() {
 	// this once the gateway settles an async authorization via webhook, and
 	// the booking service subscriber promotes pending→confirmed when allowed.
 	Register(PaymentAuthorized{}.EventName(), jsonDecoder[PaymentAuthorized]())
+	// S99 — offer lifecycle events (WF-GAP-008). OfferAccepted is intentionally
+	// omitted: Accept always produces a BookingConfirmed, which the existing
+	// subscribers already handle.
+	Register(OfferCreated{}.EventName(), jsonDecoder[OfferCreated]())
+	Register(OfferDeclined{}.EventName(), jsonDecoder[OfferDeclined]())
+	Register(OfferWithdrawn{}.EventName(), jsonDecoder[OfferWithdrawn]())
+	// S99 — co-host invitation (WF-GAP-016). The invitee is notified so the
+	// grant doesn't sit silently in their mailbox-of-things-you-can-do.
+	Register(CohostInvited{}.EventName(), jsonDecoder[CohostInvited]())
 }
 
 // BookingRequested is published when a guest creates a booking. The host should
@@ -234,3 +243,60 @@ type PaymentAuthorized struct {
 }
 
 func (PaymentAuthorized) EventName() string { return "payment.authorized" }
+
+// OfferCreated is published when a host sends a guest a pre-approval or a
+// special offer (S9 — special offers, WF-GAP-008 — eventing). The guest is
+// notified so they see it in their inbox; web/mobile push the same hint.
+// Note: OfferAccepted has no dedicated event because Accept creates a real
+// booking, and BookingConfirmed already covers the host-side notification.
+type OfferCreated struct {
+	OfferID       uuid.UUID
+	PropertyID    uuid.UUID
+	PropertyTitle string
+	HostID        uuid.UUID
+	GuestID       uuid.UUID
+	Kind          string // "pre_approval" or "special_offer"
+}
+
+func (OfferCreated) EventName() string { return "offer.created" }
+
+// OfferDeclined is published when a guest declines a pending offer. The host
+// is told that the offer they extended was rejected.
+type OfferDeclined struct {
+	OfferID       uuid.UUID
+	PropertyID    uuid.UUID
+	PropertyTitle string
+	HostID        uuid.UUID
+	GuestID       uuid.UUID
+}
+
+func (OfferDeclined) EventName() string { return "offer.declined" }
+
+// OfferWithdrawn is published when a host takes back an offer before the
+// guest acts on it. The guest sees the offer disappear from their inbox.
+type OfferWithdrawn struct {
+	OfferID       uuid.UUID
+	PropertyID    uuid.UUID
+	PropertyTitle string
+	HostID        uuid.UUID
+	GuestID       uuid.UUID
+}
+
+func (OfferWithdrawn) EventName() string { return "offer.withdrawn" }
+
+// CohostInvited is published when the primary host of a listing grants a
+// user one or more co-host permissions on it (S17 — host roles, S99 —
+// WF-GAP-016 eventing). The invited user is told so they know to head to
+// the cohost mailbox to start helping with the listing.
+type CohostInvited struct {
+	CohostID      uuid.UUID
+	PropertyID    uuid.UUID
+	PropertyTitle string
+	HostID        uuid.UUID
+	UserID        uuid.UUID // the invitee
+	// Permissions captures what the cohost was granted (read-only audit
+	// payload — events are append-only; later PATCHes don't update it).
+	Permissions []string
+}
+
+func (CohostInvited) EventName() string { return "cohost.invited" }

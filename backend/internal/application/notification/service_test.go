@@ -321,3 +321,64 @@ func TestEventHandler_SplitPaymentCompletedSkipsWhenReposMissing(t *testing.T) {
 		t.Fatalf("notifications created without repos: count=%d", c)
 	}
 }
+
+// TestEventHandler_OfferEventsNotifyTheRightParty — S99 / WF-GAP-008.
+// OfferCreated → guest; OfferDeclined → host; OfferWithdrawn → guest.
+func TestEventHandler_OfferEventsNotifyTheRightParty(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewNotificationRepository()
+	svc := notificationapp.NewService(repo)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	hostID := uuid.New()
+	guestID := uuid.New()
+
+	dispatcher.Publish(ctx, event.OfferCreated{
+		OfferID: uuid.New(), PropertyTitle: "Loft", HostID: hostID, GuestID: guestID, Kind: "special_offer",
+	})
+	if c, _ := svc.UnreadCount(ctx, guestID); c != 1 {
+		t.Errorf("guest unread after Created = %d, want 1", c)
+	}
+	if c, _ := svc.UnreadCount(ctx, hostID); c != 0 {
+		t.Errorf("host unread after Created = %d, want 0", c)
+	}
+
+	dispatcher.Publish(ctx, event.OfferDeclined{
+		OfferID: uuid.New(), PropertyTitle: "Loft", HostID: hostID, GuestID: guestID,
+	})
+	if c, _ := svc.UnreadCount(ctx, hostID); c != 1 {
+		t.Errorf("host unread after Declined = %d, want 1", c)
+	}
+
+	dispatcher.Publish(ctx, event.OfferWithdrawn{
+		OfferID: uuid.New(), PropertyTitle: "Loft", HostID: hostID, GuestID: guestID,
+	})
+	if c, _ := svc.UnreadCount(ctx, guestID); c != 2 {
+		t.Errorf("guest unread after Withdrawn = %d, want 2", c)
+	}
+}
+
+// TestEventHandler_CohostInvitedNotifiesInvitee — S99 / WF-GAP-016.
+func TestEventHandler_CohostInvitedNotifiesInvitee(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewNotificationRepository()
+	svc := notificationapp.NewService(repo)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	hostID := uuid.New()
+	inviteeID := uuid.New()
+	propID := uuid.New()
+
+	dispatcher.Publish(ctx, event.CohostInvited{
+		CohostID: uuid.New(), PropertyID: propID, PropertyTitle: "Beach House",
+		HostID: hostID, UserID: inviteeID, Permissions: []string{"reply_messages"},
+	})
+	if c, _ := svc.UnreadCount(ctx, inviteeID); c != 1 {
+		t.Errorf("invitee unread = %d, want 1", c)
+	}
+	if c, _ := svc.UnreadCount(ctx, hostID); c != 0 {
+		t.Errorf("host unread = %d, want 0 (the host is the one who invited)", c)
+	}
+}

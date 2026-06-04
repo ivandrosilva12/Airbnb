@@ -75,6 +75,36 @@ func (s *Service) EventHandler() event.Handler {
 		case event.IdentityVerified:
 			s.push(ev.UserID, Update{Type: "notification"})
 
+		// Resolution Center events (S99 / WF-GAP-002) — push the badge
+		// to whoever didn't trigger the case. DisputeOpened goes to the
+		// respondent (the OTHER party from the opener), DisputeResolved
+		// fans out to both guest and host so each sees the decision in
+		// their inbox without polling.
+		case event.DisputeOpened:
+			respondent := ev.HostID
+			if ev.OpenerID == ev.HostID {
+				respondent = ev.GuestID
+			}
+			s.push(respondent, Update{Type: "notification"})
+		case event.DisputeResolved:
+			s.push(ev.GuestID, Update{Type: "notification"})
+			s.push(ev.HostID, Update{Type: "notification"})
+
+		// Offer lifecycle (S99 / WF-GAP-008) — push the badge to whichever
+		// party isn't the one who acted.
+		case event.OfferCreated:
+			s.push(ev.GuestID, Update{Type: "notification"})
+		case event.OfferDeclined:
+			s.push(ev.HostID, Update{Type: "notification"})
+		case event.OfferWithdrawn:
+			s.push(ev.GuestID, Update{Type: "notification"})
+
+		// Co-host invitation (S99 / WF-GAP-016) — push the badge to the
+		// invitee so their cohost mailbox lights up the moment a host
+		// grants them access.
+		case event.CohostInvited:
+			s.push(ev.UserID, Update{Type: "notification"})
+
 		// Experience-booking lifecycle (S86) — push the same notification
 		// hint as for property bookings so the inbox badge refreshes
 		// without polling.

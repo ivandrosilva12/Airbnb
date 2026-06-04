@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
@@ -24,11 +25,22 @@ type CohostService struct {
 	cohosts    property.CohostRepository
 	properties property.Repository
 	users      user.Repository
+	// pub, when wired via WithPublisher, receives CohostInvited so the
+	// notification subscriber can ping the invitee (S99 — WF-GAP-016).
+	// Optional — older tests leave it nil and emit becomes a no-op.
+	pub event.Publisher
 }
 
 // NewCohostService wires the cohost application service.
 func NewCohostService(cohosts property.CohostRepository, properties property.Repository, users user.Repository) *CohostService {
 	return &CohostService{cohosts: cohosts, properties: properties, users: users}
+}
+
+// WithPublisher plugs an event Publisher so Invite surfaces CohostInvited
+// (S99 — WF-GAP-016). Fluent setter; pre-existing call-sites keep working.
+func (s *CohostService) WithPublisher(p event.Publisher) *CohostService {
+	s.pub = p
+	return s
 }
 
 // InviteInput carries the data required to add a co-host to a listing. Either
@@ -74,6 +86,20 @@ func (s *CohostService) Invite(ctx context.Context, in InviteInput) (*property.C
 	}
 	if err := s.cohosts.Create(ctx, c); err != nil {
 		return nil, err
+	}
+	if s.pub != nil {
+		perms := make([]string, 0, len(in.Permissions))
+		for _, p := range in.Permissions {
+			perms = append(perms, string(p))
+		}
+		s.pub.Publish(ctx, event.CohostInvited{
+			CohostID:      c.ID,
+			PropertyID:    prop.ID,
+			PropertyTitle: prop.Title,
+			HostID:        prop.HostID,
+			UserID:        userID,
+			Permissions:   perms,
+		})
 	}
 	return c, nil
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
+	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/offer"
 	"github.com/airhost/backend/internal/domain/property"
@@ -20,12 +21,34 @@ type Service struct {
 	offers     offer.Repository
 	properties property.Repository
 	bookings   *bookingapp.Service
+	// pub, when wired via WithPublisher, receives OfferCreated/Declined/
+	// Withdrawn events so subscribers (notification, email, realtime) can
+	// inform the affected party. Optional — older tests / wiring leave it
+	// nil and the emit helper is a silent no-op (S99 — WF-GAP-008).
+	pub event.Publisher
 }
 
 // NewService wires the offer application service. It uses the booking service to
 // turn an accepted offer into a confirmed reservation.
 func NewService(offers offer.Repository, properties property.Repository, bookings *bookingapp.Service) *Service {
 	return &Service{offers: offers, properties: properties, bookings: bookings}
+}
+
+// WithPublisher plugs an event Publisher into the service so lifecycle
+// transitions are surfaced to subscribers (S99 — WF-GAP-008).
+func (s *Service) WithPublisher(p event.Publisher) *Service {
+	s.pub = p
+	return s
+}
+
+// emit is a small helper that publishes through s.pub when wired, otherwise
+// silently drops — preserving the pre-S99 behaviour for tests that don't
+// thread a publisher through.
+func (s *Service) emit(ctx context.Context, e event.Event) {
+	if s.pub == nil {
+		return
+	}
+	s.pub.Publish(ctx, e)
 }
 
 // CreateInput carries a host's offer to a guest.
@@ -62,7 +85,24 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*offer.Offer, err
 	if err := s.offers.Create(ctx, o); err != nil {
 		return nil, err
 	}
+	s.emit(ctx, event.OfferCreated{
+		OfferID:       o.ID,
+		PropertyID:    o.PropertyID,
+		PropertyTitle: prop.Title,
+		HostID:        o.HostID,
+		GuestID:       o.GuestID,
+		Kind:          offerKind(o),
+	})
 	return o, nil
+}
+
+// offerKind maps the domain offer to the event-side string the subscribers
+// switch on. Kept here to avoid leaking domain implementation details.
+func offerKind(o *offer.Offer) string {
+	if o.PriceCents > 0 {
+		return "special_offer"
+	}
+	return "pre_approval"
 }
 
 // Accept turns a guest's pending offer into a confirmed booking: it creates the
@@ -116,7 +156,18 @@ func (s *Service) Decline(ctx context.Context, guestID, offerID uuid.UUID) error
 	if err := o.Decline(); err != nil {
 		return err
 	}
-	return s.offers.Update(ctx, o)
+	if err := s.offers.Update(ctx, o); err != nil {
+		return err
+	}
+	title := s.propertyTitle(ctx, o.PropertyID)
+	s.emit(ctx, event.OfferDeclined{
+		OfferID:       o.ID,
+		PropertyID:    o.PropertyID,
+		PropertyTitle: title,
+		HostID:        o.HostID,
+		GuestID:       o.GuestID,
+	})
+	return nil
 }
 
 // Withdraw lets the host take back a pending offer.
@@ -131,7 +182,29 @@ func (s *Service) Withdraw(ctx context.Context, hostID, offerID uuid.UUID) error
 	if err := o.Withdraw(); err != nil {
 		return err
 	}
-	return s.offers.Update(ctx, o)
+	if err := s.offers.Update(ctx, o); err != nil {
+		return err
+	}
+	title := s.propertyTitle(ctx, o.PropertyID)
+	s.emit(ctx, event.OfferWithdrawn{
+		OfferID:       o.ID,
+		PropertyID:    o.PropertyID,
+		PropertyTitle: title,
+		HostID:        o.HostID,
+		GuestID:       o.GuestID,
+	})
+	return nil
+}
+
+// propertyTitle resolves the listing's display title for the event payload
+// at decline/withdraw time. Best-effort: if the listing is gone (a host
+// deleted it after sending the offer), returns an empty string and the
+// subscriber falls back to "your property" / "the property".
+func (s *Service) propertyTitle(ctx context.Context, propertyID uuid.UUID) string {
+	if prop, err := s.properties.FindByID(ctx, propertyID); err == nil && prop != nil {
+		return prop.Title
+	}
+	return ""
 }
 
 // ListForGuest returns offers addressed to the guest.
