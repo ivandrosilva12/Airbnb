@@ -35,7 +35,7 @@ func newFixture(t *testing.T) *fixture {
 	priceRules := memory.NewPriceRuleRepository()
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
-	uow := memory.NewUnitOfWork(bookings, nil, nil, nil, outbox, relay)
+	uow := memory.NewUnitOfWork(bookings, nil, nil, nil, nil, outbox, relay)
 	svc := bookingapp.NewService(bookings, properties, memory.NewBlockRepository(), coupons, priceRules, 0, stubVerifier{}, false, uow)
 
 	hostID := uuid.New()
@@ -72,7 +72,7 @@ func TestCreate_KYCGatingBlocksUnverifiedGuest(t *testing.T) {
 	// A second booking service over the same repos, with KYC gating enabled.
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
-	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, outbox, relay)
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay)
 	verifier := stubVerifier{verified: map[uuid.UUID]bool{}}
 	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, verifier, true, uow)
 

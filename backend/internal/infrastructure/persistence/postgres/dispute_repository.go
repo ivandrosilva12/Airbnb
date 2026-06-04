@@ -16,27 +16,73 @@ import (
 // Save is a full UPSERT of the aggregate (dispute row + evidence child rows);
 // the partial-unique index in migration 0040 enforces "one active dispute per
 // booking" at the database level.
+//
+// The repository can run against either a *pgxpool.Pool (own connection,
+// auto-managed transaction for Save) or a pgx.Tx (a UnitOfWork's transaction,
+// so the dispute write commits atomically with the outbox append). Use
+// NewDisputeRepository for the pool flavor and NewDisputeTxRepository inside a
+// UnitOfWork.
 type DisputeRepository struct {
-	pool *pgxpool.Pool
+	pool querier
+	// tx is non-nil when the repository is bound to an active transaction.
+	// Save then runs its statements directly against tx instead of starting
+	// a fresh inner transaction. Read methods always run through pool.
+	tx pgx.Tx
 }
 
-// NewDisputeRepository builds a DisputeRepository.
+// NewDisputeRepository builds a DisputeRepository that owns its connections.
+// Save opens an inner transaction for the aggregate's two-statement UPSERT
+// (dispute row + evidence rewrite).
 func NewDisputeRepository(pool *pgxpool.Pool) *DisputeRepository {
 	return &DisputeRepository{pool: pool}
+}
+
+// NewDisputeTxRepository binds the repository to an active pgx.Tx so its
+// writes participate in the caller's UnitOfWork. Reads also run on the same
+// transaction so a Save followed by a Find inside the same UoW sees the
+// uncommitted row.
+func NewDisputeTxRepository(tx pgx.Tx) *DisputeRepository {
+	return &DisputeRepository{pool: tx, tx: tx}
 }
 
 const disputeColumns = `id, booking_id, opener_id, kind, reason, requested_amount_cents,
 	currency, status, host_response, resolution, admin_id, opened_at, decided_at, updated_at`
 
 func (r *DisputeRepository) Save(ctx context.Context, d *dispute.Dispute) error {
-	tx, err := r.pool.Begin(ctx)
+	// When bound to an outer UnitOfWork transaction, write directly against
+	// it so a downstream outbox failure rolls back the dispute row too. When
+	// running standalone, wrap the two-statement UPSERT in a private tx so a
+	// crash mid-flow doesn't leave a dispute row without its evidence.
+	if r.tx != nil {
+		return r.saveWithin(ctx, r.tx, d)
+	}
+	pool, ok := r.pool.(*pgxpool.Pool)
+	if !ok {
+		// Should never happen — the constructor always installs a pool or a
+		// tx — but if it does we degrade to running statements without an
+		// inner transaction rather than panic.
+		return r.saveWithin(ctx, r.pool, d)
+	}
+	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return mapError(err)
 	}
 	defer tx.Rollback(ctx)
+	if err := r.saveWithin(ctx, tx, d); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return mapError(err)
+	}
+	return nil
+}
 
+// saveWithin runs the dispute UPSERT and the evidence rewrite against the
+// given querier (a pool, an inner tx, or an outer UoW tx). It is the shared
+// statement body used by both Save flavors.
+func (r *DisputeRepository) saveWithin(ctx context.Context, q querier, d *dispute.Dispute) error {
 	adminID := nilUUID(d.AdminID)
-	if _, err := tx.Exec(ctx, `
+	if _, err := q.Exec(ctx, `
 		INSERT INTO disputes (`+disputeColumns+`)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		ON CONFLICT (id) DO UPDATE
@@ -59,20 +105,17 @@ func (r *DisputeRepository) Save(ctx context.Context, d *dispute.Dispute) error 
 	// Replace the evidence collection: simplest correct approach for a small
 	// child table that grows append-only. The fk has ON DELETE CASCADE so the
 	// child rows go with a dispute deletion.
-	if _, err := tx.Exec(ctx, `DELETE FROM dispute_evidence WHERE dispute_id=$1`, d.ID); err != nil {
+	if _, err := q.Exec(ctx, `DELETE FROM dispute_evidence WHERE dispute_id=$1`, d.ID); err != nil {
 		return mapError(err)
 	}
 	for _, ev := range d.Evidence {
-		if _, err := tx.Exec(ctx, `
+		if _, err := q.Exec(ctx, `
 			INSERT INTO dispute_evidence (id, dispute_id, url, note, added_by, added_at)
 			VALUES ($1,$2,$3,$4,$5,$6)`,
 			ev.ID, d.ID, ev.URL, ev.Note, ev.AddedBy, ev.AddedAt,
 		); err != nil {
 			return mapError(err)
 		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return mapError(err)
 	}
 	return nil
 }

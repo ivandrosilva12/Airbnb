@@ -17,7 +17,7 @@ func newUoW() (*memory.UnitOfWork, *int) {
 	d.Subscribe(func(_ context.Context, _ event.Event) { *calls++ })
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, d)
-	return memory.NewUnitOfWork(memory.NewBookingRepository(), nil, nil, nil, outbox, relay), calls
+	return memory.NewUnitOfWork(memory.NewBookingRepository(), nil, nil, nil, nil, outbox, relay), calls
 }
 
 func TestUnitOfWork_DispatchesOnSuccess(t *testing.T) {

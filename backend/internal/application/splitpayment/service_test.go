@@ -160,7 +160,7 @@ func newSplitFixtureWithGateway(t *testing.T, gw *recordingGateway) *splitFixtur
 	dispatcher.Subscribe(pub.capture)
 	outbox := event.NewMemoryOutbox()
 	relay := event.NewDurablePublisher(outbox, dispatcher)
-	uow := memory.NewUnitOfWork(nil, nil, nil, splits, outbox, relay)
+	uow := memory.NewUnitOfWork(nil, nil, nil, splits, nil, outbox, relay)
 	svc := splitpaymentapp.NewService(splits, users, uow)
 	if gw != nil {
 		svc = svc.WithGateway(gw)

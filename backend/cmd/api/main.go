@@ -320,8 +320,18 @@ func run() error {
 	userBlockSvc := userblockapp.NewService(userBlockRepo)
 	offerSvc := offerapp.NewService(offerRepo, propertyRepo, bookingSvc)
 	savedSearchSvc := savedsearchapp.NewService(savedSearchRepo, searchSvc, notificationSvc)
+	// Dispute resolution runs inside a UnitOfWork (S89 — WF-GAP-003 +
+	// WF-GAP-013): the dispute row and its DisputeOpened / DisputeResolved
+	// event commit atomically through the outbox, so a crash between the
+	// two can no longer leave a decided case with no notification or a
+	// notified party with no decision on file. The PaymentAdjuster
+	// refund/damage call still runs BEFORE the transaction (the payment
+	// gateway is not transactional with our DB) and remains idempotent on
+	// the (RefKind="dispute", RefID=disputeID) key.
 	disputeSvc := disputeapp.NewService(disputeRepo, bookingRepo, propertyRepo, dispatcher).
-		WithPaymentAdjuster(paymentSvc)
+		WithPaymentAdjuster(paymentSvc).
+		WithUnitOfWork(uow).
+		WithOutbox(outboxRepo)
 	alertingSvc := alertingapp.NewService(infraalerting.NewSilencer(cfg.Alerting))
 	alertStateSvc := alertstateapp.NewService()
 	realtimeHub := realtime.NewHub()

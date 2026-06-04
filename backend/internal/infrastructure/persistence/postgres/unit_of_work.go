@@ -44,6 +44,7 @@ func (u *UnitOfWork) Run(ctx context.Context, fn func(tx port.Tx) error) error {
 		Messages:           NewMessageRepository(tx),
 		Identity:           NewIdentityRepository(tx),
 		SplitPayments:      NewSplitPaymentTxRepository(tx),
+		Disputes:           NewDisputeTxRepository(tx),
 		ExperienceBookings: NewExperienceBookingRepository(tx),
 		Outbox:             outbox,
 	}

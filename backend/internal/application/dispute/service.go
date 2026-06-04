@@ -6,6 +6,15 @@
 // When a moderator resolves a case, the money side (partial refund to the
 // guest, damage claim to the host) is delegated to a PaymentAdjuster port so
 // the dispute service does not depend on the payment bounded context directly.
+//
+// Atomicity (S89, WF-GAP-003 / WF-GAP-013): when wired with a UnitOfWork and
+// an outbox, Resolve and Open commit the dispute write and the corresponding
+// outbox-recorded event in one transaction, so a crash between the two can
+// no longer leave a decided dispute with no notification or — worse — a
+// notified party with no decision on file. The PaymentAdjuster side-effect
+// (refund / damage capture) runs BEFORE the transaction as a compensating
+// action: it carries an idempotency key (RefKind="dispute", RefID=disputeID)
+// so a retry after a tx commit failure does not double-apply.
 package disputeapp
 
 import (
@@ -14,6 +23,7 @@ import (
 	"time"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/dispute"
 	"github.com/airhost/backend/internal/domain/property"
@@ -33,6 +43,13 @@ type Service struct {
 	properties property.Repository
 	pub        event.Publisher
 	adjuster   PaymentAdjuster
+	// uow + outbox, when both are wired, switch Open and Resolve to the
+	// transactional path: the dispute row write and the domain event commit
+	// atomically through the unit of work. When either is nil the service
+	// falls back to the legacy direct-dispatch path (so unit tests and
+	// composition roots that don't wire transactions still work).
+	uow    port.UnitOfWork
+	outbox event.OutboxStore
 }
 
 // NewService wires the dispute application service. When pub is nil events are
@@ -55,6 +72,26 @@ func (s *Service) WithPaymentAdjuster(a PaymentAdjuster) *Service {
 	s.adjuster = a
 	return s
 }
+
+// WithUnitOfWork wires a UnitOfWork so the dispute write and its domain event
+// commit atomically. Pair with WithOutbox; if either is nil the service stays
+// on the legacy direct-publish path.
+func (s *Service) WithUnitOfWork(u port.UnitOfWork) *Service {
+	s.uow = u
+	return s
+}
+
+// WithOutbox wires the outbox store used to durably record dispute events
+// inside the unit of work. Pair with WithUnitOfWork.
+func (s *Service) WithOutbox(o event.OutboxStore) *Service {
+	s.outbox = o
+	return s
+}
+
+// transactional reports whether the service is fully wired for atomic
+// commits (UoW + outbox). When false the service must fall back to the
+// direct save + publish path.
+func (s *Service) transactional() bool { return s.uow != nil && s.outbox != nil }
 
 // OpenInput carries the inputs for filing a new dispute.
 type OpenInput struct {
@@ -108,10 +145,7 @@ func (s *Service) Open(ctx context.Context, in OpenInput) (*dispute.Dispute, err
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.Save(ctx, d); err != nil {
-		return nil, err
-	}
-	s.pub.Publish(ctx, event.DisputeOpened{
+	ev := event.DisputeOpened{
 		DisputeID:     d.ID,
 		BookingID:     b.ID,
 		PropertyID:    prop.ID,
@@ -120,7 +154,10 @@ func (s *Service) Open(ctx context.Context, in OpenInput) (*dispute.Dispute, err
 		GuestID:       b.GuestID,
 		OpenerID:      in.OpenerID,
 		Kind:          string(d.Kind),
-	})
+	}
+	if err := s.persistAndEmit(ctx, d, ev); err != nil {
+		return nil, err
+	}
 	return d, nil
 }
 
@@ -250,11 +287,11 @@ func (s *Service) GetByID(ctx context.Context, actorID, id uuid.UUID) (*dispute.
 // (e.g. refund > captured) propagates back to the admin and the dispute
 // stays open.
 type ResolveInput struct {
-	AdminID            uuid.UUID
-	DisputeID          uuid.UUID
-	Resolution         string
-	RefundAmountCents  int64
-	DamageAmountCents  int64
+	AdminID           uuid.UUID
+	DisputeID         uuid.UUID
+	Resolution        string
+	RefundAmountCents int64
+	DamageAmountCents int64
 }
 
 // AdminResolve closes the dispute siding with the opener. When the input
@@ -285,9 +322,14 @@ func (s *Service) adminDecide(ctx context.Context, in ResolveInput, sideWithOpen
 	if err != nil {
 		return nil, err
 	}
-	// Apply monetary effects up-front. If the payment side rejects (e.g. the
-	// refund would exceed the captured amount), the dispute stays open and the
-	// admin can adjust the figures.
+	// Apply monetary effects up-front, BEFORE the unit of work commits.
+	// The refund/damage adapter talks to the payment gateway (real money)
+	// and writes the payment_adjustments row in its own connection — those
+	// side-effects cannot enroll in the dispute's transaction. We accept
+	// that risk because the adapter is idempotent on (RefKind="dispute",
+	// RefID=disputeID): a retry after a dispute-side commit failure does
+	// not double-refund. Failing this step leaves the dispute untouched —
+	// the admin sees the gateway error and can adjust the figures.
 	if sideWithOpener {
 		if in.RefundAmountCents > 0 {
 			reason := "dispute " + string(d.Kind) + ": " + in.Resolution
@@ -309,14 +351,11 @@ func (s *Service) adminDecide(ctx context.Context, in ResolveInput, sideWithOpen
 			return nil, err
 		}
 	}
-	if err := s.repo.Save(ctx, d); err != nil {
-		return nil, err
-	}
 	outcome := "resolved"
 	if !sideWithOpener {
 		outcome = "rejected"
 	}
-	s.pub.Publish(ctx, event.DisputeResolved{
+	ev := event.DisputeResolved{
 		DisputeID:     d.ID,
 		BookingID:     b.ID,
 		PropertyID:    prop.ID,
@@ -325,8 +364,44 @@ func (s *Service) adminDecide(ctx context.Context, in ResolveInput, sideWithOpen
 		GuestID:       b.GuestID,
 		Outcome:       outcome,
 		Resolution:    d.Resolution,
-	})
+	}
+	if err := s.persistAndEmit(ctx, d, ev); err != nil {
+		return nil, err
+	}
 	return d, nil
+}
+
+// persistAndEmit saves the dispute and emits a domain event. When a
+// UnitOfWork + outbox are wired, both happen inside a single transaction so a
+// commit failure rolls back both — no subscriber ever sees an event for a
+// dispute whose row never landed in the DB. Otherwise we fall back to the
+// legacy path: save the dispute, then publish in-process.
+func (s *Service) persistAndEmit(ctx context.Context, d *dispute.Dispute, ev event.Event) error {
+	if !s.transactional() {
+		if err := s.repo.Save(ctx, d); err != nil {
+			return err
+		}
+		s.pub.Publish(ctx, ev)
+		return nil
+	}
+	return s.uow.Run(ctx, func(tx port.Tx) error {
+		// Prefer the tx-bound dispute repo (so the write enrolls in this
+		// transaction); fall back to the service's pool-bound repo when the
+		// UoW didn't populate Disputes — that still keeps the outbox append
+		// transactional, which is the main risk this refactor closes.
+		repo := tx.Disputes
+		if repo == nil {
+			repo = s.repo
+		}
+		if err := repo.Save(ctx, d); err != nil {
+			return err
+		}
+		rec, err := event.NewRecord(ev)
+		if err != nil {
+			return err
+		}
+		return tx.Outbox.Append(ctx, rec)
+	})
 }
 
 // canParticipate reports whether actor is the dispute opener, the booking's

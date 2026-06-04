@@ -158,7 +158,7 @@ func newHarness(t *testing.T) *harness {
 	// it in its Tx (S87 — experiencebooking writes now participate in the
 	// same atomic-commit-with-outbox path as the property-booking flow).
 	experienceBookingRepoMem := memory.NewExperienceBookingRepository()
-	uow := memory.NewUnitOfWork(bookingRepo, messageRepo, identityRepo, splitPaymentRepo, outbox, relay).
+	uow := memory.NewUnitOfWork(bookingRepo, messageRepo, identityRepo, splitPaymentRepo, disputeRepo, outbox, relay).
 		WithExperienceBookings(experienceBookingRepoMem)
 
 	userSvc := userapp.NewService(userRepo)
@@ -181,7 +181,9 @@ func newHarness(t *testing.T) *harness {
 	paymentSvc := paymentapp.NewService(paymentRepo, paymentGateway, bookingRepo, propertyRepo).
 		WithDeposits(depositRepo)
 	disputeSvc := disputeapp.NewService(disputeRepo, bookingRepo, propertyRepo, dispatcher).
-		WithPaymentAdjuster(paymentSvc)
+		WithPaymentAdjuster(paymentSvc).
+		WithUnitOfWork(uow).
+		WithOutbox(outbox)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	cohostRepo := memory.NewCohostRepository()
 	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo)
