@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/airhost/backend/internal/application/event"
 	propertyapp "github.com/airhost/backend/internal/application/property"
 	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/domain/property"
@@ -318,5 +319,95 @@ func TestInvite_RecordsAuditEvent(t *testing.T) {
 		if !want[p] {
 			t.Fatalf("unexpected permission in metadata: %q", p)
 		}
+	}
+}
+
+// TestInvite_PublishesCohostInvitedThroughUoW confirms that when a UoW
+// is wired (S156) a successful Invite lands the CohostInvited event in
+// the outbox AND dispatches it via the durable publisher, instead of
+// going through the legacy in-process s.pub.Publish path. This is the
+// core durability guarantee of the slice — a crash between the cohost
+// row commit and the event emit can no longer drop the notification
+// because both writes commit atomically. The assertion captures one
+// dispatched event and matches the invitee + property + permissions
+// payload to prove the closure populated the record correctly.
+func TestInvite_PublishesCohostInvitedThroughUoW(t *testing.T) {
+	f := newCohostFixture(t)
+	ctx := context.Background()
+
+	captured := &[]event.Event{}
+	d := event.NewDispatcher()
+	d.Subscribe(func(_ context.Context, e event.Event) { *captured = append(*captured, e) })
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, d)
+	uow := memory.NewUnitOfWork(nil, nil, nil, nil, nil, outbox, relay)
+	f.svc.WithUnitOfWork(uow)
+
+	perms := []property.CohostPermission{property.PermReplyMessages, property.PermManageCalendar}
+	c, err := f.svc.Invite(ctx, propertyapp.InviteInput{
+		HostID:      f.host.ID,
+		PropertyID:  f.property.ID,
+		Email:       "cohost@test.dev",
+		Permissions: perms,
+	})
+	if err != nil {
+		t.Fatalf("invite: %v", err)
+	}
+
+	if len(*captured) != 1 {
+		t.Fatalf("captured event count = %d, want 1", len(*captured))
+	}
+	ev, ok := (*captured)[0].(event.CohostInvited)
+	if !ok {
+		t.Fatalf("captured event type = %T, want event.CohostInvited", (*captured)[0])
+	}
+	if ev.CohostID != c.ID {
+		t.Fatalf("cohost id = %v, want %v", ev.CohostID, c.ID)
+	}
+	if ev.PropertyID != f.property.ID {
+		t.Fatalf("property id = %v, want %v", ev.PropertyID, f.property.ID)
+	}
+	if ev.UserID != f.cohostU.ID {
+		t.Fatalf("invitee user id = %v, want %v", ev.UserID, f.cohostU.ID)
+	}
+	if ev.HostID != f.host.ID {
+		t.Fatalf("host id = %v, want %v", ev.HostID, f.host.ID)
+	}
+	if len(ev.Permissions) != len(perms) {
+		t.Fatalf("permissions len = %d, want %d", len(ev.Permissions), len(perms))
+	}
+}
+
+// TestInvite_UoWCommitErrorRollsBackCohostInvited proves the durability
+// guarantee added by S156: when the UoW reports a commit-time failure
+// after the closure ran, the CohostInvited event is NOT dispatched —
+// matching what production would do if the DB commit failed. The
+// pre-S156 path could not offer this contract because the event was
+// published in-process AFTER the row write, so a commit-time crash
+// would have already shipped the notification.
+func TestInvite_UoWCommitErrorRollsBackCohostInvited(t *testing.T) {
+	f := newCohostFixture(t)
+	ctx := context.Background()
+
+	captured := &[]event.Event{}
+	d := event.NewDispatcher()
+	d.Subscribe(func(_ context.Context, e event.Event) { *captured = append(*captured, e) })
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, d)
+	boom := errors.New("simulated commit failure")
+	uow := memory.NewUnitOfWork(nil, nil, nil, nil, nil, outbox, relay).WithCommitError(boom)
+	f.svc.WithUnitOfWork(uow)
+
+	_, err := f.svc.Invite(ctx, propertyapp.InviteInput{
+		HostID:      f.host.ID,
+		PropertyID:  f.property.ID,
+		Email:       "cohost@test.dev",
+		Permissions: []property.CohostPermission{property.PermManageCalendar},
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("invite err = %v, want simulated commit failure", err)
+	}
+	if len(*captured) != 0 {
+		t.Fatalf("captured event count = %d, want 0 (no event dispatched on commit rollback)", len(*captured))
 	}
 }

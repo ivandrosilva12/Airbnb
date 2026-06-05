@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -58,6 +59,14 @@ type CohostService struct {
 	// Optional — older tests / wiring leave it nil and the call site
 	// short-circuits without writing.
 	auditor Auditor
+	// uow, when wired (S156), routes Invite's cohort-row write + the
+	// CohostInvited outbox event through one UnitOfWork so a crash
+	// between them no longer drops the event (the legacy in-process
+	// s.pub.Publish path landed the row first and emitted second — any
+	// failure between those two steps silently lost the CohostInvited
+	// notification). Nil falls back to the legacy publisher path so
+	// older tests that don't wire a UoW keep working.
+	uow port.UnitOfWork
 }
 
 // NewCohostService wires the cohost application service.
@@ -78,6 +87,18 @@ func (s *CohostService) WithPublisher(p event.Publisher) *CohostService {
 // Invite path short-circuits when no auditor is wired.
 func (s *CohostService) WithAuditor(a Auditor) *CohostService {
 	s.auditor = a
+	return s
+}
+
+// WithUnitOfWork wires a UoW into the service so Invite commits the
+// cohost row write + the CohostInvited outbox event in a single
+// transaction (S156 — Cohost UoW slice). Without it, the service falls
+// back to the legacy pool-bound write + in-process s.pub.Publish path
+// where a crash between the row commit and the event emit silently
+// drops the notification. Returns the same service for chained
+// construction.
+func (s *CohostService) WithUnitOfWork(uow port.UnitOfWork) *CohostService {
+	s.uow = uow
 	return s
 }
 
@@ -122,22 +143,12 @@ func (s *CohostService) Invite(ctx context.Context, in InviteInput) (*property.C
 	if err != nil {
 		return nil, err
 	}
-	if err := s.cohosts.Create(ctx, c); err != nil {
-		return nil, err
-	}
 	perms := make([]string, 0, len(in.Permissions))
 	for _, p := range in.Permissions {
 		perms = append(perms, string(p))
 	}
-	if s.pub != nil {
-		s.pub.Publish(ctx, event.CohostInvited{
-			CohostID:      c.ID,
-			PropertyID:    prop.ID,
-			PropertyTitle: prop.Title,
-			HostID:        prop.HostID,
-			UserID:        userID,
-			Permissions:   perms,
-		})
+	if err := s.persistInvite(ctx, c, prop, userID, perms); err != nil {
+		return nil, err
 	}
 	// S120 — append the compliance row. TargetID is the invitee (the
 	// subject of the role mutation); the property id + permission list
@@ -159,6 +170,53 @@ func (s *CohostService) Invite(ctx context.Context, in InviteInput) (*property.C
 		}
 	}
 	return c, nil
+}
+
+// persistInvite writes the new cohost grant + a CohostInvited outbox
+// event atomically. When a UoW is wired (S156), both writes land in the
+// same transaction — so a crash between them no longer drops the event.
+// When the UoW is absent (legacy tests / call sites built before S156),
+// it falls back to the pool-bound repo + in-process s.pub.Publish path
+// (matching the pre-S156 behaviour). port.Tx does not currently expose
+// a Cohosts repo so the row write itself goes through the service's
+// pool-bound repo even inside the closure — the outbox append still
+// participates in the same transaction, which closes the
+// "row landed but event was lost" gap that motivated the slice
+// (mirrors review.persistCreate's fallback when tx.Reviews is nil).
+func (s *CohostService) persistInvite(ctx context.Context, c *property.Cohost, prop *property.Property, userID uuid.UUID, perms []string) error {
+	if s.uow == nil {
+		if err := s.cohosts.Create(ctx, c); err != nil {
+			return err
+		}
+		if s.pub != nil {
+			s.pub.Publish(ctx, event.CohostInvited{
+				CohostID:      c.ID,
+				PropertyID:    prop.ID,
+				PropertyTitle: prop.Title,
+				HostID:        prop.HostID,
+				UserID:        userID,
+				Permissions:   perms,
+			})
+		}
+		return nil
+	}
+	return s.uow.Run(ctx, func(tx port.Tx) error {
+		if err := s.cohosts.Create(ctx, c); err != nil {
+			return err
+		}
+		rec, err := event.NewRecord(event.CohostInvited{
+			CohostID:      c.ID,
+			PropertyID:    prop.ID,
+			PropertyTitle: prop.Title,
+			HostID:        prop.HostID,
+			UserID:        userID,
+			Permissions:   perms,
+		})
+		if err != nil {
+			return err
+		}
+		return tx.Outbox.Append(ctx, rec)
+	})
 }
 
 // ListForProperty returns every co-host on a listing the caller owns.

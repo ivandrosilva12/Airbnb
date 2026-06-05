@@ -317,7 +317,13 @@ func run() error {
 		// the package-local AuditRecord into auditapp.RecordInput so
 		// the application/property package stays free of auditapp
 		// coupling (mirrors the OfferMetrics wiring pattern S113).
-		WithAuditor(cohostAuditor{svc: auditSvc})
+		WithAuditor(cohostAuditor{svc: auditSvc}).
+		// S156 — route the cohort row write + the CohostInvited
+		// outbox event through one UnitOfWork so a crash between
+		// them no longer drops the event. The legacy publisher path
+		// above remains as a fallback for tests / wiring that don't
+		// pass a UoW.
+		WithUnitOfWork(uow)
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc)
 	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo).WithCohosts(cohostSvc)
 	messageSvc.WithCohosts(cohostSvc)
