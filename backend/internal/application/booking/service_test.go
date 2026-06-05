@@ -774,3 +774,126 @@ func TestCreate_StepUpVerifiedGuestEmitsNoEvent(t *testing.T) {
 		t.Errorf("got %d KYCStepUpRequired events for a verified guest, want 0", count)
 	}
 }
+
+// stubBookingAuditor captures RecordKYCStepUpRequired calls for the S152
+// test assertions. Fields mirror the interface signature so a test can
+// verify exactly what main.go's bookingAuditor adapter will translate
+// into auditapp.RecordInput.
+type stubBookingAuditor struct {
+	calls []stubBookingAuditCall
+}
+
+type stubBookingAuditCall struct {
+	guestID       uuid.UUID
+	propertyID    uuid.UUID
+	propertyTitle string
+	currency      string
+	totalCents    int64
+}
+
+func (s *stubBookingAuditor) RecordKYCStepUpRequired(_ context.Context, guestID, propertyID uuid.UUID, propertyTitle, currency string, totalCents int64) {
+	s.calls = append(s.calls, stubBookingAuditCall{
+		guestID:       guestID,
+		propertyID:    propertyID,
+		propertyTitle: propertyTitle,
+		currency:      currency,
+		totalCents:    totalCents,
+	})
+}
+
+// TestEnforceStepUp_RecordsAuditOnGateTrip verifies the S152 forensics
+// row: when the high-value gate denies a booking, the wired auditor sees
+// exactly one call with the guest, listing, currency and total — the
+// fields ops needs to answer "who got step-up-prompted on listing X".
+func TestEnforceStepUp_RecordsAuditOnGateTrip(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay)
+	verifier := stubVerifier{verified: map[uuid.UUID]bool{}}
+	auditor := &stubBookingAuditor{}
+	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, verifier, false, uow).
+		WithHighValueThresholds(map[string]int64{"EUR": 10000}).
+		WithAuditor(auditor)
+
+	_, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1})
+	if err == nil {
+		t.Fatal("expected the high-value gate to deny the booking")
+	}
+	var stepUp *shared.KYCStepUpError
+	if !errors.As(err, &stepUp) {
+		t.Fatalf("expected *shared.KYCStepUpError, got %T (%v)", err, err)
+	}
+
+	if len(auditor.calls) != 1 {
+		t.Fatalf("expected exactly 1 audit row, got %d (%+v)", len(auditor.calls), auditor.calls)
+	}
+	c := auditor.calls[0]
+	if c.guestID != f.guestID {
+		t.Errorf("audit guestID = %s, want %s", c.guestID, f.guestID)
+	}
+	if c.propertyID != f.prop.ID {
+		t.Errorf("audit propertyID = %s, want %s", c.propertyID, f.prop.ID)
+	}
+	if c.propertyTitle != f.prop.Title {
+		t.Errorf("audit propertyTitle = %q, want %q", c.propertyTitle, f.prop.Title)
+	}
+	if c.currency != "EUR" {
+		t.Errorf("audit currency = %q, want EUR", c.currency)
+	}
+	if c.totalCents != 30000 { // 3 nights * 100.00, no fees
+		t.Errorf("audit totalCents = %d, want 30000", c.totalCents)
+	}
+}
+
+// TestEnforceStepUp_NoAuditWhenGatePasses verifies the negative path:
+// a sub-threshold (or verified-guest) booking flows through without
+// the gate tripping, so the auditor must not be called at all. Two
+// scenarios cover both ways the gate can decline to trip.
+func TestEnforceStepUp_NoAuditWhenGatePasses(t *testing.T) {
+	t.Run("sub-threshold booking", func(t *testing.T) {
+		f := newFixture(t)
+		ctx := context.Background()
+
+		outbox := event.NewMemoryOutbox()
+		relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
+		uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay)
+		verifier := stubVerifier{verified: map[uuid.UUID]bool{}}
+		auditor := &stubBookingAuditor{}
+		// Threshold far above the fixture's 300.00 total so the gate
+		// never trips on this booking.
+		gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, verifier, false, uow).
+			WithHighValueThresholds(map[string]int64{"EUR": 1_000_000}).
+			WithAuditor(auditor)
+
+		if _, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1}); err != nil {
+			t.Fatalf("sub-threshold booking should succeed: %v", err)
+		}
+		if len(auditor.calls) != 0 {
+			t.Errorf("got %d audit rows, want 0 (gate did not trip)", len(auditor.calls))
+		}
+	})
+
+	t.Run("verified guest above threshold", func(t *testing.T) {
+		f := newFixture(t)
+		ctx := context.Background()
+
+		outbox := event.NewMemoryOutbox()
+		relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
+		uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay)
+		verifier := stubVerifier{verified: map[uuid.UUID]bool{f.guestID: true}}
+		auditor := &stubBookingAuditor{}
+		gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, verifier, false, uow).
+			WithHighValueThresholds(map[string]int64{"EUR": 10000}).
+			WithAuditor(auditor)
+
+		if _, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1}); err != nil {
+			t.Fatalf("verified guest booking should succeed: %v", err)
+		}
+		if len(auditor.calls) != 0 {
+			t.Errorf("got %d audit rows, want 0 (verified guest bypasses gate)", len(auditor.calls))
+		}
+	})
+}

@@ -55,6 +55,7 @@ import (
 	userapp "github.com/airhost/backend/internal/application/user"
 	userblockapp "github.com/airhost/backend/internal/application/userblock"
 	"github.com/airhost/backend/internal/config"
+	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	domainuser "github.com/airhost/backend/internal/domain/user"
@@ -297,6 +298,15 @@ func run() error {
 	// thin propertyapp.Auditor shim — both cohost and property
 	// services consume the same interface).
 	propertySvc.WithAuditor(cohostAuditor{svc: auditSvc})
+	// S152 — wires forensics for the KYC step-up gate. Every gate trip
+	// records a "kyc.step_up_required" row (actor=SystemActor,
+	// target=user/guestID, metadata={property_id, property_title,
+	// total_cents, currency}) so ops can answer "who got step-up-
+	// prompted on listing X on day Y" without parsing event logs.
+	// Mirrors cohostAuditor: a thin BookingAuditor shim at the
+	// composition root keeps the application/booking package free of
+	// auditapp coupling.
+	bookingSvc.WithAuditor(bookingAuditor{svc: auditSvc})
 	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo).
 		// S99 / WF-GAP-016 — emit CohostInvited so the invitee gets a
 		// notification + SSE hint when a host grants them access.
@@ -753,5 +763,36 @@ func (a cohostAuditor) Record(ctx context.Context, rec propertyapp.AuditRecord) 
 		TargetType: rec.TargetType,
 		TargetID:   rec.TargetID,
 		Metadata:   rec.Metadata,
+	})
+}
+
+// bookingAuditor satisfies bookingapp.BookingAuditor by translating the
+// booking-specific call into an auditapp.RecordInput. Kept at the
+// composition root so the booking application package never imports
+// auditapp (S152 — follow-on to S140/WF-GAP-019). Errors are swallowed:
+// the gate decision has already been computed when this runs, and a
+// missed audit row must never block the gate error from reaching the
+// HTTP caller. ActorID is the SystemActor because the gate trip is
+// platform-initiated, not admin-initiated; TargetID is the guest the
+// step-up applies to.
+type bookingAuditor struct {
+	svc *auditapp.Service
+}
+
+func (b bookingAuditor) RecordKYCStepUpRequired(ctx context.Context, guestID, propertyID uuid.UUID, propertyTitle, currency string, totalCents int64) {
+	if b.svc == nil {
+		return
+	}
+	_ = b.svc.Record(ctx, auditapp.RecordInput{
+		ActorID:    audit.SystemActor,
+		Action:     audit.ActionKYCStepUpRequired,
+		TargetType: audit.TargetUser,
+		TargetID:   guestID,
+		Metadata: map[string]any{
+			"property_id":    propertyID.String(),
+			"property_title": propertyTitle,
+			"total_cents":    totalCents,
+			"currency":       currency,
+		},
 	})
 }

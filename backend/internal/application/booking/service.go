@@ -99,6 +99,17 @@ type OrganizerResolver interface {
 	EmailByID(ctx context.Context, id uuid.UUID) (string, error)
 }
 
+// BookingAuditor lets the booking service record forensics entries for
+// security-adjacent events — currently just KYC step-up gate trips
+// (S152). The port is purpose-built (no audit.Action / TargetType
+// leakage) so the application/booking package never imports the audit
+// BC; main.go provides the bookingAuditor adapter that maps the call
+// to auditapp.RecordInput. A nil auditor on the service is a no-op,
+// matching how WithAuditor wires propertyapp.
+type BookingAuditor interface {
+	RecordKYCStepUpRequired(ctx context.Context, guestID, propertyID uuid.UUID, propertyTitle, currency string, totalCents int64)
+}
+
 // Service orchestrates booking use cases.
 type Service struct {
 	bookings       booking.Repository
@@ -133,6 +144,12 @@ type Service struct {
 	// a guest who clicks "Book" three times in a row produces one event
 	// instead of three. WithStepUpEventTTL overrides the window.
 	stepUpDedup *stepUpDeduper
+	// audit, when wired (S152), appends a "kyc.step_up_required" row
+	// every time the high-value gate trips, so ops can answer "who got
+	// step-up-prompted on listing X on day Y" without grepping logs.
+	// nil leaves the audit side silent (tests + deployments without
+	// the audit BC keep working unchanged).
+	audit BookingAuditor
 }
 
 // NewService wires the booking application service. serviceFeeRate is the
@@ -188,6 +205,17 @@ func (s *Service) WithTaxQuoter(q TaxQuoter) *Service {
 // Returns the receiver for chaining.
 func (s *Service) WithStepUpEventTTL(ttl time.Duration) *Service {
 	s.stepUpDedup = newStepUpDeduper(ttl, time.Now)
+	return s
+}
+
+// WithAuditor wires the forensics sink for KYC step-up gate trips
+// (S152). Every gate-trip evaluation records exactly one audit row,
+// independent of the outbox event (which the dedup deduper may
+// collapse): the audit row tracks the gate decision, not the
+// notification. A nil auditor disables the audit side without
+// affecting the gate. Returns the receiver for chaining.
+func (s *Service) WithAuditor(a BookingAuditor) *Service {
+	s.audit = a
 	return s
 }
 
@@ -331,6 +359,18 @@ func (s *Service) enforceStepUp(ctx context.Context, guestID, propertyID uuid.UU
 	}
 	if verified {
 		return nil
+	}
+	// S152 — forensics row, recorded once per gate trip independent of
+	// the outbox dedup (the auditable fact is "the gate denied this
+	// guest", which happens on every retry even when the notification
+	// event is collapsed). Lives outside uow.Run because audit has a
+	// different consistency story than the outbox: the gate decision
+	// has already been computed at this point; an audit failure must
+	// not stop the gate error from reaching the HTTP caller. The
+	// adapter in main.go swallows its own errors, so this call is
+	// best-effort by construction.
+	if s.audit != nil {
+		s.audit.RecordKYCStepUpRequired(ctx, guestID, propertyID, propertyTitle, currency, totalCents)
 	}
 	// Best-effort event emission, dedup-guarded. If the outbox append
 	// fails we still return the gate error — the booking is denied either

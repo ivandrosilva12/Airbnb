@@ -72,6 +72,11 @@ func TestAction_Valid_CoversEveryConstant(t *testing.T) {
 		ActionDisputeResolve, ActionDisputeReject,
 		ActionCouponDeactivate,
 		ActionTaxRuleCreate, ActionTaxRuleDelete,
+		ActionUserSuspend, ActionUserUnsuspend,
+		ActionGDPRErase,
+		ActionCohostInvited,
+		ActionPropertySuspended, ActionPropertyUnsuspended,
+		ActionKYCStepUpRequired,
 	} {
 		if !a.Valid() {
 			t.Fatalf("constant %q reports invalid", a)
