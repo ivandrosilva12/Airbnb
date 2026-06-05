@@ -162,6 +162,41 @@ func (s *Service) EventHandler() event.Handler {
 				"Experience booking cancelled",
 				fmt.Sprintf("A booking for %q was cancelled.", title), ev.BookingID, PushCatBookings)
 
+		case event.ReviewSubmitted:
+			// S148 — the in-app arm of S136's ReviewSubmitted outbox
+			// event. guest_to_property → host of the listing learns a
+			// guest reviewed them; host_to_guest → guest learns their
+			// host reviewed them. The host of a property review isn't
+			// on the event payload (kept lean) so we look it up via
+			// the optional property repo; if the listing was deleted
+			// between emit and consume we log and short-circuit
+			// rather than ship a notification with no addressee. The
+			// host_to_guest branch doesn't need any lookup — the
+			// recipient is GuestID.
+			switch ev.Direction {
+			case "guest_to_property":
+				if s.properties == nil {
+					logctx.LoggerFrom(ctx).Error("review-submitted: properties repo not wired", "event", e.EventName(), "review", ev.ReviewID)
+					break
+				}
+				p, e1 := s.properties.FindByID(ctx, ev.PropertyID)
+				if e1 != nil {
+					logctx.LoggerFrom(ctx).Error("review-submitted: property lookup failed", "event", e.EventName(), "property", ev.PropertyID, "error", e1)
+					break
+				}
+				body := "A guest reviewed your listing."
+				if p.Title != "" {
+					body = fmt.Sprintf("A guest reviewed %q.", p.Title)
+				}
+				err = s.create(ctx, p.HostID, notification.TypeReviewSubmitted,
+					"New review", body, ev.ReviewID, PushCatBookings)
+			case "host_to_guest":
+				err = s.create(ctx, ev.GuestID, notification.TypeReviewSubmitted,
+					"You have a new review",
+					"Your host left you a review on your recent stay.",
+					ev.ReviewID, PushCatBookings)
+			}
+
 		case event.SplitPaymentCompleted:
 			// S93 / WF-GAP-011. Every share is now authorised, so the
 			// booking confirms. Notify the organizer (resolved from the

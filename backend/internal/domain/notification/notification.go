@@ -57,6 +57,12 @@ const (
 	// can clear. Account-channel because identity verification is a
 	// security-adjacent flow, not a per-booking event.
 	TypeKYCStepUpRequired Type = "kyc_step_up_required"
+	// TypeReviewSubmitted fires when a guest reviews a listing (the host
+	// is notified) or a host reviews their guest (the guest is notified).
+	// S148 — the in-app arm of the S136 ReviewSubmitted outbox event.
+	// PushCatBookings because users think of reviews as part of the
+	// post-stay booking flow, not an account-management chore.
+	TypeReviewSubmitted Type = "review_submitted"
 )
 
 // Notification is the aggregate root for a single in-app notification.

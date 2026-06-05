@@ -11,6 +11,7 @@ import (
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/notification"
+	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
@@ -426,5 +427,148 @@ func TestEventHandler_CohostInvitedNotifiesInvitee(t *testing.T) {
 	}
 	if c, _ := svc.UnreadCount(ctx, hostID); c != 0 {
 		t.Errorf("host unread = %d, want 0 (the host is the one who invited)", c)
+	}
+}
+
+// TestEventHandler_ReviewSubmitted_GuestToProperty_NotifiesHost — S148.
+// A guest_to_property review notifies the listing's host. RelatedID is
+// the ReviewID (so the in-app deep link lands on the review itself, not
+// the listing) and the host is resolved via the properties repo so the
+// event payload stays lean.
+func TestEventHandler_ReviewSubmitted_GuestToProperty_NotifiesHost(t *testing.T) {
+	ctx := context.Background()
+	notifRepo := memory.NewNotificationRepository()
+	propRepo := memory.NewPropertyRepository()
+	svc := notificationapp.NewService(notifRepo).WithProperties(propRepo)
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	hostID := uuid.New()
+	guestID := uuid.New()
+	propID := uuid.New()
+	reviewID := uuid.New()
+
+	// Seed the listing so the subscriber can resolve the host.
+	p := &property.Property{
+		ID:     propID,
+		HostID: hostID,
+		Title:  "Sunny Flat",
+	}
+	if err := propRepo.Create(ctx, p); err != nil {
+		t.Fatalf("seed property: %v", err)
+	}
+
+	dispatcher.Publish(ctx, event.ReviewSubmitted{
+		ReviewID:   reviewID,
+		BookingID:  uuid.New(),
+		PropertyID: propID,
+		AuthorID:   guestID,
+		GuestID:    guestID,
+		Direction:  "guest_to_property",
+		Rating:     5,
+	})
+
+	// Host has exactly one notification.
+	hostPage, err := svc.List(ctx, hostID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list host: %v", err)
+	}
+	if len(hostPage.Items) != 1 {
+		t.Fatalf("host notifications = %d, want 1 (%+v)", len(hostPage.Items), hostPage.Items)
+	}
+	got := hostPage.Items[0]
+	if got.Type != notification.TypeReviewSubmitted {
+		t.Fatalf("notification type = %q, want %q", got.Type, notification.TypeReviewSubmitted)
+	}
+	if got.RelatedID != reviewID {
+		t.Fatalf("notification related = %s, want ReviewID %s", got.RelatedID, reviewID)
+	}
+	if !strings.Contains(got.Body, "Sunny Flat") {
+		t.Fatalf("notification body should reference the property title, got %q", got.Body)
+	}
+
+	// Guest got nothing — they wrote the review.
+	if c, _ := svc.UnreadCount(ctx, guestID); c != 0 {
+		t.Fatalf("guest unread = %d, want 0 (author shouldn't be notified)", c)
+	}
+}
+
+// TestEventHandler_ReviewSubmitted_HostToGuest_NotifiesGuest — S148.
+// A host_to_guest review notifies the guest. No property lookup is
+// needed because GuestID is on the event payload.
+func TestEventHandler_ReviewSubmitted_HostToGuest_NotifiesGuest(t *testing.T) {
+	ctx := context.Background()
+	notifRepo := memory.NewNotificationRepository()
+	// Deliberately wire no properties repo — the host_to_guest branch
+	// must not depend on it.
+	svc := notificationapp.NewService(notifRepo)
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	hostID := uuid.New()
+	guestID := uuid.New()
+	reviewID := uuid.New()
+
+	dispatcher.Publish(ctx, event.ReviewSubmitted{
+		ReviewID:   reviewID,
+		BookingID:  uuid.New(),
+		PropertyID: uuid.New(),
+		AuthorID:   hostID,
+		GuestID:    guestID,
+		Direction:  "host_to_guest",
+		Rating:     4,
+	})
+
+	guestPage, err := svc.List(ctx, guestID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list guest: %v", err)
+	}
+	if len(guestPage.Items) != 1 {
+		t.Fatalf("guest notifications = %d, want 1 (%+v)", len(guestPage.Items), guestPage.Items)
+	}
+	got := guestPage.Items[0]
+	if got.Type != notification.TypeReviewSubmitted {
+		t.Fatalf("notification type = %q, want %q", got.Type, notification.TypeReviewSubmitted)
+	}
+	if got.RelatedID != reviewID {
+		t.Fatalf("notification related = %s, want ReviewID %s", got.RelatedID, reviewID)
+	}
+
+	// Host got nothing — they wrote the review.
+	if c, _ := svc.UnreadCount(ctx, hostID); c != 0 {
+		t.Fatalf("host unread = %d, want 0 (author shouldn't be notified)", c)
+	}
+}
+
+// TestEventHandler_ReviewSubmitted_PropertyMissingShortCircuits — S148.
+// Belt-and-braces: if the listing has been deleted between the review
+// being emitted and the relay consuming the event, the subscriber must
+// log and short-circuit rather than panic or fabricate a notification
+// with no real recipient.
+func TestEventHandler_ReviewSubmitted_PropertyMissingShortCircuits(t *testing.T) {
+	ctx := context.Background()
+	notifRepo := memory.NewNotificationRepository()
+	propRepo := memory.NewPropertyRepository() // empty — FindByID returns ErrNotFound
+	svc := notificationapp.NewService(notifRepo).WithProperties(propRepo)
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	guestID := uuid.New()
+	dispatcher.Publish(ctx, event.ReviewSubmitted{
+		ReviewID:   uuid.New(),
+		BookingID:  uuid.New(),
+		PropertyID: uuid.New(), // never seeded
+		AuthorID:   guestID,
+		GuestID:    guestID,
+		Direction:  "guest_to_property",
+		Rating:     5,
+	})
+
+	// No notification anywhere — the lookup failed and we logged.
+	if c, _ := svc.UnreadCount(ctx, guestID); c != 0 {
+		t.Fatalf("guest unread = %d, want 0", c)
 	}
 }

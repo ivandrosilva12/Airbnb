@@ -257,7 +257,11 @@ func run() error {
 		// S93 / WF-GAP-011 — split-payment completion subscriber needs
 		// these to resolve the organizer + payer list.
 		WithBookings(bookingRepo).
-		WithSplitPayments(splitPaymentRepo)
+		WithSplitPayments(splitPaymentRepo).
+		// S148 — review-submitted subscriber resolves the listing's
+		// host (guest_to_property branch) without burdening the event
+		// payload.
+		WithProperties(propertyRepo)
 	// S88 — share one PaymentGateway instance across the payment subscriber
 	// AND the split-payment service so the per-share authorize/refund flow
 	// hits the same provider as the regular booking flow.

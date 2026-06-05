@@ -8,6 +8,7 @@ import (
 
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/notification"
+	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/google/uuid"
@@ -36,10 +37,11 @@ type PushNotifier interface {
 
 // Service orchestrates notification use cases.
 type Service struct {
-	repo     notification.Repository
-	push     PushNotifier            // optional
-	bookings booking.Repository      // optional — only used by the split-payment subscriber
-	splits   splitpayment.Repository // optional — only used by the split-payment subscriber
+	repo       notification.Repository
+	push       PushNotifier            // optional
+	bookings   booking.Repository      // optional — only used by the split-payment subscriber
+	splits     splitpayment.Repository // optional — only used by the split-payment subscriber
+	properties property.Repository     // optional — only used by the review-submitted subscriber to resolve the host
 }
 
 // NewService wires the notification application service.
@@ -68,6 +70,16 @@ func (s *Service) WithBookings(r booking.Repository) *Service {
 // working without re-wiring.
 func (s *Service) WithSplitPayments(r splitpayment.Repository) *Service {
 	s.splits = r
+	return s
+}
+
+// WithProperties attaches a property repository so the ReviewSubmitted
+// subscriber (S148) can resolve the listing's host on a guest_to_property
+// review without forcing the event payload to carry HostID. Optional — the
+// handler short-circuits and logs when the repo is missing or the listing
+// has been deleted since the event was emitted.
+func (s *Service) WithProperties(r property.Repository) *Service {
+	s.properties = r
 	return s
 }
 
