@@ -197,6 +197,33 @@ func (s *Service) EventHandler() event.Handler {
 					ev.ReviewID, PushCatBookings)
 			}
 
+		case event.PaymentCaptured:
+			// S157 — closes the dangling PaymentCaptured event (S123 era).
+			// Payment is real now: the gateway took the money, so the
+			// guest deserves a heads-up before the line item lands on
+			// their card statement. PushCatBookings because the guest
+			// thinks of the charge as part of the booking flow, not an
+			// account-management notice. RelatedID is the booking so
+			// tapping the prompt deep-links back to the stay it paid for.
+			amount := fmt.Sprintf("%.2f %s", float64(ev.AmountCents)/100, ev.Currency)
+			err = s.create(ctx, ev.GuestID, notification.TypePaymentCaptured,
+				"Payment received",
+				fmt.Sprintf("Your card was charged %s for booking %s.", amount, ev.BookingID),
+				ev.BookingID, PushCatBookings)
+
+		case event.PaymentRefunded:
+			// S157 — closes the dangling PaymentRefunded event (S123 era).
+			// Sibling of PaymentCaptured: when a cancellation (or any
+			// other refund path) releases captured funds the guest is
+			// told the credit is on its way so they can reconcile the
+			// movement on their card statement. Same channel + related
+			// resource as the capture arm.
+			amount := fmt.Sprintf("%.2f %s", float64(ev.RefundedCents)/100, ev.Currency)
+			err = s.create(ctx, ev.GuestID, notification.TypePaymentRefunded,
+				"Refund issued",
+				fmt.Sprintf("A refund of %s was sent back to your card for booking %s.", amount, ev.BookingID),
+				ev.BookingID, PushCatBookings)
+
 		case event.SplitPaymentCompleted:
 			// S93 / WF-GAP-011. Every share is now authorised, so the
 			// booking confirms. Notify the organizer (resolved from the

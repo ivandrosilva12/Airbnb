@@ -270,6 +270,29 @@ func (s *Service) EventHandler() event.Handler {
 			s.send(ctx, ev.GuestID, catAccount, "Verify your identity to continue booking",
 				fmt.Sprintf("Bookings for %q at or above %s need a verified identity. Open the app to verify, then retry your booking.", title, amount))
 
+		// Payment lifecycle (S157 — closes the dangling S123 events).
+		// PaymentCaptured and PaymentRefunded landed in the outbox UoW-
+		// atomically with the payment row write since S123, but no
+		// subscriber consumed them; the type comments even promised
+		// "downstream subscribers (notifications, accounting)" that
+		// didn't exist until this slice. The guest is the recipient on
+		// both arms (payments belong to the guest who paid, not the
+		// host who got paid out), and both ride catBookings so the
+		// existing "mute booking emails" preference applies — the
+		// guest who silenced booking comms shouldn't suddenly start
+		// hearing about charges they already know are coming from the
+		// booking confirmation. The event payload carries AmountCents
+		// + Currency directly so no booking lookup is required.
+		case event.PaymentCaptured:
+			amount := fmt.Sprintf("%.2f %s", float64(ev.AmountCents)/100, ev.Currency)
+			s.send(ctx, ev.GuestID, catBookings, "Payment received for your stay",
+				fmt.Sprintf("We charged your card %s for booking %s. The booking is paid in full.", amount, ev.BookingID))
+
+		case event.PaymentRefunded:
+			amount := fmt.Sprintf("%.2f %s", float64(ev.RefundedCents)/100, ev.Currency)
+			s.send(ctx, ev.GuestID, catBookings, "Refund issued",
+				fmt.Sprintf("We've issued a refund of %s for booking %s. Funds should reach your card within a few business days.", amount, ev.BookingID))
+
 		// Review arm (S147 — closes the dangling S136 subscriber). S136
 		// brought reviews under the UoW + outbox so a ReviewSubmitted event
 		// lands atomically with the row write, but until now no subscriber

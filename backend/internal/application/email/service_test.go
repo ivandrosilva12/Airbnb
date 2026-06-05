@@ -839,6 +839,93 @@ func TestEventHandler_DisputeOutcomeEvents(t *testing.T) {
 	assertSent(t, sent2, guest.Email, "Your dispute was rejected")
 }
 
+// TestEventHandler_PaymentCaptured_EmailsGuest — S157. Closes the dangling
+// PaymentCaptured event introduced in S123. When the payment subscriber
+// turns an authorized hold into a real charge the guest gets a single
+// transactional email naming the amount + currency and the booking
+// reference. Rides catBookings — a guest who muted booking emails sees
+// nothing (mirrors BookingConfirmed's channel since the capture is the
+// money side of that same confirmation).
+func TestEventHandler_PaymentCaptured_EmailsGuest(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	guest := mustUser(t, users, "pay-captured@test.dev", user.RoleGuest)
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	bookingID := uuid.New()
+	dispatcher.Publish(ctx, event.PaymentCaptured{
+		BookingID:   bookingID,
+		PaymentID:   uuid.New(),
+		GuestID:     guest.ID,
+		AmountCents: 12345,
+		Currency:    "EUR",
+		GatewayRef:  "ch_abc",
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want 1 (%+v)", len(sent), sent)
+	}
+	if sent[0].To != guest.Email {
+		t.Fatalf("recipient = %q, want guest %q", sent[0].To, guest.Email)
+	}
+	if sent[0].Subject != "Payment received for your stay" {
+		t.Fatalf("subject = %q, want %q", sent[0].Subject, "Payment received for your stay")
+	}
+	if !strings.Contains(sent[0].Text, "123.45 EUR") {
+		t.Fatalf("body should mention amount + currency, got %q", sent[0].Text)
+	}
+	if !strings.Contains(sent[0].Text, bookingID.String()) {
+		t.Fatalf("body should embed the booking reference %s, got %q", bookingID, sent[0].Text)
+	}
+}
+
+// TestEventHandler_PaymentRefunded_EmailsGuest — S157 companion. Sibling
+// of the capture arm: when a cancellation (or any other refund path)
+// releases captured funds the guest gets a transactional email naming
+// the refunded amount + currency + booking reference. Same opt-out
+// path (catBookings) — keeps the channel symmetric with the capture
+// notice the same guest already received.
+func TestEventHandler_PaymentRefunded_EmailsGuest(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	guest := mustUser(t, users, "pay-refunded@test.dev", user.RoleGuest)
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	bookingID := uuid.New()
+	dispatcher.Publish(ctx, event.PaymentRefunded{
+		BookingID:     bookingID,
+		PaymentID:     uuid.New(),
+		GuestID:       guest.ID,
+		RefundedCents: 6789,
+		Currency:      "USD",
+		GatewayRef:    "rf_xyz",
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want 1 (%+v)", len(sent), sent)
+	}
+	if sent[0].To != guest.Email {
+		t.Fatalf("recipient = %q, want guest %q", sent[0].To, guest.Email)
+	}
+	if sent[0].Subject != "Refund issued" {
+		t.Fatalf("subject = %q, want %q", sent[0].Subject, "Refund issued")
+	}
+	if !strings.Contains(sent[0].Text, "67.89 USD") {
+		t.Fatalf("body should mention refund amount + currency, got %q", sent[0].Text)
+	}
+	if !strings.Contains(sent[0].Text, bookingID.String()) {
+		t.Fatalf("body should embed the booking reference %s, got %q", bookingID, sent[0].Text)
+	}
+}
+
 // TestEventHandler_ReviewSubmitted_GuestToProperty_EmailsHost — S147 closes
 // the dangling S136 subscriber. A guest-to-property ReviewSubmitted event
 // must email the listing's host (resolved via the properties repo because

@@ -63,6 +63,24 @@ const (
 	// PushCatBookings because users think of reviews as part of the
 	// post-stay booking flow, not an account-management chore.
 	TypeReviewSubmitted Type = "review_submitted"
+	// TypePaymentCaptured fires when the payment subscriber turns an
+	// authorized hold into a real charge (typically when a booking is
+	// confirmed). The guest sees a "your card was charged" prompt in
+	// their inbox so the line item on their card statement isn't a
+	// surprise. S157 — closes the dangling PaymentCaptured outbox
+	// event introduced in S123: the type comment on
+	// event.PaymentCaptured promised "downstream subscribers
+	// (notifications, accounting)" that hadn't been wired until now.
+	TypePaymentCaptured Type = "payment_captured"
+	// TypePaymentRefunded fires when the payment subscriber refunds
+	// some or all of an authorized or captured payment (typically
+	// driven by a cancellation with a non-zero refund fraction). The
+	// guest is told the refund is on its way so they can match the
+	// credit on their card statement to the booking it came from. S157
+	// — companion to TypePaymentCaptured, closing the second dangling
+	// S123 event whose comments promised downstream subscribers that
+	// didn't exist before this slice.
+	TypePaymentRefunded Type = "payment_refunded"
 )
 
 // Notification is the aggregate root for a single in-app notification.

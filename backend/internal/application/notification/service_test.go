@@ -542,6 +542,105 @@ func TestEventHandler_ReviewSubmitted_HostToGuest_NotifiesGuest(t *testing.T) {
 	}
 }
 
+// TestEventHandler_PaymentCaptured_NotifiesGuest — S157 closes the
+// dangling PaymentCaptured outbox event (S123 era). When the payment
+// subscriber turns an authorized hold into a real charge, the guest
+// receives exactly one TypePaymentCaptured notification whose body
+// names the amount + currency and whose RelatedID points at the
+// booking it paid for (so the in-app deep link lands on the stay,
+// not on a payment-detail screen we don't yet expose).
+func TestEventHandler_PaymentCaptured_NotifiesGuest(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewNotificationRepository()
+	svc := notificationapp.NewService(repo)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	guestID := uuid.New()
+	bookingID := uuid.New()
+	dispatcher.Publish(ctx, event.PaymentCaptured{
+		BookingID:   bookingID,
+		PaymentID:   uuid.New(),
+		GuestID:     guestID,
+		AmountCents: 12345,
+		Currency:    "EUR",
+		GatewayRef:  "ch_abc",
+	})
+
+	page, err := svc.List(ctx, guestID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list guest: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("guest notifications = %d, want 1 (%+v)", len(page.Items), page.Items)
+	}
+	got := page.Items[0]
+	if got.Type != notification.TypePaymentCaptured {
+		t.Fatalf("notification type = %q, want %q", got.Type, notification.TypePaymentCaptured)
+	}
+	if got.UserID != guestID {
+		t.Fatalf("notification user = %s, want guest %s", got.UserID, guestID)
+	}
+	if got.Title != "Payment received" {
+		t.Fatalf("notification title = %q, want %q", got.Title, "Payment received")
+	}
+	if got.RelatedID != bookingID {
+		t.Fatalf("notification related = %s, want BookingID %s", got.RelatedID, bookingID)
+	}
+	if !strings.Contains(got.Body, "123.45 EUR") {
+		t.Fatalf("notification body should mention amount + currency, got %q", got.Body)
+	}
+}
+
+// TestEventHandler_PaymentRefunded_NotifiesGuest — S157 companion to
+// PaymentCaptured. The refund arm fires when a cancellation (or any
+// other refund path) releases captured funds, and the guest gets a
+// TypePaymentRefunded notification naming the refunded amount and
+// pointing at the booking. Same channel + recipient as the capture
+// arm, mirrored on purpose.
+func TestEventHandler_PaymentRefunded_NotifiesGuest(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewNotificationRepository()
+	svc := notificationapp.NewService(repo)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	guestID := uuid.New()
+	bookingID := uuid.New()
+	dispatcher.Publish(ctx, event.PaymentRefunded{
+		BookingID:     bookingID,
+		PaymentID:     uuid.New(),
+		GuestID:       guestID,
+		RefundedCents: 6789,
+		Currency:      "USD",
+		GatewayRef:    "rf_xyz",
+	})
+
+	page, err := svc.List(ctx, guestID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list guest: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("guest notifications = %d, want 1 (%+v)", len(page.Items), page.Items)
+	}
+	got := page.Items[0]
+	if got.Type != notification.TypePaymentRefunded {
+		t.Fatalf("notification type = %q, want %q", got.Type, notification.TypePaymentRefunded)
+	}
+	if got.UserID != guestID {
+		t.Fatalf("notification user = %s, want guest %s", got.UserID, guestID)
+	}
+	if got.Title != "Refund issued" {
+		t.Fatalf("notification title = %q, want %q", got.Title, "Refund issued")
+	}
+	if got.RelatedID != bookingID {
+		t.Fatalf("notification related = %s, want BookingID %s", got.RelatedID, bookingID)
+	}
+	if !strings.Contains(got.Body, "67.89 USD") {
+		t.Fatalf("notification body should mention refund amount + currency, got %q", got.Body)
+	}
+}
+
 // TestEventHandler_ReviewSubmitted_PropertyMissingShortCircuits — S148.
 // Belt-and-braces: if the listing has been deleted between the review
 // being emitted and the relay consuming the event, the subscriber must
