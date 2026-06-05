@@ -150,6 +150,12 @@ export const translations = {
     'admin.dispute.refundAmount': 'Refund (guest)',
     'admin.dispute.damageAmount': 'Damage (host)',
     'admin.dispute.moneyHint': 'Amounts apply on Resolve only. Refund returns money to the guest; Damage records a host claim.',
+    // S122 — SLA chip in the admin dispute queue. Three buckets driven by
+    // how long the case has been open vs. the 7-day deadline from S20c.
+    'admin.disputes.colSLA': 'SLA',
+    'admin.disputes.slaWithin': 'Within SLA',
+    'admin.disputes.slaApproaching': 'Approaching',
+    'admin.disputes.slaOverdue': 'Overdue',
     'dispute.openCase': 'Open a case',
     'dispute.kind': 'Type',
     'dispute.kind.refund': 'Refund',
@@ -987,6 +993,11 @@ export const translations = {
     'admin.dispute.refundAmount': 'Reembolso (hóspede)',
     'admin.dispute.damageAmount': 'Dano (anfitrião)',
     'admin.dispute.moneyHint': 'Os valores só são aplicados ao Resolver. O reembolso devolve dinheiro ao hóspede; o dano regista um pedido do anfitrião.',
+    // S122 — selo de SLA na fila de disputas. pt-BR herda via cadeia.
+    'admin.disputes.colSLA': 'SLA',
+    'admin.disputes.slaWithin': 'Dentro do SLA',
+    'admin.disputes.slaApproaching': 'Próximo do limite',
+    'admin.disputes.slaOverdue': 'Em atraso',
     'dispute.openCase': 'Abrir caso',
     'dispute.kind': 'Tipo',
     'dispute.kind.refund': 'Reembolso',
@@ -2050,5 +2061,10 @@ export const translations = {
     'expbookings.cancel': 'Cancelar',
     'expbookings.confirmCancel': '¿Cancelar esta reserva de experiencia?',
     'nav.expBookings': 'Mis experiencias',
+    // S122 — sello de SLA en la cola de disputas del panel de administración.
+    'admin.disputes.colSLA': 'SLA',
+    'admin.disputes.slaWithin': 'Dentro del SLA',
+    'admin.disputes.slaApproaching': 'Próximo al límite',
+    'admin.disputes.slaOverdue': 'Atrasado',
   },
 };

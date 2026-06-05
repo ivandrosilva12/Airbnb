@@ -479,6 +479,44 @@ function UsersPanel() {
   );
 }
 
+// renderSlaChip surfaces the S122 three-state SLA indicator next to each open
+// dispute in the admin queue. The backend (S20c, DisputeView) already exposes
+// an `overdue` boolean computed against the case's `dueAt` deadline, so we
+// trust that flag for the red state and only fall back to client-side math for
+// the "within" vs. "approaching" split when the deadline has not yet elapsed.
+// The chip's `title` shows the relative age of the case ("Opened Nh ago") so
+// moderators can scan the queue without doing the arithmetic themselves.
+function renderSlaChip(d, t) {
+  const opened = d.openedAt ? new Date(d.openedAt) : null;
+  const ageHours = opened ? Math.max(0, Math.floor((Date.now() - opened.getTime()) / 3600000)) : null;
+  // Tooltip is intentionally a short, language-neutral hint ("Opened 31h ago")
+  // — the visible chip text is the translated SLA bucket, which is what
+  // matters for moderators scanning the queue at a glance.
+  const tooltip = ageHours == null ? '' : `Opened ${ageHours}h ago`;
+  // Backend `overdue` is the source of truth for the red state (it knows the
+  // 7-day deadline). Client only differentiates within (<24h) vs approaching
+  // (24-48h) when the deadline hasn't elapsed yet.
+  if (d.overdue) {
+    return (
+      <span className="badge badge-overdue" title={tooltip}>
+        {t('admin.disputes.slaOverdue')}
+      </span>
+    );
+  }
+  if (ageHours != null && ageHours >= 24) {
+    return (
+      <span className="badge badge-dispute-open" title={tooltip}>
+        {t('admin.disputes.slaApproaching')}
+      </span>
+    );
+  }
+  return (
+    <span className="badge badge-dispute-resolved" title={tooltip}>
+      {t('admin.disputes.slaWithin')}
+    </span>
+  );
+}
+
 // DisputeQueue lists open Resolution Center cases and lets an admin record a
 // public decision (resolve / reject) per case.
 function DisputeQueue() {
@@ -556,11 +594,7 @@ function DisputeQueue() {
               <div className="admin-item-head">
                 <strong>{t(`dispute.kind.${d.kind}`)}</strong>
                 <span className={`badge badge-dispute-${d.status}`}>{t(`dispute.status.${d.status}`)}</span>
-                {d.overdue && (
-                  <span className="badge badge-overdue" title={d.dueAt ? new Date(d.dueAt).toLocaleString() : ''}>
-                    {t('admin.dispute.overdue')}
-                  </span>
-                )}
+                {renderSlaChip(d, t)}
                 {d.requestedAmountCents > 0 && (
                   <span className="muted">
                     {(d.requestedAmountCents / 100).toFixed(2)} {d.currency}
