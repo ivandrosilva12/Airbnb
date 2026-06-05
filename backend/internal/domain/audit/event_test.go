@@ -77,6 +77,7 @@ func TestAction_Valid_CoversEveryConstant(t *testing.T) {
 		ActionCohostInvited,
 		ActionPropertySuspended, ActionPropertyUnsuspended,
 		ActionKYCStepUpRequired,
+		ActionUserSuspendedCascadeApplied,
 	} {
 		if !a.Valid() {
 			t.Fatalf("constant %q reports invalid", a)

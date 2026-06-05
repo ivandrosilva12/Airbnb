@@ -202,6 +202,36 @@ func (r *BookingRepository) ListConfirmedStartingBetween(ctx context.Context, fr
 	return items, mapError(rows.Err())
 }
 
+// ListByHostStatus returns every booking with the given status across
+// all listings owned by hostID (S169 — host-suspension cascade). Filters
+// in two steps to avoid a JOIN: first the host's listing ids, then
+// bookings keyed by those ids + status. properties.host_id is indexed
+// (idx_properties_host from 0001_init) and bookings.property_id has the
+// PK-driven btree, so each leg is index-bounded. Unpaginated because
+// the cascade has to act on the whole set in one call.
+func (r *BookingRepository) ListByHostStatus(ctx context.Context, hostID uuid.UUID, status booking.Status) ([]*booking.Booking, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+bookingColumns+` FROM bookings
+		WHERE property_id IN (SELECT id FROM properties WHERE host_id = $1)
+		  AND status = $2
+		ORDER BY created_at DESC, id DESC`,
+		hostID, string(status),
+	)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer rows.Close()
+	var items []*booking.Booking
+	for rows.Next() {
+		b, err := scanBooking(rows)
+		if err != nil {
+			return nil, mapError(err)
+		}
+		items = append(items, b)
+	}
+	return items, mapError(rows.Err())
+}
+
 func (r *BookingRepository) HasOverlap(ctx context.Context, propertyID uuid.UUID, dates booking.DateRange) (bool, error) {
 	var exists bool
 	// Half-open overlap: existing.check_in < new.check_out AND new.check_in < existing.check_out.

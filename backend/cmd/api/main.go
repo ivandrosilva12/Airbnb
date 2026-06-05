@@ -57,6 +57,8 @@ import (
 	"github.com/airhost/backend/internal/config"
 	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/property"
+	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	domainuser "github.com/airhost/backend/internal/domain/user"
 	infraalerting "github.com/airhost/backend/internal/infrastructure/alerting"
@@ -313,6 +315,21 @@ func run() error {
 	// composition root keeps the application/booking package free of
 	// auditapp coupling.
 	bookingSvc.WithAuditor(bookingAuditor{svc: auditSvc})
+	// S169 — wire the suspended-host cascade: when an admin Suspends a
+	// host, auto-suspend their listings and auto-cancel their CONFIRMED
+	// bookings via the existing host-cancel path (100% refund). The
+	// cascade audit row summarises the result. The narrow ports keep
+	// userapp free of propertyapp / bookingapp imports; the adapters
+	// below are thin shims at the composition root, matching the
+	// cohostAuditor pattern S120 introduced.
+	userSvc.
+		WithCascade(
+			propertySuspendCascade{svc: propertySvc},
+			bookingCancelCascade{svc: bookingSvc},
+			bookingRepo,
+			hostListingLookup{repo: propertyRepo},
+		).
+		WithCascadeAuditor(userCascadeAuditor{svc: auditSvc})
 	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo).
 		// S99 / WF-GAP-016 — emit CohostInvited so the invitee gets a
 		// notification + SSE hint when a host grants them access.
@@ -857,5 +874,89 @@ func (b bookingAuditor) RecordKYCStepUpRequired(ctx context.Context, guestID, pr
 			"total_cents":    totalCents,
 			"currency":       currency,
 		},
+	})
+}
+
+// propertySuspendCascade adapts *propertyapp.Service to the narrow
+// userapp.PropertyCascader port. Throws away the returned property —
+// the cascade only needs to know success / failure. Kept at the
+// composition root so application/user stays free of propertyapp
+// coupling (S169).
+type propertySuspendCascade struct {
+	svc *propertyapp.Service
+}
+
+func (a propertySuspendCascade) Suspend(ctx context.Context, adminID, propertyID uuid.UUID) error {
+	_, err := a.svc.Suspend(ctx, adminID, propertyID)
+	return err
+}
+
+// bookingCancelCascade adapts *bookingapp.Service to the narrow
+// userapp.BookingCascader port. The cascade calls Cancel with the
+// suspended host as actor so bookingapp's existing host-cancel branch
+// runs (100% refund). Throws away the returned booking — the cascade
+// only needs success / failure (S169).
+type bookingCancelCascade struct {
+	svc *bookingapp.Service
+}
+
+func (a bookingCancelCascade) Cancel(ctx context.Context, actorID, bookingID uuid.UUID) error {
+	_, err := a.svc.Cancel(ctx, actorID, bookingID)
+	return err
+}
+
+// hostListingLookup adapts property.Repository to the narrow
+// userapp.HostListingLister port. Walks ListByHost in big pages so the
+// cascade sees every listing in one go even on a power-host. The page
+// size matches what the listings_overview screen uses; bumping it later
+// is a one-line change here (S169).
+type hostListingLookup struct {
+	repo interface {
+		ListByHost(ctx context.Context, hostID uuid.UUID, page shared.Page) (shared.PageResult[*property.Property], error)
+	}
+}
+
+func (a hostListingLookup) IDsByHost(ctx context.Context, hostID uuid.UUID) ([]uuid.UUID, error) {
+	const pageSize = 500
+	var ids []uuid.UUID
+	offset := 0
+	for {
+		page, err := a.repo.ListByHost(ctx, hostID, shared.Page{Limit: pageSize, Offset: offset})
+		if err != nil {
+			return ids, err
+		}
+		for _, p := range page.Items {
+			ids = append(ids, p.ID)
+		}
+		offset += len(page.Items)
+		if len(page.Items) < pageSize || int64(offset) >= page.Total {
+			break
+		}
+	}
+	return ids, nil
+}
+
+// userCascadeAuditor satisfies userapp.CascadeAuditor by translating
+// the user-cascade-specific call into an auditapp.RecordInput. Kept
+// at the composition root so the user application package never
+// imports auditapp (S169 — mirrors the cohostAuditor / bookingAuditor
+// pattern). Errors are propagated up the chain: userapp's call site
+// swallows them because the cascade has already happened by the time
+// this runs, but the propagation keeps the shim symmetric with the
+// others (auditapp.Service.Record returns an error; we forward it).
+type userCascadeAuditor struct {
+	svc *auditapp.Service
+}
+
+func (a userCascadeAuditor) Record(ctx context.Context, in userapp.CascadeAuditInput) error {
+	if a.svc == nil {
+		return nil
+	}
+	return a.svc.Record(ctx, auditapp.RecordInput{
+		ActorID:    in.ActorID,
+		Action:     in.Action,
+		TargetType: in.TargetType,
+		TargetID:   in.TargetID,
+		Metadata:   in.Metadata,
 	})
 }

@@ -49,4 +49,13 @@ type Repository interface {
 	// scheduler (S102 — WF-GAP-007) to find guests who have just
 	// crossed into the 48-hour reveal window and need a notification.
 	ListConfirmedStartingBetween(ctx context.Context, from, to time.Time) ([]*Booking, error)
+	// ListByHostStatus returns every booking with the given status
+	// across all listings owned by hostID (S169). Used by the
+	// host-suspension cascade to find confirmed reservations that
+	// must be auto-cancelled when an admin kicks a host. Unpaginated
+	// because the cascade has to act on the entire set in one go —
+	// pagination would force a stateful iterator just to apply a
+	// terminal mutation. The set is bounded by a single host's
+	// reservation footprint, which is small in practice.
+	ListByHostStatus(ctx context.Context, hostID uuid.UUID, status Status) ([]*Booking, error)
 }

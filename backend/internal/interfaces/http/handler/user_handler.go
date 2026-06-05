@@ -194,7 +194,7 @@ func (h *UserHandler) AdminSuspend(c *gin.Context) {
 		response.FailMessage(c, http.StatusBadRequest, "an admin cannot suspend themselves")
 		return
 	}
-	u, err := h.svc.Suspend(c.Request.Context(), id)
+	u, err := h.svc.Suspend(c.Request.Context(), adminID, id)
 	if err != nil {
 		response.Fail(c, err)
 		return

@@ -4,21 +4,106 @@ package userapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
+	"github.com/airhost/backend/internal/domain/audit"
+	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/google/uuid"
 )
 
+// PropertyCascader is the narrow port the user service uses to
+// auto-suspend a host's listings when the host is suspended (S169).
+// adminID rides through so the listing's audit row attributes the
+// state change to the same human who suspended the host.
+// Implemented by *propertyapp.Service.Suspend at the composition root.
+type PropertyCascader interface {
+	Suspend(ctx context.Context, adminID, propertyID uuid.UUID) error
+}
+
+// BookingCascader is the narrow port the user service uses to
+// auto-cancel confirmed bookings on a suspended host's listings (S169).
+// The host-cancel path of bookingapp.Cancel returns 100% refund per
+// the existing policy; the cascade passes hostID as actor so the same
+// path runs (the suspended host is, in effect, the one cancelling).
+// Implemented by *bookingapp.Service.Cancel at the composition root.
+type BookingCascader interface {
+	Cancel(ctx context.Context, actorID, bookingID uuid.UUID) error
+}
+
+// CascadeAuditor is the narrow port the user service uses to append a
+// single ActionUserSuspendedCascadeApplied row summarising the cascade
+// (S169). Implemented by *auditapp.Service.Record at the composition
+// root via the same shim pattern as cohostAuditor / bookingAuditor.
+type CascadeAuditor interface {
+	Record(ctx context.Context, in CascadeAuditInput) error
+}
+
+// CascadeAuditInput mirrors auditapp.RecordInput at the userapp
+// boundary so this package does not import auditapp directly.
+type CascadeAuditInput struct {
+	ActorID    uuid.UUID
+	Action     audit.Action
+	TargetType audit.TargetType
+	TargetID   uuid.UUID
+	Metadata   map[string]any
+}
+
+// HostListingLister is the narrow port the user service uses to walk
+// every listing owned by a host during the cascade (S169). Mirrors
+// property.Repository.ListByHost; declared here so userapp does not
+// import the property repository directly. main.go adapts the
+// concrete repo via a small shim.
+type HostListingLister interface {
+	IDsByHost(ctx context.Context, hostID uuid.UUID) ([]uuid.UUID, error)
+}
+
 // Service orchestrates user use cases.
 type Service struct {
 	repo user.Repository
+	// Cascade dependencies (S169). All four must be wired together via
+	// WithCascade for the cascade arm to fire; any nil short-circuits to
+	// the legacy "just flip IsActive" behaviour so older wiring and
+	// existing tests keep working unchanged.
+	props        PropertyCascader
+	bookings     BookingCascader
+	bookingRepo  booking.Repository
+	listings     HostListingLister
+	cascadeAudit CascadeAuditor
 }
 
 // NewService wires the user application service.
 func NewService(repo user.Repository) *Service {
 	return &Service{repo: repo}
+}
+
+// WithCascade enables the host-suspension cascade (S169). Wiring all
+// four deps switches Suspend into cascade mode: auto-suspend every
+// listing owned by the kicked host, auto-cancel every confirmed
+// booking on those listings via the host-cancel path (100% refund),
+// then append a single ActionUserSuspendedCascadeApplied summary row.
+// Both downstream arms are best-effort — a failure on one listing or
+// booking does NOT abort the whole cascade; the failed ids land in
+// the audit row's metadata.errors slice. Optional auditor is wired
+// separately via WithCascadeAuditor so tests can exercise the
+// cascade without an audit sink.
+func (s *Service) WithCascade(props PropertyCascader, bookings BookingCascader, bookingRepo booking.Repository, listings HostListingLister) *Service {
+	s.props = props
+	s.bookings = bookings
+	s.bookingRepo = bookingRepo
+	s.listings = listings
+	return s
+}
+
+// WithCascadeAuditor wires the audit sink that receives the single
+// summary row when the cascade fires (S169). Optional — nil keeps the
+// cascade running but silent on the audit trail (the per-listing
+// property.suspended rows still land via propertyapp's own auditor).
+func (s *Service) WithCascadeAuditor(a CascadeAuditor) *Service {
+	s.cascadeAudit = a
+	return s
 }
 
 // Identity is the data extracted from a verified Keycloak token. Roles are the
@@ -145,7 +230,22 @@ func (s *Service) List(ctx context.Context, f user.ListFilter, page shared.Page)
 // A no-op (already inactive) returns the current state without error so a
 // retry doesn't fail; the audit hook in the handler is keyed on a successful
 // admin call rather than a state transition.
-func (s *Service) Suspend(ctx context.Context, id uuid.UUID) (*user.User, error) {
+//
+// S169 — when cascade deps are wired (WithCascade), a successful state
+// transition fans out: every listing owned by the kicked host is
+// auto-suspended (so it stops accepting new bookings) and every
+// CONFIRMED booking on those listings is auto-cancelled via the host-
+// cancel path (100% refund per the existing policy). A single
+// ActionUserSuspendedCascadeApplied audit row summarises the result.
+// Both downstream arms are best-effort — a failure on one listing or
+// booking does NOT abort the whole cascade. A no-op suspend (already
+// inactive) skips the cascade entirely so a retry doesn't re-fire
+// cancellations that already ran.
+//
+// adminID is the user who initiated the suspension. It's threaded into
+// the property-level audit rows (so the per-listing trail attributes
+// the state change to the same human) and into the cascade summary row.
+func (s *Service) Suspend(ctx context.Context, adminID, id uuid.UUID) (*user.User, error) {
 	u, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -156,7 +256,83 @@ func (s *Service) Suspend(ctx context.Context, id uuid.UUID) (*user.User, error)
 	if err := s.repo.Update(ctx, u); err != nil {
 		return nil, err
 	}
+	// Legacy path: no cascade wired. Older tests and deployments that
+	// don't run the cascade arm keep the original two-line semantics.
+	if s.props == nil || s.bookings == nil || s.bookingRepo == nil || s.listings == nil {
+		return u, nil
+	}
+	s.runCascade(ctx, adminID, id)
 	return u, nil
+}
+
+// runCascade applies the S169 cascade after a host has been
+// successfully suspended. Both arms (listings, bookings) are best-
+// effort: a failure on one item is captured in the summary audit
+// row's metadata.errors slice and the cascade carries on, so a
+// single bad listing can't block the rest of the host's footprint
+// from being neutralised. The summary row is written at the end
+// regardless of partial failure — its purpose is to record what
+// actually happened, not to roll back.
+func (s *Service) runCascade(ctx context.Context, adminID, hostID uuid.UUID) {
+	var (
+		listingsSuspended  int
+		bookingsCancelled  int
+		cascadeErrors      []string
+	)
+
+	// 1. Auto-suspend every listing owned by the host so no new
+	//    booking can land on a property whose owner has been kicked.
+	listingIDs, err := s.listings.IDsByHost(ctx, hostID)
+	if err != nil {
+		cascadeErrors = append(cascadeErrors, fmt.Sprintf("list-listings: %v", err))
+	}
+	for _, propID := range listingIDs {
+		if err := s.props.Suspend(ctx, adminID, propID); err != nil {
+			cascadeErrors = append(cascadeErrors, fmt.Sprintf("suspend-listing %s: %v", propID, err))
+			continue
+		}
+		listingsSuspended++
+	}
+
+	// 2. Auto-cancel confirmed bookings on the host's listings via
+	//    the host-cancel path. Passing hostID as actor triggers the
+	//    100% refund branch the existing bookingapp.Cancel implements,
+	//    so the guest is made whole. CancelledBy in the event payload
+	//    is hostID — semantically "the host cancelled (involuntarily,
+	//    because the platform kicked them)".
+	bks, err := s.bookingRepo.ListByHostStatus(ctx, hostID, booking.StatusConfirmed)
+	if err != nil {
+		cascadeErrors = append(cascadeErrors, fmt.Sprintf("list-bookings: %v", err))
+	}
+	for _, b := range bks {
+		if err := s.bookings.Cancel(ctx, hostID, b.ID); err != nil {
+			cascadeErrors = append(cascadeErrors, fmt.Sprintf("cancel-booking %s: %v", b.ID, err))
+			continue
+		}
+		bookingsCancelled++
+	}
+
+	// 3. Single summary audit row. Optional sink — older wiring leaves
+	//    s.cascadeAudit nil and the row is silently skipped (the per-
+	//    listing property.suspended rows from propertyapp's own
+	//    auditor still land). Errors are intentionally serialised as
+	//    a flat string slice rather than structured objects so the
+	//    metadata JSON shape stays grep-friendly for ops queries.
+	if s.cascadeAudit == nil {
+		return
+	}
+	meta := map[string]any{
+		"listings_suspended": listingsSuspended,
+		"bookings_cancelled": bookingsCancelled,
+		"errors":             cascadeErrors,
+	}
+	_ = s.cascadeAudit.Record(ctx, CascadeAuditInput{
+		ActorID:    adminID,
+		Action:     audit.ActionUserSuspendedCascadeApplied,
+		TargetType: audit.TargetUser,
+		TargetID:   hostID,
+		Metadata:   meta,
+	})
 }
 
 // Unsuspend reinstates a previously suspended account (S61). Refuses

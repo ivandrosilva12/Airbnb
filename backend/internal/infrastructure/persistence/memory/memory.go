@@ -390,11 +390,28 @@ func byField(items []*property.Property, less func(a, b *property.Property) bool
 type BookingRepository struct {
 	mu sync.RWMutex
 	m  map[uuid.UUID]booking.Booking
+	// props, when wired via WithProperties, lets ListByHostStatus resolve
+	// "every booking on a host's listings" without coupling the test
+	// harness to a real JOIN (S169). Optional — the legacy repos that
+	// don't exercise the suspended-host cascade leave it nil and the
+	// method falls back to an empty result rather than panicking.
+	props *PropertyRepository
 }
 
 // NewBookingRepository builds an empty in-memory booking repository.
 func NewBookingRepository() *BookingRepository {
 	return &BookingRepository{m: map[uuid.UUID]booking.Booking{}}
+}
+
+// WithProperties wires a sibling PropertyRepository so ListByHostStatus
+// can resolve hostID→property IDs in memory (S169 — the suspended-host
+// cascade). Mirrors the postgres impl, which JOINs properties against
+// bookings on property_id. Optional; nil keeps ListByHostStatus
+// behaving as a no-op (empty slice), matching how the legacy paths
+// expect a repo with no cross-aggregate awareness.
+func (r *BookingRepository) WithProperties(p *PropertyRepository) *BookingRepository {
+	r.props = p
+	return r
 }
 
 func (r *BookingRepository) Create(_ context.Context, b *booking.Booking) error {
@@ -526,6 +543,51 @@ func (r *BookingRepository) ListSettledInPeriod(_ context.Context, from, to time
 		out = append(out, &c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Dates.CheckOut.Before(out[j].Dates.CheckOut) })
+	return out, nil
+}
+
+// ListByHostStatus returns every booking with the given status across all
+// listings owned by hostID (S169 — host-suspension cascade). When no
+// PropertyRepository is wired (WithProperties), returns nil so legacy
+// tests keep working without setting up a cross-aggregate JOIN. Ordered
+// by created_at DESC, id DESC to match the other list helpers.
+func (r *BookingRepository) ListByHostStatus(_ context.Context, hostID uuid.UUID, status booking.Status) ([]*booking.Booking, error) {
+	if r.props == nil {
+		return nil, nil
+	}
+	// Snapshot the host's property ids first under the property repo's
+	// read lock so we don't hold both locks together (avoids any
+	// possibility of a future cross-acquire deadlock).
+	r.props.mu.RLock()
+	owned := make(map[uuid.UUID]struct{})
+	for id, p := range r.props.m {
+		if p.HostID == hostID {
+			owned[id] = struct{}{}
+		}
+	}
+	r.props.mu.RUnlock()
+	if len(owned) == 0 {
+		return nil, nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []*booking.Booking
+	for _, b := range r.m {
+		if b.Status != status {
+			continue
+		}
+		if _, ok := owned[b.PropertyID]; !ok {
+			continue
+		}
+		c := b
+		out = append(out, &c)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].ID.String() > out[j].ID.String()
+	})
 	return out, nil
 }
 
