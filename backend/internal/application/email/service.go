@@ -123,6 +123,22 @@ func (s *Service) EventHandler() event.Handler {
 			s.send(ctx, ev.HostID, catBookings, "Review your guest",
 				fmt.Sprintf("Your guest's stay at %q is complete. Leave a review of your guest.", ev.PropertyTitle))
 
+		// S165 — closes the Wave-17 audit gap on the BookingModified email
+		// arm. The notification + push were wired earlier (BookingModified
+		// is the only booking lifecycle event that lacked email), so this
+		// handler addresses the host (the guest is the one who initiated
+		// the change; the host needs to know to review the new dates).
+		// Rides catBookings so the existing booking opt-out preference
+		// applies, matching every other booking lifecycle subscriber. The
+		// event payload doesn't carry the old/new deltas (it snapshots
+		// the post-modification total only), so the body sticks to the
+		// facts the snapshot guarantees: the property title plus a CTA
+		// pointing the host at the booking.
+		case event.BookingModified:
+			title := propertyTitleOr(ev.PropertyTitle, "your listing")
+			s.send(ctx, ev.HostID, catBookings, "Booking modified — please review",
+				fmt.Sprintf("A guest modified booking %s for %q. Please review the new dates and guest count in your host dashboard.", ev.BookingID, title))
+
 		case event.MessageSent:
 			s.send(ctx, ev.RecipientID, catMessages, "New message",
 				"You have a new message on AirHost. Open the app to reply.")

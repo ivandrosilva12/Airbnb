@@ -186,6 +186,42 @@ func TestEventHandler_SplitPaymentCompletedSkipsWhenReposMissing(t *testing.T) {
 	}
 }
 
+// TestRealtime_BookingModified_PingsHost — S165. Closes the Wave-17 audit
+// gap on the BookingModified realtime arm. The guest initiates the
+// modification; the host's inbox badge must refresh immediately rather
+// than waiting up to 30s for the next poll cycle. Mirrors the
+// BookingRequested routing (host is the affected party for guest-
+// initiated booking changes).
+func TestRealtime_BookingModified_PingsHost(t *testing.T) {
+	ctx := context.Background()
+	hub := &fakeBroadcaster{}
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(realtimeapp.NewService(hub).EventHandler())
+
+	host := uuid.New()
+	guest := uuid.New()
+
+	dispatcher.Publish(ctx, event.BookingModified{
+		BookingID:     uuid.New(),
+		PropertyID:    uuid.New(),
+		PropertyTitle: "Sunny Loft",
+		HostID:        host,
+		GuestID:       guest,
+		TotalCents:    25000,
+		Currency:      "EUR",
+	})
+
+	if len(hub.sent) != 1 {
+		t.Fatalf("booking-modified pushes = %d, want 1 (%+v)", len(hub.sent), hub.sent)
+	}
+	if hub.sent[0].UserID != host {
+		t.Fatalf("push recipient = %v, want host %v", hub.sent[0].UserID, host)
+	}
+	if hub.sent[0].Payload != `{"type":"notification"}` {
+		t.Fatalf("payload = %q, want notification", hub.sent[0].Payload)
+	}
+}
+
 // TestEventHandler_DisputeEventsPushHints — S99 / WF-GAP-002. When a guest or
 // host opens a Resolution Center case, the OTHER party gets the badge; when
 // a moderator decides it, BOTH parties do.

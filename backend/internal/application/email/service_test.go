@@ -1028,6 +1028,52 @@ func TestEventHandler_ReviewSubmitted_HostToGuest_EmailsGuest(t *testing.T) {
 	}
 }
 
+// TestEventHandler_BookingModified_EmailsHost — S165. Closes the Wave-17
+// audit gap on the BookingModified email arm. The guest initiates the
+// modification; the host needs to know to review the new dates. A single
+// email lands in the host's inbox with the property title and booking
+// reference in the body. Rides catBookings so the existing booking
+// opt-out preference applies, matching every other booking lifecycle
+// subscriber.
+func TestEventHandler_BookingModified_EmailsHost(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	host := mustUser(t, users, "modified-host@test.dev", user.RoleHost)
+	guest := mustUser(t, users, "modified-guest@test.dev", user.RoleGuest)
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	bookingID := uuid.New()
+	dispatcher.Publish(ctx, event.BookingModified{
+		BookingID:     bookingID,
+		PropertyID:    uuid.New(),
+		PropertyTitle: "Sunny Loft",
+		HostID:        host.ID,
+		GuestID:       guest.ID,
+		TotalCents:    25000,
+		Currency:      "EUR",
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want 1 (%+v)", len(sent), sent)
+	}
+	if sent[0].To != host.Email {
+		t.Fatalf("recipient = %q, want host %q", sent[0].To, host.Email)
+	}
+	if !strings.Contains(sent[0].Subject, "modified") {
+		t.Fatalf("subject = %q, want it to contain %q", sent[0].Subject, "modified")
+	}
+	if !strings.Contains(sent[0].Text, "Sunny Loft") {
+		t.Fatalf("body should mention the property title, got %q", sent[0].Text)
+	}
+	if !strings.Contains(sent[0].Text, bookingID.String()) {
+		t.Fatalf("body should embed the booking reference %s, got %q", bookingID, sent[0].Text)
+	}
+}
+
 // TestEventHandler_ReviewSubmitted_PropertyLookupFailsSilently — defensive
 // case: the listing was deleted between the review write and the email
 // dispatch (or any other repo error). The handler must log + short-circuit

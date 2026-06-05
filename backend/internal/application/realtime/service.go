@@ -70,6 +70,15 @@ func (s *Service) EventHandler() event.Handler {
 				recipient = ev.HostID
 			}
 			s.push(recipient, Update{Type: "notification"})
+
+		// S165 — closes the Wave-17 audit gap on the BookingModified
+		// realtime arm. The guest is the one modifying; the host needs
+		// the badge to refresh immediately rather than waiting up to 30s
+		// for the next inbox poll. Mirrors the BookingRequested routing
+		// (host is the affected party for guest-initiated booking
+		// changes).
+		case event.BookingModified:
+			s.push(ev.HostID, Update{Type: "notification"})
 		case event.MessageSent:
 			s.push(ev.RecipientID, Update{Type: "message", ConversationID: ev.ConversationID.String()})
 		case event.IdentityVerified:
