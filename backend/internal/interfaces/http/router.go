@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/airhost/backend/internal/config"
+	"github.com/airhost/backend/internal/domain/idempotency"
 	"github.com/airhost/backend/internal/infrastructure/observability"
 	"github.com/airhost/backend/internal/interfaces/http/handler"
 	"github.com/airhost/backend/internal/interfaces/http/middleware"
@@ -63,7 +64,12 @@ type Deps struct {
 	Metrics  *observability.Metrics
 	Registry *prometheus.Registry
 	Auth     gin.HandlerFunc
-	Handlers Handlers
+	// Idempotency is the persistence port for the RFC-style
+	// Idempotency-Key middleware (S160). May be nil in tests / wiring
+	// that doesn't want the feature; the middleware then degrades to
+	// a transparent pass-through.
+	Idempotency idempotency.Repository
+	Handlers    Handlers
 }
 
 // NewRouter assembles the Gin engine, middleware stack and route table.
@@ -202,6 +208,15 @@ func NewRouter(d Deps) *gin.Engine {
 	// Authenticated routes.
 	auth := api.Group("")
 	auth.Use(d.Auth)
+	// S160 — RFC-style Idempotency-Key on mutating verbs. Sits AFTER
+	// d.Auth so the middleware can scope the (key, user_id) namespace
+	// to the authenticated caller; the middleware itself checks the
+	// request method and bypasses non-mutating verbs, so registering
+	// it on the whole group is a no-op for GETs. Nil repo (e.g. some
+	// test wirings) → transparent pass-through.
+	if d.Idempotency != nil {
+		auth.Use(middleware.Idempotency(d.Idempotency))
+	}
 	{
 		// Profile.
 		auth.GET("/me", h.User.Me)

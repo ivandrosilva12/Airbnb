@@ -220,6 +220,12 @@ func run() error {
 	auditRepo := postgres.NewAuditRepository(pool)
 	houseRulesRepo := postgres.NewHouseRulesRepository(pool)
 	taxRepo := postgres.NewTaxRepository(pool)
+	// S160 — RFC-style Idempotency-Key replay store. Lives on the
+	// repos block (not as an app service) because the middleware
+	// owns the orchestration and the domain aggregate is a thin
+	// transport-layer record. Wired into apphttp.NewRouter below and
+	// into the hourly cleanup scheduler at the bottom of run().
+	idempotencyRepo := postgres.NewIdempotencyRepository(pool)
 
 	// --- Domain events ----------------------------------------------------
 	// A synchronous in-process dispatcher fans domain events out to subscribers,
@@ -506,10 +512,11 @@ func run() error {
 	authMW := middleware.NewAuthMiddleware(verifier, syncFn)
 
 	router := apphttp.NewRouter(apphttp.Deps{
-		Config:   cfg,
-		Metrics:  metrics,
-		Registry: registry,
-		Auth:     authMW,
+		Config:      cfg,
+		Metrics:     metrics,
+		Registry:    registry,
+		Auth:        authMW,
+		Idempotency: idempotencyRepo,
 		Handlers: apphttp.Handlers{
 			Health:         handler.NewHealthHandler(pool),
 			User:           handler.NewUserHandler(userSvc).WithAudit(auditSvc),
@@ -568,6 +575,23 @@ func run() error {
 			deleted, err := webhookEventRepo.DeleteOlderThan(ctx, cutoff)
 			if err == nil && deleted > 0 {
 				slog.Info("webhook-events cleanup", "deleted", deleted, "cutoff", cutoff)
+			}
+			return err
+		},
+	})
+	// S160 — purge Idempotency-Key replay records older than 24h on an
+	// hourly cadence. The PK (user_id, key) plus the SHA-256 body hash
+	// would otherwise let the table grow indefinitely under retry
+	// storms; a 24h TTL is more than long enough for a flaky-network
+	// mobile retry while keeping the storage footprint bounded.
+	sched.Add(scheduler.Job{
+		Name:     "request-idempotency-cleanup",
+		Interval: time.Hour,
+		Run: func(ctx context.Context) error {
+			cutoff := time.Now().UTC().Add(-24 * time.Hour)
+			deleted, err := idempotencyRepo.Cleanup(ctx, cutoff)
+			if err == nil && deleted > 0 {
+				slog.Info("idempotency cleanup", "deleted", deleted, "cutoff", cutoff)
 			}
 			return err
 		},
