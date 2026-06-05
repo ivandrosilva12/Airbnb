@@ -148,6 +148,11 @@ function TaxRemittancePanel() {
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // S126 — the Export CSV button has its own loading + error state separate
+  // from the report fetch above, so a failed CSV write doesn't blank the
+  // table and a successful generate doesn't dismiss a previous export error.
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
 
   async function generate(e) {
     if (e) e.preventDefault();
@@ -172,45 +177,57 @@ function TaxRemittancePanel() {
 
   // exportCsv builds a regulator-friendly CSV with one row per (jurisdiction,
   // rule) pair plus a totals row per jurisdiction. CRLF + quoted fields are
-  // belt-and-braces for spreadsheet imports.
-  function exportCsv() {
-    const rows = [
-      ['period', 'country', 'city', 'currency', 'tax_rule', 'amount', 'booking_count'],
-    ];
-    for (const r of items) {
-      for (const line of r.lines || []) {
+  // belt-and-braces for spreadsheet imports. S126 — runs as an async flow so
+  // the button can advertise an "Exporting…" state and surface failures
+  // (Blob/URL APIs can throw on locked-down browsers) inline rather than via
+  // a noisy alert().
+  async function exportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const rows = [
+        ['period', 'country', 'city', 'currency', 'tax_rule', 'amount', 'booking_count'],
+      ];
+      for (const r of items) {
+        for (const line of r.lines || []) {
+          rows.push([
+            r.period,
+            r.country,
+            r.city || '',
+            r.currency,
+            line.name,
+            fmtAmount(line.amountCents),
+            String(line.bookingCount),
+          ]);
+        }
         rows.push([
           r.period,
           r.country,
           r.city || '',
           r.currency,
-          line.name,
-          fmtAmount(line.amountCents),
-          String(line.bookingCount),
+          '__TOTAL__',
+          fmtAmount(r.totalCents),
+          String(r.bookingCount),
         ]);
       }
-      rows.push([
-        r.period,
-        r.country,
-        r.city || '',
-        r.currency,
-        '__TOTAL__',
-        fmtAmount(r.totalCents),
-        String(r.bookingCount),
-      ]);
+      const csv = rows
+        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `airhost-tax-remittance-${year}-${String(month).padStart(2, '0')}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err.message || t('admin.tax.exportError'));
+    } finally {
+      setExporting(false);
     }
-    const csv = rows
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `airhost-tax-remittance-${year}-${String(month).padStart(2, '0')}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
   }
 
   // Build a year list spanning the last 5 calendar years — remittance for
@@ -254,13 +271,30 @@ function TaxRemittancePanel() {
         <button type="submit" className="btn btn-primary" disabled={loading}>
           {loading ? t('common.loading') : t('admin.tax.generate')}
         </button>
-        {loaded && items.length > 0 && (
-          <button type="button" className="btn btn-ghost" onClick={exportCsv}>
-            {t('admin.tax.exportCsv')}
-          </button>
-        )}
+        {/* S126 — Export CSV is always visible so the operator can see the
+            affordance up front. It's disabled (with a tooltip) until a
+            remittance period has been generated and has rows; once data is
+            on screen it flips to an enabled idle state. While the CSV is
+            being assembled and the download is triggered, it advertises a
+            loading state via aria-busy + label swap so screen readers
+            announce the transition. */}
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={exportCsv}
+          disabled={!loaded || items.length === 0 || exporting}
+          aria-busy={exporting ? 'true' : 'false'}
+          title={
+            !loaded || items.length === 0
+              ? t('admin.tax.selectPeriodFirst')
+              : undefined
+          }
+        >
+          {exporting ? t('admin.tax.exporting') : t('admin.tax.exportCsv')}
+        </button>
       </form>
       {error && <p className="error" role="alert">{error}</p>}
+      {exportError && <p className="error" role="alert">{exportError}</p>}
       {!loaded ? (
         <p className="muted">{t('admin.tax.runHint')}</p>
       ) : items.length === 0 ? (

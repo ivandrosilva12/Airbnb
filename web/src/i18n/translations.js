@@ -280,6 +280,13 @@ export const translations = {
     'admin.tax.month': 'Month',
     'admin.tax.generate': 'Generate',
     'admin.tax.exportCsv': 'Export CSV',
+    // S126 — three visible states for the Export CSV button. Disabled
+    // until a remittance period has been generated and has rows;
+    // "Exporting…" is shown while the CSV is being assembled and the
+    // browser download is triggered.
+    'admin.tax.exporting': 'Exporting…',
+    'admin.tax.selectPeriodFirst': 'Generate a remittance period first.',
+    'admin.tax.exportError': 'Could not export the CSV. Please try again.',
     'admin.tax.runHint': 'Pick a year and month, then press Generate.',
     'admin.tax.empty': 'No settled bookings in this period — nothing to remit.',
     'admin.tax.bookingCount': '{n} booking(s)',
@@ -1122,6 +1129,10 @@ export const translations = {
     'admin.tax.month': 'Mês',
     'admin.tax.generate': 'Gerar',
     'admin.tax.exportCsv': 'Exportar CSV',
+    // S126 — estados visíveis do botão Exportar CSV. pt-BR herda via cadeia.
+    'admin.tax.exporting': 'A exportar…',
+    'admin.tax.selectPeriodFirst': 'Gere primeiro um período de entrega.',
+    'admin.tax.exportError': 'Não foi possível exportar o CSV. Tente novamente.',
     'admin.tax.runHint': 'Escolha um ano e um mês, depois prima Gerar.',
     'admin.tax.empty': 'Sem reservas liquidadas neste período — nada a entregar.',
     'admin.tax.bookingCount': '{n} reserva(s)',
@@ -1860,6 +1871,13 @@ export const translations = {
     'consent.cat.analyticsHint': 'Métricas anónimas de visitas para saber qué mejorar.',
     'consent.cat.marketing': 'Marketing',
     'consent.cat.marketingHint': 'Píxeles publicitarios de terceros. Desactivados a menos que los actives.',
+    // S126 — estados visibles del botón Exportar CSV en la tabla de
+    // recolección de impuestos. El resto del panel sigue cayendo al inglés
+    // hasta que se traduzca la cobertura completa de admin.tax.*.
+    'admin.tax.exportCsv': 'Exportar CSV',
+    'admin.tax.exporting': 'Exportando…',
+    'admin.tax.selectPeriodFirst': 'Genera primero un período de recolección.',
+    'admin.tax.exportError': 'No se pudo exportar el CSV. Inténtalo de nuevo.',
     // Fraud panel (S73) — full set so a Spanish-speaking admin sees the
     // queue in their language rather than the English fallback.
     'admin.fraud.title': 'Cola de revisión antifraude',
