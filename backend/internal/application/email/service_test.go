@@ -523,6 +523,130 @@ func TestEventHandler_CohostInvitedEmail(t *testing.T) {
 	}
 }
 
+// TestEventHandler_KYCStepUpRequired_SendsToGuestAccountCategory — S140 /
+// WF-GAP-019 email arm. An unverified guest who trips the high-value gate
+// gets a transactional account email naming the threshold amount (formatted
+// as "{x.xx} {currency}") and the listing title so the message stands on
+// its own without first opening the app. Single email, addressed to the
+// guest, subject "Verify your identity to continue booking".
+func TestEventHandler_KYCStepUpRequired_SendsToGuestAccountCategory(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	guest := mustUser(t, users, "kyc-guest@test.dev", user.RoleGuest)
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	dispatcher.Publish(ctx, event.KYCStepUpRequired{
+		GuestID:        guest.ID,
+		PropertyID:     uuid.New(),
+		PropertyTitle:  "Sunny Flat",
+		ThresholdCents: 50000,
+		TotalCents:     75000,
+		Currency:       "EUR",
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want 1 (%+v)", len(sent), sent)
+	}
+	if sent[0].To != guest.Email {
+		t.Fatalf("recipient = %q, want guest %q", sent[0].To, guest.Email)
+	}
+	if !strings.Contains(sent[0].Subject, "Verify your identity") {
+		t.Fatalf("subject = %q, want it to contain %q", sent[0].Subject, "Verify your identity")
+	}
+	if !strings.Contains(sent[0].Text, "Sunny Flat") {
+		t.Fatalf("body should mention the property title, got %q", sent[0].Text)
+	}
+	// Threshold formatted as "{xx.xx} {Currency}" — 50000 cents in EUR.
+	if !strings.Contains(sent[0].Text, "500.00 EUR") {
+		t.Fatalf("body should mention the threshold amount %q, got %q", "500.00 EUR", sent[0].Text)
+	}
+}
+
+// TestEventHandler_KYCStepUpRequired_NonOptOutCatAccount — the identity
+// step-up nudge rides catAccount (account/security channel) and must land
+// in the guest's inbox even when they've muted booking emails. Locks in
+// the routing decision from S140: identity verification is security-
+// adjacent, not opt-out-able, mirroring IdentityVerified and the
+// Resolution Center notices.
+func TestEventHandler_KYCStepUpRequired_NonOptOutCatAccount(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	guest := mustUser(t, users, "kyc-optout@test.dev", user.RoleGuest)
+	// Mute everything that *is* opt-out-able. The KYC step-up arm rides
+	// catAccount, which optedIn() always treats as opted-in.
+	guest.SetEmailPreferences(user.EmailPreferences{Bookings: false, Messages: false})
+	if err := users.Update(ctx, guest); err != nil {
+		t.Fatalf("update prefs: %v", err)
+	}
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	dispatcher.Publish(ctx, event.KYCStepUpRequired{
+		GuestID:        guest.ID,
+		PropertyID:     uuid.New(),
+		PropertyTitle:  "Sunny Flat",
+		ThresholdCents: 50000,
+		TotalCents:     75000,
+		Currency:       "EUR",
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want 1 even with Bookings opt-out (catAccount is non-opt-out); got %+v", len(sent), sent)
+	}
+	if sent[0].To != guest.Email {
+		t.Fatalf("recipient = %q, want guest %q", sent[0].To, guest.Email)
+	}
+}
+
+// TestEventHandler_KYCStepUpRequired_EmptyPropertyTitleFallsBack — defensive
+// case: when the denormalised PropertyTitle on the event is empty (the
+// emitter couldn't resolve the listing, or it raced a deletion) the body
+// must still render cleanly via propertyTitleOr("", "a listing") rather
+// than embedding a literal pair of empty quotes.
+func TestEventHandler_KYCStepUpRequired_EmptyPropertyTitleFallsBack(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	guest := mustUser(t, users, "kyc-fallback@test.dev", user.RoleGuest)
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	dispatcher.Publish(ctx, event.KYCStepUpRequired{
+		GuestID:        guest.ID,
+		PropertyID:     uuid.New(),
+		PropertyTitle:  "",
+		ThresholdCents: 50000,
+		TotalCents:     75000,
+		Currency:       "EUR",
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want 1 (%+v)", len(sent), sent)
+	}
+	if !strings.Contains(sent[0].Text, "a listing") {
+		t.Fatalf("body should fall back to %q when PropertyTitle is empty, got %q", "a listing", sent[0].Text)
+	}
+	// Belt-and-braces: the fallback must NOT leak an empty pair of quotes
+	// into the rendered body.
+	if strings.Contains(sent[0].Text, `""`) {
+		t.Fatalf("body should not contain empty quotes, got %q", sent[0].Text)
+	}
+	// The threshold should still render, since the formatter doesn't care
+	// about the title path.
+	if !strings.Contains(sent[0].Text, "500.00 EUR") {
+		t.Fatalf("body should still mention the threshold amount, got %q", sent[0].Text)
+	}
+}
+
 // TestEventHandler_SplitShareEvents — S116 (follow-on to S88). The aggregate
 // SplitPaymentCompleted event already triggers an organizer + payer fanout;
 // this test covers the per-share arm: each payer should be told the moment

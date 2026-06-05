@@ -2,6 +2,7 @@ package notificationapp_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -356,6 +357,51 @@ func TestEventHandler_OfferEventsNotifyTheRightParty(t *testing.T) {
 	})
 	if c, _ := svc.UnreadCount(ctx, guestID); c != 2 {
 		t.Errorf("guest unread after Withdrawn = %d, want 2", c)
+	}
+}
+
+// TestEventHandler_KYCStepUpRequired_CreatesNotificationForGuest — S140 /
+// WF-GAP-019 in-app arm. When the booking service emits the high-value
+// gate event, exactly one notification row is created for the guest with
+// TypeKYCStepUpRequired and a body that names the listing so the guest
+// can deep-link back. RelatedID points at the listing's PropertyID (the
+// resource the user taps to retry the booking flow), NOT at a booking
+// (no booking exists — the step-up rejected the create).
+func TestEventHandler_KYCStepUpRequired_CreatesNotificationForGuest(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewNotificationRepository()
+	svc := notificationapp.NewService(repo)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	guestID := uuid.New()
+	propID := uuid.New()
+
+	dispatcher.Publish(ctx, event.KYCStepUpRequired{
+		GuestID:        guestID,
+		PropertyID:     propID,
+		PropertyTitle:  "Sunny Flat",
+		ThresholdCents: 50000,
+		TotalCents:     75000,
+		Currency:       "EUR",
+	})
+
+	page, err := svc.List(ctx, guestID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list guest: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("guest notifications = %d, want 1 (%+v)", len(page.Items), page.Items)
+	}
+	got := page.Items[0]
+	if got.Type != notification.TypeKYCStepUpRequired {
+		t.Fatalf("notification type = %q, want %q", got.Type, notification.TypeKYCStepUpRequired)
+	}
+	if got.RelatedID != propID {
+		t.Fatalf("notification related = %s, want PropertyID %s", got.RelatedID, propID)
+	}
+	if !strings.Contains(got.Body, "Sunny Flat") {
+		t.Fatalf("notification body should reference the property title, got %q", got.Body)
 	}
 }
 
