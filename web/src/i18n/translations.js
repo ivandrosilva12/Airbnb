@@ -273,6 +273,11 @@ export const translations = {
     'admin.users.suspend': 'Suspend',
     'admin.users.unsuspend': 'Reinstate',
     'admin.users.confirmSuspend': 'Suspend {email}? They will be signed out and unable to use the platform.',
+    // S138 — visible states of the Export CSV button on the admin user list.
+    'admin.users.exportCsv': 'Export CSV',
+    'admin.users.exporting': 'Exporting…',
+    'admin.users.exportSelectFirst': 'Run a search first.',
+    'admin.users.exportError': 'Could not export the CSV. Please try again.',
     'admin.tax.title': 'Tax remittance',
     'admin.tax.hint': 'Per-jurisdiction tax breakdown for a closed calendar month. Generate when you are ready to file.',
     'admin.tax.filterLabel': 'Choose a remittance period',
@@ -1150,6 +1155,13 @@ export const translations = {
     'admin.users.suspend': 'Suspender',
     'admin.users.unsuspend': 'Reactivar',
     'admin.users.confirmSuspend': 'Suspender {email}? A sessão será terminada e a plataforma fica inacessível.',
+    // S138 — estados visíveis do botão Exportar CSV na lista de utilizadores.
+    // pt-BR herda estas chaves (não diverge); ver bloco pt-BR abaixo se algo
+    // precisar de divergir no futuro.
+    'admin.users.exportCsv': 'Exportar CSV',
+    'admin.users.exporting': 'A exportar…',
+    'admin.users.exportSelectFirst': 'Execute primeiro uma pesquisa.',
+    'admin.users.exportError': 'Não foi possível exportar o CSV. Tente novamente.',
     'admin.tax.title': 'Entrega de impostos',
     'admin.tax.hint': 'Detalhe por jurisdição para um mês fechado. Gere quando estiver pronto a entregar.',
     'admin.tax.filterLabel': 'Escolha um período de entrega',
@@ -1957,6 +1969,12 @@ export const translations = {
     'admin.fraud.exporting': 'Exportando…',
     'admin.fraud.exportSelectFirst': 'Ejecuta primero una búsqueda.',
     'admin.fraud.exportError': 'No se pudo exportar el CSV. Inténtalo de nuevo.',
+    // S138 — estados visibles del botón Exportar CSV en la lista de
+    // usuarios del panel de administración.
+    'admin.users.exportCsv': 'Exportar CSV',
+    'admin.users.exporting': 'Exportando…',
+    'admin.users.exportSelectFirst': 'Ejecuta primero una búsqueda.',
+    'admin.users.exportError': 'No se pudo exportar el CSV. Inténtalo de nuevo.',
     // Outbox DLQ (S103)
     'admin.subnav': 'Secciones de administración',
     'admin.outbox.title': 'Cola DLQ del outbox',

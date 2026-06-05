@@ -437,6 +437,12 @@ function UsersPanel() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  // S138 — loaded gates the Export CSV button: until a fetch has completed
+  // at least once the button stays disabled even if items is empty (the
+  // empty state during the initial load is ambiguous; once loaded is true
+  // an empty items list genuinely means "no users matched these filters"
+  // and the button correctly stays disabled with the same tooltip).
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(null);
   // Filter state is local; the URL stays clean because admins rarely
   // bookmark a filtered users list. The Apply button (or Enter on the
@@ -448,6 +454,12 @@ function UsersPanel() {
   // narrow the page); this is the "scan the page I just got" affordance
   // hosts asked for. Empty query → show all.
   const [search, setSearch] = useState('');
+  // S138 — Export CSV has its own loading + error state separate from the
+  // user-list fetch above, so a failed CSV write doesn't blank the table
+  // and a successful Apply doesn't dismiss a previous export error.
+  // Mirrors the FraudPanel (S134) / TaxRemittancePanel (S126) pattern.
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -461,6 +473,7 @@ function UsersPanel() {
       });
       setItems(res.items || []);
       setTotal(res.total || 0);
+      setLoaded(true);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -468,6 +481,52 @@ function UsersPanel() {
     }
   }
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // S138 — exportCsv builds an analyst-friendly CSV with one row per user
+  // currently on screen. Columns mirror the live UserView (S65/S109) shape:
+  // id, email, fullName, role, isActive (the backend has no separate
+  // suspended field — suspended is encoded as !isActive), createdAt. CRLF
+  // + fully-quoted fields are belt-and-braces for spreadsheet imports.
+  // Runs async so the button can advertise an "Exporting…" state and
+  // surface failures inline rather than via a noisy alert() — Blob/URL
+  // APIs can throw on locked-down browsers.
+  async function exportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const header = ['id', 'email', 'fullName', 'role', 'isActive', 'createdAt'];
+      const rows = [header];
+      for (const u of items) {
+        rows.push([
+          u.id,
+          u.email,
+          u.fullName,
+          u.role,
+          u.isActive ? 'true' : 'false',
+          u.createdAt,
+        ]);
+      }
+      const csv = rows
+        .map((row) => row.map((cell) => `"${String(cell == null ? '' : cell).replace(/"/g, '""')}"`).join(','))
+        .join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // ISO date (yyyy-mm-dd) so successive exports sort lexically.
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.download = `admin-users-${dateStr}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err.message || t('admin.users.exportError'));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   async function suspend(id, email) {
     if (!confirm(t('admin.users.confirmSuspend', { email }))) return;
@@ -523,6 +582,29 @@ function UsersPanel() {
           <span>{t('admin.users.activeOnly')}</span>
         </label>
         <button type="submit" className="btn btn-primary">{t('admin.users.apply')}</button>
+        {/* S138 — Export CSV is always visible so the operator can see the
+            affordance up front. Disabled (with tooltip) until a fetch has
+            completed AND the queue has rows; once data is on screen it
+            flips to an enabled idle state. While the CSV is being assembled
+            and the browser download is triggered, it advertises a loading
+            state via aria-busy + label swap so screen readers announce the
+            transition. Lives inside the same filter form so the toolbar
+            stays a single horizontal row; type="button" keeps it from
+            submitting the form. */}
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={exportCsv}
+          disabled={!loaded || items.length === 0 || exporting}
+          aria-busy={exporting ? 'true' : 'false'}
+          title={
+            !loaded || items.length === 0
+              ? t('admin.users.exportSelectFirst')
+              : undefined
+          }
+        >
+          {exporting ? t('admin.users.exporting') : t('admin.users.exportCsv')}
+        </button>
       </form>
       {/* S109 — client-side search box. Filters the already-fetched page
           by name OR email substring, case-insensitive. Independent from
@@ -536,6 +618,7 @@ function UsersPanel() {
         aria-label={t('admin.users.searchPlaceholder')}
       />
       {error && <p className="error" role="alert">{error}</p>}
+      {exportError && <p className="error" role="alert">{exportError}</p>}
       {(() => {
         const q = search.trim().toLowerCase();
         const filtered = q === '' ? items : items.filter((u) => {
