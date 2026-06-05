@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useApi } from '../api/useApi';
 import { useAuth } from '../auth/AuthContext';
+import { useT } from '../i18n/I18nContext';
 
 // TODO(i18n): translate — wrap hardcoded labels via useT() from ../i18n/I18nContext.
 // Key namespace mirrors the web (notif.*).
@@ -9,6 +11,8 @@ import { useAuth } from '../auth/AuthContext';
 export default function NotificationsScreen() {
   const api = useApi();
   const { authenticated, login } = useAuth();
+  const navigation = useNavigation();
+  const { t } = useT();
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -62,6 +66,18 @@ export default function NotificationsScreen() {
     }
   }
 
+  // S145 — tapping a notification both clears its unread flag and, for the
+  // typed rows we know how to route, navigates to the relevant screen. The
+  // kyc_step_up_required type is emitted by the backend (S140) when a guest
+  // attempts a high-value booking without a verified identity, so the row
+  // routes straight to the Verification flow — same UX contract as the web.
+  function onRowPress(n) {
+    if (!n.read) markRead(n.id);
+    if (n.type === 'kyc_step_up_required') {
+      navigation.navigate('Verification');
+    }
+  }
+
   if (!authenticated) {
     return (
       <View style={styles.center}>
@@ -85,18 +101,31 @@ export default function NotificationsScreen() {
         data={items}
         keyExtractor={(i) => i.id}
         ListEmptyComponent={<Text style={styles.empty}>No notifications.</Text>}
-        renderItem={({ item }) => (
-          <Pressable style={[styles.row, !item.read && styles.unreadRow]} onPress={() => !item.read && markRead(item.id)}>
-            {!item.read && <View style={styles.dot} />}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.title}>{item.title}</Text>
-              <Text style={styles.meta}>{item.body}</Text>
-            </View>
-            <Pressable onPress={() => (item.read ? markUnread(item.id) : markRead(item.id))} hitSlop={8}>
-              <Text style={styles.toggle}>{item.read ? 'Mark unread' : 'Mark read'}</Text>
+        renderItem={({ item }) => {
+          const isStepUp = item.type === 'kyc_step_up_required';
+          return (
+            <Pressable style={[styles.row, !item.read && styles.unreadRow]} onPress={() => onRowPress(item)}>
+              {!item.read && <View style={styles.dot} />}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.title}>
+                  {/* S145 — shield prefix flags the row as a security/identity
+                      action so it stands out even when already read. */}
+                  {isStepUp ? '🛡️ ' : ''}{item.title}
+                </Text>
+                <Text style={styles.meta}>{item.body}</Text>
+                {isStepUp && (
+                  <View style={styles.actionTag}>
+                    <Text style={styles.actionTagText}>{t('notif.kycStepUp.tag')}</Text>
+                    <Text style={styles.actionTagCta}>{t('notif.kycStepUp.ctaLabel')} →</Text>
+                  </View>
+                )}
+              </View>
+              <Pressable onPress={() => (item.read ? markUnread(item.id) : markRead(item.id))} hitSlop={8}>
+                <Text style={styles.toggle}>{item.read ? 'Mark unread' : 'Mark read'}</Text>
+              </Pressable>
             </Pressable>
-          </Pressable>
-        )}
+          );
+        }}
       />
     </View>
   );
@@ -117,4 +146,18 @@ const styles = StyleSheet.create({
   toggle: { color: '#717171', fontSize: 12, textDecorationLine: 'underline' },
   btn: { backgroundColor: '#ff385c', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 12 },
   btnText: { color: '#fff', fontWeight: '700' },
+  // S145 — action-required tag sits under the body and visually nudges the
+  // user to tap the row. The chip + CTA share a row to keep the layout dense.
+  actionTag: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  actionTagText: {
+    color: '#b54708',
+    backgroundColor: '#fff6ed',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  actionTagCta: { color: '#ff385c', fontSize: 12, fontWeight: '600' },
 });

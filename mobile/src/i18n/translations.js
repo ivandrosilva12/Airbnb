@@ -552,6 +552,10 @@ export const translations = {
     'notif.markRead': 'Mark read',
     'notif.markUnread': 'Mark unread',
     'notif.none': 'No notifications yet.',
+    // S145 — kyc_step_up_required row gets a dedicated CTA + tag so the user
+    // recognises it as action-required instead of just another info row.
+    'notif.kycStepUp.ctaLabel': 'Verify identity',
+    'notif.kycStepUp.tag': 'Action required',
 
     'host.becomeTitle': 'Become a host',
     'host.becomeText': 'Upgrade your account to publish listings and manage bookings.',
@@ -1360,6 +1364,8 @@ export const translations = {
     'notif.markRead': 'Marcar como lida',
     'notif.markUnread': 'Marcar como não lida',
     'notif.none': 'Ainda sem notificações.',
+    'notif.kycStepUp.ctaLabel': 'Verificar identidade',
+    'notif.kycStepUp.tag': 'Ação necessária',
 
     'host.becomeTitle': 'Tornar-se anfitrião',
     'host.becomeText': 'Atualize a sua conta para publicar alojamentos e gerir reservas.',
@@ -1864,6 +1870,8 @@ export const translations = {
     'notif.markRead': 'Marcar como leída',
     'notif.markUnread': 'Marcar como no leída',
     'notif.none': 'Aún no hay notificaciones.',
+    'notif.kycStepUp.ctaLabel': 'Verificar identidad',
+    'notif.kycStepUp.tag': 'Acción requerida',
     'host.becomeTitle': 'Conviértete en anfitrión',
     'host.becomeText': 'Actualiza tu cuenta para publicar alojamientos y gestionar reservas.',
     'host.becomeBtn': 'Conviértete en anfitrión',
