@@ -354,9 +354,28 @@ export default function TripsScreen({ navigation }) {
                     </View>
                   </View>
                 ) : (
-                  <Pressable onPress={() => openReview(item.id)}>
-                    <Text style={styles.reviewCta}>{t('trips.leaveReview')}</Text>
-                  </Pressable>
+                  <View style={styles.reviewCtaRow}>
+                    <Pressable onPress={() => openReview(item.id)}>
+                      <Text style={styles.reviewCta}>{t('trips.leaveReview')}</Text>
+                    </Pressable>
+                    {/* S141: dedicated WriteReview screen as an alternative
+                        entry point — gives the comment box and six category
+                        pickers more room than the inline form. We pass through
+                        the listing title + host name when the bookings view
+                        exposes them so the destination can confirm "which
+                        stay". TODO(i18n): no key for trips.writeReviewFull. */}
+                    <Pressable
+                      onPress={() => navigation.navigate('WriteReview', {
+                        bookingId: item.id,
+                        propertyTitle: item.propertyTitle || item.listingTitle || '',
+                        hostName: item.hostName || '',
+                      })}
+                      accessibilityRole="button"
+                      accessibilityLabel="Write a review on a dedicated screen"
+                    >
+                      <Text style={styles.reviewCtaAlt}>Write a review</Text>
+                    </Pressable>
+                  </View>
                 )
               ) : null}
 
@@ -472,6 +491,14 @@ const styles = StyleSheet.create({
   modNote: { color: '#717171', fontSize: 12, marginTop: 8 },
   receiptToggle: { color: '#ff385c', fontWeight: '600', marginTop: 8 },
   reviewCta: { color: '#ff385c', fontWeight: '700', marginTop: 8 },
+  // S141: row that holds the inline-opener and the dedicated-screen link side
+  // by side. The two affordances are stacked horizontally with a gap so they
+  // stay visually a single CTA cluster rather than two competing rows.
+  reviewCtaRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  // The "Write a review" alt link points at WriteReview. We tone it down vs
+  // the existing leaveReview pink so it doesn't draw the eye away from the
+  // inline opener that has been there since S39.
+  reviewCtaAlt: { color: '#222', fontWeight: '600', marginTop: 8, textDecorationLine: 'underline' },
   reviewedText: { color: '#1e7e44', fontWeight: '700', marginTop: 8 },
   starRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   star: { color: '#ff385c', fontWeight: '700', fontSize: 15 },

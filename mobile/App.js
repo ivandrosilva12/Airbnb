@@ -31,6 +31,7 @@ import ExperienceDetailScreen from './src/screens/ExperienceDetailScreen';
 import MyExperienceBookingsScreen from './src/screens/MyExperienceBookingsScreen';
 import ArrivalInfoScreen from './src/screens/ArrivalInfoScreen';
 import CohostInvitationScreen from './src/screens/CohostInvitationScreen';
+import WriteReviewScreen from './src/screens/WriteReviewScreen';
 import { HeaderAuthButton } from './src/screens/HeaderAuthButton';
 
 // navigationRef lets non-component code (here, the push-notification tap
@@ -108,6 +109,8 @@ function AppNavigator() {
         <Stack.Screen name="MyExperienceBookings" component={MyExperienceBookingsScreen} options={{ title: 'My experiences' }} />
         {/* TODO(i18n): no key for the arrival screen title yet — see ArrivalInfoScreen. */}
         <Stack.Screen name="ArrivalInfo" component={ArrivalInfoScreen} options={{ title: 'Check-in details' }} />
+        {/* TODO(i18n): no key for the write-review screen title yet (S141). */}
+        <Stack.Screen name="WriteReview" component={WriteReviewScreen} options={{ title: 'Write a review' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
