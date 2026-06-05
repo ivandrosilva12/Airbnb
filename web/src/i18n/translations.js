@@ -351,6 +351,26 @@ export const translations = {
     'admin.outbox.prev': 'Previous',
     'admin.outbox.next': 'Next',
 
+    // Audit log viewer (S130) — read-only window over the S45 audit BC.
+    // The action / targetType labels are intentionally raw enum strings
+    // (e.g. "property.suspend"), not translated: they are stable
+    // technical identifiers an operator may need to copy into a CLI or
+    // grep, and the audit trail's evidentiary value depends on showing
+    // them verbatim.
+    'admin.audit.title': 'Audit log',
+    'admin.audit.filterAction': 'Action',
+    'admin.audit.filterTargetType': 'Target type',
+    'admin.audit.filterAll': 'All',
+    'admin.audit.refresh': 'Refresh',
+    'admin.audit.colWhen': 'When',
+    'admin.audit.colActor': 'Actor',
+    'admin.audit.colAction': 'Action',
+    'admin.audit.colTarget': 'Target',
+    'admin.audit.showMetadata': 'Show metadata',
+    'admin.audit.hideMetadata': 'Hide metadata',
+    'admin.audit.empty': 'No audit events match the current filter.',
+    'admin.audit.error': 'Could not load audit events',
+
     'report.title': 'Report this listing',
     'report.reason': 'Reason',
     'report.reason.spam': 'Spam',
@@ -1197,6 +1217,21 @@ export const translations = {
     'admin.outbox.prev': 'Anterior',
     'admin.outbox.next': 'Próximo',
 
+    // Audit log (S130) — strings de PT (pt-BR herda via I18nContext).
+    'admin.audit.title': 'Registo de auditoria',
+    'admin.audit.filterAction': 'Ação',
+    'admin.audit.filterTargetType': 'Tipo de alvo',
+    'admin.audit.filterAll': 'Tudo',
+    'admin.audit.refresh': 'Atualizar',
+    'admin.audit.colWhen': 'Quando',
+    'admin.audit.colActor': 'Autor',
+    'admin.audit.colAction': 'Ação',
+    'admin.audit.colTarget': 'Alvo',
+    'admin.audit.showMetadata': 'Mostrar metadados',
+    'admin.audit.hideMetadata': 'Ocultar metadados',
+    'admin.audit.empty': 'Nenhum evento de auditoria corresponde ao filtro atual.',
+    'admin.audit.error': 'Não foi possível carregar os eventos de auditoria',
+
     'report.title': 'Denunciar este anúncio',
     'report.reason': 'Motivo',
     'report.reason.spam': 'Spam',
@@ -1922,6 +1957,20 @@ export const translations = {
     'admin.outbox.clickToExpand': 'Click para expandir',
     'admin.outbox.prev': 'Anterior',
     'admin.outbox.next': 'Siguiente',
+    // Audit log (S130) — strings de ES.
+    'admin.audit.title': 'Registro de auditoría',
+    'admin.audit.filterAction': 'Acción',
+    'admin.audit.filterTargetType': 'Tipo de objetivo',
+    'admin.audit.filterAll': 'Todos',
+    'admin.audit.refresh': 'Actualizar',
+    'admin.audit.colWhen': 'Cuándo',
+    'admin.audit.colActor': 'Autor',
+    'admin.audit.colAction': 'Acción',
+    'admin.audit.colTarget': 'Objetivo',
+    'admin.audit.showMetadata': 'Mostrar metadatos',
+    'admin.audit.hideMetadata': 'Ocultar metadatos',
+    'admin.audit.empty': 'Ningún evento de auditoría coincide con el filtro actual.',
+    'admin.audit.error': 'No se pudieron cargar los eventos de auditoría',
     // S78 — es coverage expansion
     'settings.emailTitle': 'Notificaciones por correo electrónico',
     'settings.emailHint': 'Las notificaciones dentro de la app siempre están activas; esto solo controla el correo electrónico.',

@@ -242,6 +242,19 @@ export const api = {
     qs.set('offset', String(offset));
     return request('GET', `/admin/fraud/assessments?${qs.toString()}`, { auth: true });
   },
+  // S130 — admin audit-log viewer. Thin wrapper over the S45 read endpoint:
+  // /admin/audit accepts AND-combined filters (action, targetType, plus
+  // actorId/targetId which the UI does not surface yet) and returns the
+  // newest-first event page. Empty string values are dropped so the wire
+  // stays clean ("All" in the UI means "no filter" rather than ?action=).
+  adminListAuditEvents: ({ action = '', targetType = '', limit = 50, offset = 0 } = {}) => {
+    const qs = new URLSearchParams();
+    if (action) qs.set('action', action);
+    if (targetType) qs.set('targetType', targetType);
+    qs.set('limit', String(limit));
+    qs.set('offset', String(offset));
+    return request('GET', `/admin/audit?${qs.toString()}`, { auth: true });
+  },
 
   // Promo codes (admin)
   adminListCoupons: () => request('GET', '/admin/coupons', { auth: true }),

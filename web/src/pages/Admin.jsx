@@ -24,6 +24,7 @@ export default function Admin() {
       <UsersPanel />
       <TaxRemittancePanel />
       <FraudPanel />
+      <AuditLogPanel />
     </div>
   );
 }
@@ -1272,6 +1273,174 @@ function ReportQueue() {
             ))}
           </tbody>
         </table>
+      )}
+    </section>
+  );
+}
+
+// AUDIT_ACTIONS (S130) — the closed enum the backend audit BC accepts on
+// /admin/audit?action=…. Mirrors `audit.Action` from the Go domain (S45 + S54
+// + S61 + S90 + S120 + S124). Kept as a local constant rather than fetched
+// from the server because the set is small, slow-moving, and we already
+// commit to it on the backend; the cost of round-tripping for a select-box
+// option list isn't worth it. New action constants land here when the
+// backend enum is extended.
+const AUDIT_ACTIONS = [
+  'property.suspend',
+  'property.unsuspend',
+  'property.suspended',
+  'property.unsuspended',
+  'identity.approve',
+  'identity.reject',
+  'report.resolve',
+  'report.dismiss',
+  'dispute.resolve',
+  'dispute.reject',
+  'coupon.deactivate',
+  'tax_rule.create',
+  'tax_rule.delete',
+  'user.suspend',
+  'user.unsuspend',
+  'gdpr_erase',
+  'cohost.invited',
+];
+
+// AUDIT_TARGET_TYPES (S130) — mirrors `audit.TargetType`. Same rationale as
+// AUDIT_ACTIONS above: stable, server-side closed enum, surface it locally
+// so the dropdown renders without a fetch.
+const AUDIT_TARGET_TYPES = ['property', 'identity', 'report', 'dispute', 'coupon', 'tax_rule', 'user'];
+
+// AuditLogPanel (S130) — read-only viewer over the S45 audit BC. Two filters
+// (Action + TargetType) map directly onto the backend's AND-combined Filter,
+// and a Refresh button re-fetches without changing the filter (handy when an
+// admin acts in another tab and wants to see the trail row land here). Each
+// row is a compact card with timestamp, action, actor short-id, target, and
+// a Metadata toggle that pretty-prints the JSON-shaped context map — empty
+// objects collapse so we don't show "{}" noise.
+function AuditLogPanel() {
+  const { t } = useT();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [action, setAction] = useState('');
+  const [targetType, setTargetType] = useState('');
+  // Per-row metadata toggle — keyed by event id so opening one row doesn't
+  // affect the others, and the state survives a re-fetch as long as the
+  // row sticks around.
+  const [expanded, setExpanded] = useState({});
+
+  async function load(nextAction = action, nextTarget = targetType) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.adminListAuditEvents({
+        action: nextAction,
+        targetType: nextTarget,
+        limit: 50,
+      });
+      setItems(res.items || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function onActionChange(e) {
+    const v = e.target.value;
+    setAction(v);
+    load(v, targetType);
+  }
+  function onTargetChange(e) {
+    const v = e.target.value;
+    setTargetType(v);
+    load(action, v);
+  }
+  function toggle(id) {
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
+
+  // Short-form an actor / target UUID to the first 8 chars so a long row
+  // stays scannable; the full id is in the title attribute for copy-paste.
+  function shortId(id) {
+    if (!id) return '';
+    return String(id).slice(0, 8);
+  }
+  function hasMetadata(meta) {
+    return meta && typeof meta === 'object' && Object.keys(meta).length > 0;
+  }
+
+  return (
+    <section className="admin-panel" aria-label={t('admin.audit.title')} aria-busy={loading ? 'true' : 'false'}>
+      <h2>{t('admin.audit.title')}</h2>
+      <div className="admin-filters">
+        <label>
+          {t('admin.audit.filterAction')}
+          <select value={action} onChange={onActionChange} aria-label={t('admin.audit.filterAction')}>
+            <option value="">{t('admin.audit.filterAll')}</option>
+            {AUDIT_ACTIONS.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {t('admin.audit.filterTargetType')}
+          <select value={targetType} onChange={onTargetChange} aria-label={t('admin.audit.filterTargetType')}>
+            <option value="">{t('admin.audit.filterAll')}</option>
+            {AUDIT_TARGET_TYPES.map((tt) => (
+              <option key={tt} value={tt}>{tt}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => load()}
+          disabled={loading}
+        >
+          {t('admin.audit.refresh')}
+        </button>
+      </div>
+      {error && <p className="error" role="alert">{t('admin.audit.error')}: {error}</p>}
+      {loading ? (
+        <p role="status">{t('common.loading')}</p>
+      ) : items.length === 0 ? (
+        <p className="muted">{t('admin.audit.empty')}</p>
+      ) : (
+        <ul className="admin-list">
+          {items.map((e) => (
+            <li key={e.id} className="admin-item">
+              <div className="admin-item-head">
+                <span>{new Date(e.createdAt).toLocaleString()}</span>
+                <strong>{e.action}</strong>
+                <span className="muted" title={e.actorId}>
+                  {t('admin.audit.colActor')}: <code className="muted-text">{shortId(e.actorId)}</code>
+                </span>
+                <span className="muted" title={e.targetId}>
+                  {t('admin.audit.colTarget')}: {e.targetType} · <code className="muted-text">{shortId(e.targetId)}</code>
+                </span>
+              </div>
+              {hasMetadata(e.metadata) && (
+                <div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => toggle(e.id)}
+                    aria-expanded={expanded[e.id] ? 'true' : 'false'}
+                  >
+                    {expanded[e.id] ? t('admin.audit.hideMetadata') : t('admin.audit.showMetadata')}
+                  </button>
+                  {expanded[e.id] && (
+                    <pre className="muted-text" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                      {JSON.stringify(e.metadata, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );
