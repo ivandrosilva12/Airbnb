@@ -329,6 +329,14 @@ export const translations = {
     'admin.fraud.signal.missing_kyc': 'Missing KYC',
     'admin.fraud.signal.guest_velocity': 'Guest velocity',
     'admin.fraud.signal.suspended_guest': 'Suspended guest',
+    // S134 — three visible states for the FraudPanel Export CSV button.
+    // Disabled until a fetch has completed and there are rows to export;
+    // "Exporting…" is shown while the CSV is being assembled and the
+    // browser download is triggered.
+    'admin.fraud.exportCsv': 'Export CSV',
+    'admin.fraud.exporting': 'Exporting…',
+    'admin.fraud.exportSelectFirst': 'Run a search first.',
+    'admin.fraud.exportError': 'Could not export the CSV. Please try again.',
 
     // Outbox DLQ (S103) — admin UI over the S100 dead-letter queue endpoints.
     'admin.subnav': 'Admin sections',
@@ -1195,6 +1203,12 @@ export const translations = {
     'admin.fraud.signal.missing_kyc': 'KYC em falta',
     'admin.fraud.signal.guest_velocity': 'Velocidade do hóspede',
     'admin.fraud.signal.suspended_guest': 'Hóspede suspenso',
+    // S134 — estados visíveis do botão Exportar CSV na fila antifraude.
+    // pt-BR herda via cadeia.
+    'admin.fraud.exportCsv': 'Exportar CSV',
+    'admin.fraud.exporting': 'A exportar…',
+    'admin.fraud.exportSelectFirst': 'Execute primeiro uma pesquisa.',
+    'admin.fraud.exportError': 'Não foi possível exportar o CSV. Tente novamente.',
 
     // Outbox DLQ (S103)
     'admin.subnav': 'Secções de administração',
@@ -1937,6 +1951,12 @@ export const translations = {
     'admin.fraud.signal.missing_kyc': 'Sin KYC',
     'admin.fraud.signal.guest_velocity': 'Velocidad del huésped',
     'admin.fraud.signal.suspended_guest': 'Huésped suspendido',
+    // S134 — estados visibles del botón Exportar CSV en la cola
+    // antifraude. Hereda al resto de claves en español si faltan.
+    'admin.fraud.exportCsv': 'Exportar CSV',
+    'admin.fraud.exporting': 'Exportando…',
+    'admin.fraud.exportSelectFirst': 'Ejecuta primero una búsqueda.',
+    'admin.fraud.exportError': 'No se pudo exportar el CSV. Inténtalo de nuevo.',
     // Outbox DLQ (S103)
     'admin.subnav': 'Secciones de administración',
     'admin.outbox.title': 'Cola DLQ del outbox',

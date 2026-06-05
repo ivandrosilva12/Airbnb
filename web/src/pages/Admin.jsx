@@ -40,11 +40,18 @@ function FraudPanel() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(null);
   // Default to ?level=high — the queue is for things worth a human's
   // attention, not the routine low-risk noise. Admins can broaden the
   // floor with the picker.
   const [level, setLevel] = useState('high');
+  // S134 — the Export CSV button has its own loading + error state
+  // separate from the queue fetch above, so a failed CSV write doesn't
+  // blank the table and a successful re-fetch doesn't dismiss a previous
+  // export error. Mirrors the TaxRemittancePanel (S126) pattern.
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
 
   async function load(nextLevel = level) {
     setLoading(true);
@@ -53,6 +60,7 @@ function FraudPanel() {
       const res = await api.adminListFraudAssessments({ level: nextLevel, limit: 50 });
       setItems(res.items || []);
       setTotal(res.total || 0);
+      setLoaded(true);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -65,6 +73,59 @@ function FraudPanel() {
     const v = e.target.value;
     setLevel(v);
     load(v);
+  }
+
+  // S134 — exportCsv builds an analyst-friendly CSV with one row per
+  // assessment currently on screen. Header is the canonical contract
+  // (id, createdAt, actorType, actorId, scenario, riskLevel, score,
+  // status) the moderation team uses across surfaces; we map the in-
+  // memory fraud BC shape onto it: actorType is always "guest" (the
+  // assessment is about the booking's guest), actorId is the guestId,
+  // scenario is the bookingId that triggered the assessment, riskLevel
+  // mirrors `level`, and status is "pending" because everything in the
+  // queue is by definition unreviewed. CRLF + fully-quoted fields are
+  // belt-and-braces for spreadsheet imports. Runs async so the button
+  // can advertise an "Exporting…" state and surface failures inline
+  // rather than via a noisy alert() — Blob/URL APIs can throw on
+  // locked-down browsers.
+  async function exportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const header = ['id', 'createdAt', 'actorType', 'actorId', 'scenario', 'riskLevel', 'score', 'status'];
+      const rows = [header];
+      for (const a of items) {
+        rows.push([
+          a.id,
+          a.createdAt,
+          'guest',
+          a.guestId,
+          a.bookingId,
+          a.level,
+          String(a.score),
+          'pending',
+        ]);
+      }
+      const csv = rows
+        .map((row) => row.map((cell) => `"${String(cell == null ? '' : cell).replace(/"/g, '""')}"`).join(','))
+        .join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // ISO date (yyyy-mm-dd) so successive exports sort lexically.
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.download = `fraud-assessments-${dateStr}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err.message || t('admin.fraud.exportError'));
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -80,8 +141,30 @@ function FraudPanel() {
             <option value="high">{t('admin.fraud.minHigh')}</option>
           </select>
         </label>
+        {/* S134 — Export CSV is always visible so the operator can see the
+            affordance up front. Disabled (with tooltip) until a fetch has
+            completed AND the queue has rows; once data is on screen it
+            flips to an enabled idle state. While the CSV is being assembled
+            and the browser download is triggered, it advertises a loading
+            state via aria-busy + label swap so screen readers announce the
+            transition. */}
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={exportCsv}
+          disabled={!loaded || items.length === 0 || exporting}
+          aria-busy={exporting ? 'true' : 'false'}
+          title={
+            !loaded || items.length === 0
+              ? t('admin.fraud.exportSelectFirst')
+              : undefined
+          }
+        >
+          {exporting ? t('admin.fraud.exporting') : t('admin.fraud.exportCsv')}
+        </button>
       </div>
       {error && <p className="error" role="alert">{error}</p>}
+      {exportError && <p className="error" role="alert">{exportError}</p>}
       {loading ? (
         <p role="status">{t('common.loading')}</p>
       ) : items.length === 0 ? (
