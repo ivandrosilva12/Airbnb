@@ -274,6 +274,18 @@ func run() error {
 	// handler wiring further down still uses the same instance via
 	// .WithAudit(auditSvc).
 	auditSvc := auditapp.NewService(auditRepo)
+	// S124 — plug the same Auditor sink into the property application
+	// service so admin Suspend / Unsuspend append a "property.suspended"
+	// / "property.unsuspended" row at the application layer, next to
+	// the repo mutation. The pre-existing handler-level row
+	// (ActionPropertySuspend / Unsuspend, present-tense) is left in
+	// place — the two surfaces capture different intents: the handler
+	// row says "an admin clicked the button"; the service row says
+	// "the listing state actually changed". Both share auditSvc so
+	// they land in one trail. The adapter struct is reused (it is a
+	// thin propertyapp.Auditor shim — both cohost and property
+	// services consume the same interface).
+	propertySvc.WithAuditor(cohostAuditor{svc: auditSvc})
 	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo).
 		// S99 / WF-GAP-016 — emit CohostInvited so the invitee gets a
 		// notification + SSE hint when a host grants them access.

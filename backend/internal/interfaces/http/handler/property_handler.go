@@ -449,7 +449,7 @@ func (h *PropertyHandler) AdminSuspend(c *gin.Context) {
 	if !ok {
 		return
 	}
-	p, err := h.svc.Suspend(c.Request.Context(), id)
+	p, err := h.svc.Suspend(c.Request.Context(), adminID, id)
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -478,7 +478,7 @@ func (h *PropertyHandler) AdminUnsuspend(c *gin.Context) {
 	if !ok {
 		return
 	}
-	p, err := h.svc.Unsuspend(c.Request.Context(), id)
+	p, err := h.svc.Unsuspend(c.Request.Context(), adminID, id)
 	if err != nil {
 		response.Fail(c, err)
 		return

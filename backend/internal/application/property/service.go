@@ -8,6 +8,7 @@ import (
 	"path"
 
 	"github.com/airhost/backend/internal/application/port"
+	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
@@ -25,6 +26,15 @@ type Service struct {
 	storage    port.Storage
 	identity   IdentityVerifier
 	requireKYC bool
+	// auditor, when wired via WithAuditor, appends a compliance row on
+	// every successful admin Suspend / Unsuspend (S124). Reuses the
+	// package-local Auditor sink declared alongside the cohost service
+	// (cohost_service.go), so the application/property package stays
+	// free of auditapp coupling — the composition root in main.go
+	// adapts auditapp.Service into propertyapp.Auditor via a thin
+	// shim. Optional: nil keeps existing tests / wiring working with no
+	// audit side-effect.
+	auditor Auditor
 }
 
 // NewService wires the property application service. When requireKYC is true, a
@@ -32,6 +42,16 @@ type Service struct {
 // publishing a listing.
 func NewService(repo property.Repository, storage port.Storage, identity IdentityVerifier, requireKYC bool) *Service {
 	return &Service{repo: repo, storage: storage, identity: identity, requireKYC: requireKYC}
+}
+
+// WithAuditor plugs an Auditor so a successful Suspend / Unsuspend
+// appends a "property.suspended" / "property.unsuspended" audit row
+// alongside the repo mutation (S124). Fluent setter; pre-existing
+// call-sites keep working and the Suspend / Unsuspend paths
+// short-circuit when no auditor is wired.
+func (s *Service) WithAuditor(a Auditor) *Service {
+	s.auditor = a
+	return s
 }
 
 // CreateInput carries the data required to create a listing.
@@ -355,7 +375,9 @@ func (s *Service) Delete(ctx context.Context, actorID, propertyID uuid.UUID) err
 
 // Suspend hides a listing from search. Intended for platform admins (the
 // caller is responsible for enforcing the admin role), so no ownership check.
-func (s *Service) Suspend(ctx context.Context, propertyID uuid.UUID) (*property.Property, error) {
+// adminID is the acting admin's user id; it rides into the audit row when
+// an Auditor is wired (S124). A nil auditor keeps the path side-effect free.
+func (s *Service) Suspend(ctx context.Context, adminID, propertyID uuid.UUID) (*property.Property, error) {
 	p, err := s.repo.FindByID(ctx, propertyID)
 	if err != nil {
 		return nil, err
@@ -364,11 +386,29 @@ func (s *Service) Suspend(ctx context.Context, propertyID uuid.UUID) (*property.
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err
 	}
+	// S124 — append the compliance row after the repo mutation lands.
+	// Mirrors the cohost_service S120 pattern: the audit hook sits at
+	// the application layer (not the HTTP boundary), so the trail is
+	// written next to the state change even if a future caller invokes
+	// Suspend from somewhere other than the admin HTTP handler.
+	if s.auditor != nil {
+		if err := s.auditor.Record(ctx, AuditRecord{
+			ActorID:    adminID,
+			Action:     audit.ActionPropertySuspended,
+			TargetType: audit.TargetProperty,
+			TargetID:   propertyID,
+			Metadata:   map[string]any{"title": p.Title},
+		}); err != nil {
+			return nil, err
+		}
+	}
 	return p, nil
 }
 
 // Unsuspend restores a suspended listing to published (admin action).
-func (s *Service) Unsuspend(ctx context.Context, propertyID uuid.UUID) (*property.Property, error) {
+// adminID is the acting admin's user id; it rides into the audit row when
+// an Auditor is wired (S124).
+func (s *Service) Unsuspend(ctx context.Context, adminID, propertyID uuid.UUID) (*property.Property, error) {
 	p, err := s.repo.FindByID(ctx, propertyID)
 	if err != nil {
 		return nil, err
@@ -378,6 +418,17 @@ func (s *Service) Unsuspend(ctx context.Context, propertyID uuid.UUID) (*propert
 	}
 	if err := s.repo.Update(ctx, p); err != nil {
 		return nil, err
+	}
+	if s.auditor != nil {
+		if err := s.auditor.Record(ctx, AuditRecord{
+			ActorID:    adminID,
+			Action:     audit.ActionPropertyUnsuspended,
+			TargetType: audit.TargetProperty,
+			TargetID:   propertyID,
+			Metadata:   map[string]any{"title": p.Title},
+		}); err != nil {
+			return nil, err
+		}
 	}
 	return p, nil
 }
