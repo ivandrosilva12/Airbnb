@@ -61,6 +61,9 @@ main:focus { outline: none; }
 .notif-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--primary); margin-top: 6px; }
 .notif-toggle { background: none; border: none; color: var(--muted, #717171); cursor: pointer; font-size: .76rem; text-decoration: underline; white-space: nowrap; align-self: center; }
 .notif-toggle:hover { color: var(--brand, #ff385c); }
+.notif-kyc { border-left: 3px solid #d97706; background: #fffbeb; }
+.notif-kyc:hover { background: #fef3c7; }
+.notif-cta { display: inline-block; margin: 4px 0 2px; color: #b45309; font-size: .82rem; font-weight: 600; text-decoration: underline; }
 
 /* Buttons */
 .btn { border: none; border-radius: 8px; padding: 9px 16px; font-size: .92rem; cursor: pointer; font-weight: 600; }
