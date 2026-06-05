@@ -112,9 +112,25 @@ func (s *Service) EventHandler() event.Handler {
 				fmt.Sprintf("A case was opened for the stay at %q. Sign in to add your side of the story.", ev.PropertyTitle))
 
 		case event.DisputeResolved:
+			// S131 — branch the subject by Outcome so the inbox preview tells
+			// both parties the gist before they open the message. The event
+			// carries HostID + GuestID + a free-form Resolution but no
+			// OpenerID/AmountCents (S117 confirmed this shape), so we can't
+			// personalise the subject to opener-vs-respondent. The "resolved"
+			// case picks the neutral "A decision has been made on your dispute"
+			// for both parties; the "rejected" case picks the clearer
+			// "Your dispute was rejected" since rejection is symmetric (no
+			// one-sided phrasing problem). Both parties get the same Resolution
+			// body so neither sees a different story than the other. Routed
+			// through catAccount — Resolution Center decisions are not
+			// opt-out-able, same channel as DisputeOpened.
+			subject := "A decision has been made on your dispute"
+			if ev.Outcome == "rejected" {
+				subject = "Your dispute was rejected"
+			}
 			body := fmt.Sprintf("A moderator %s the case on %q.\n\nDecision: %s", ev.Outcome, ev.PropertyTitle, ev.Resolution)
-			s.send(ctx, ev.GuestID, catAccount, "Resolution Center decision", body)
-			s.send(ctx, ev.HostID, catAccount, "Resolution Center decision", body)
+			s.send(ctx, ev.GuestID, catAccount, subject, body)
+			s.send(ctx, ev.HostID, catAccount, subject, body)
 
 		// Experience-booking lifecycle (S86 + S127). Routed through
 		// catExperiences so the lifecycle is a separately addressable

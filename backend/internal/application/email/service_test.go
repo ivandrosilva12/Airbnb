@@ -589,3 +589,78 @@ func TestSendArrivalInfoEmail_RespectsBookingOptOut(t *testing.T) {
 		t.Fatalf("opt-out: sent %d, want 0", len(mailer.Sent()))
 	}
 }
+
+// TestEventHandler_DisputeOutcomeEvents — S131 (follow-on to the S13/S89
+// Resolution Center wave). A moderator decision fires a single
+// event.DisputeResolved whose Outcome flips between "resolved" (siding
+// with the opener) and "rejected" (siding with the respondent); both
+// parties should learn the outcome, and the subject line should reflect
+// the disposition without leaking opener-vs-respondent personalisation
+// (the event payload doesn't expose OpenerID, so the subject must stay
+// symmetric across recipients). Rides catAccount: Resolution Center
+// notices are account-level and can't be opted out of.
+func TestEventHandler_DisputeOutcomeEvents(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	host := mustUser(t, users, "dispute-host@test.dev", user.RoleHost)
+	guest := mustUser(t, users, "dispute-guest@test.dev", user.RoleGuest)
+
+	// --- Resolved-in-favour case: both parties get the neutral "decision
+	// has been made" subject; the resolution narrative is mirrored to both.
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	dispatcher.Publish(ctx, event.DisputeResolved{
+		DisputeID:     uuid.New(),
+		BookingID:     uuid.New(),
+		PropertyID:    uuid.New(),
+		PropertyTitle: "Loft",
+		HostID:        host.ID,
+		GuestID:       guest.ID,
+		Outcome:       "resolved",
+		Resolution:    "Refunded one night for the broken AC.",
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 2 {
+		t.Fatalf("resolved: sent %d emails, want 2 (%+v)", len(sent), sent)
+	}
+	assertSent(t, sent, host.Email, "A decision has been made on your dispute")
+	assertSent(t, sent, guest.Email, "A decision has been made on your dispute")
+	// Body should embed the resolution text so the recipient can act
+	// without first opening the app.
+	for _, m := range sent {
+		if !strings.Contains(m.Text, "Refunded one night") {
+			t.Fatalf("resolved body should mention the resolution, got %q", m.Text)
+		}
+		if !strings.Contains(m.Text, "Loft") {
+			t.Fatalf("resolved body should mention the property title, got %q", m.Text)
+		}
+	}
+
+	// --- Rejected case: separate dispatcher so the recording mailer
+	// starts empty and we can assert against just the two emails this
+	// publish should produce.
+	mailer2 := email.NewRecordingMailer()
+	dispatcher2 := event.NewDispatcher()
+	dispatcher2.Subscribe(emailapp.NewService(users, mailer2).EventHandler())
+
+	dispatcher2.Publish(ctx, event.DisputeResolved{
+		DisputeID:     uuid.New(),
+		BookingID:     uuid.New(),
+		PropertyID:    uuid.New(),
+		PropertyTitle: "Loft",
+		HostID:        host.ID,
+		GuestID:       guest.ID,
+		Outcome:       "rejected",
+		Resolution:    "No evidence the AC was broken during the stay.",
+	})
+
+	sent2 := mailer2.Sent()
+	if len(sent2) != 2 {
+		t.Fatalf("rejected: sent %d emails, want 2 (%+v)", len(sent2), sent2)
+	}
+	assertSent(t, sent2, host.Email, "Your dispute was rejected")
+	assertSent(t, sent2, guest.Email, "Your dispute was rejected")
+}
