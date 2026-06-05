@@ -113,12 +113,30 @@ func (h *BlockHandler) ImportCalendar(c *gin.Context) {
 		}
 		ranges = append(ranges, blockapp.ImportRange{From: e.Start, To: e.End, Reason: reason})
 	}
-	imported, err := h.svc.Import(c.Request.Context(), hostID, propertyID, ranges)
+	result, err := h.svc.Import(c.Request.Context(), hostID, propertyID, ranges)
 	if err != nil {
 		response.Fail(c, err)
 		return
 	}
-	response.OK(c, gin.H{"imported": imported, "found": len(events)})
+	// S168 — surface confirmed-booking conflicts so the host's iCal-import UI
+	// can show "8 imported, 2 conflicts: 2026-08-10..15 already booked" instead
+	// of silently dropping the dates. SkippedBookingConflict is rendered as an
+	// empty array (never null) for stable JSON.
+	conflicts := make([]gin.H, 0, len(result.SkippedBookingConflict))
+	for _, r := range result.SkippedBookingConflict {
+		conflicts = append(conflicts, gin.H{
+			"from": r.From.Format("2006-01-02"),
+			"to":   r.To.Format("2006-01-02"),
+		})
+	}
+	response.OK(c, gin.H{
+		"created":                result.Created,
+		"skippedBlockOverlap":    result.SkippedBlockOverlap,
+		"skippedBookingConflict": conflicts,
+		"found":                  len(events),
+		// Back-compat: existing clients keyed off "imported".
+		"imported": result.Created,
+	})
 }
 
 // Delete removes a block on a listing the host owns.

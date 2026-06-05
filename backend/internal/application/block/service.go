@@ -24,6 +24,7 @@ type CohostAuthorizer interface {
 type Service struct {
 	blocks     block.Repository
 	properties property.Repository
+	bookings   booking.Repository
 	cohosts    CohostAuthorizer
 }
 
@@ -36,6 +37,14 @@ func NewService(blocks block.Repository, properties property.Repository) *Servic
 // can mutate blocks. Returns the receiver for chaining.
 func (s *Service) WithCohosts(c CohostAuthorizer) *Service {
 	s.cohosts = c
+	return s
+}
+
+// WithBookings plugs in the bookings repo so Import can flag ranges that
+// collide with confirmed reservations (S168). Optional — when omitted the
+// import only de-dupes against existing blocks (pre-S168 behaviour).
+func (s *Service) WithBookings(b booking.Repository) *Service {
+	s.bookings = b
 	return s
 }
 
@@ -91,16 +100,38 @@ type ImportRange struct {
 	Reason string
 }
 
+// DateRange is a plain [from, to) window surfaced in ImportResult so callers
+// can render conflicts back to the host without dragging the booking
+// aggregate into the HTTP layer. Dates are truncated to the day in UTC.
+type DateRange struct {
+	From time.Time
+	To   time.Time
+}
+
+// ImportResult is the rich outcome of an iCal import: how many blocks
+// landed, how many were dropped as duplicates of existing blocks, and the
+// specific ranges that collided with confirmed reservations. Surfacing
+// SkippedBookingConflict lets the host's import UI say "8 imported,
+// 2 conflicts: 2026-08-10..15 already booked" instead of silently dropping
+// the dates.
+type ImportResult struct {
+	Created                int
+	SkippedBlockOverlap    int
+	SkippedBookingConflict []DateRange
+}
+
 // Import creates blocks for the given busy ranges on a listing the caller may
 // manage (primary host or co-host with manage_calendar). Skips ranges in the
 // past or ones that already overlap an existing block (so re-importing the
-// same feed is idempotent). It returns the number created.
-func (s *Service) Import(ctx context.Context, hostID, propertyID uuid.UUID, ranges []ImportRange) (int, error) {
+// same feed is idempotent), and — when a bookings repo is wired via
+// WithBookings — surfaces ranges that collide with a confirmed reservation
+// rather than silently dropping them (S168).
+func (s *Service) Import(ctx context.Context, hostID, propertyID uuid.UUID, ranges []ImportRange) (ImportResult, error) {
+	var result ImportResult
 	if _, err := s.access(ctx, hostID, propertyID); err != nil {
-		return 0, err
+		return result, err
 	}
 	today := time.Now().UTC().Truncate(24 * time.Hour)
-	created := 0
 	for _, r := range ranges {
 		if !r.To.After(today) {
 			continue // wholly in the past
@@ -115,21 +146,35 @@ func (s *Service) Import(ctx context.Context, hostID, propertyID uuid.UUID, rang
 		}
 		overlap, err := s.blocks.HasOverlap(ctx, propertyID, dates)
 		if err != nil {
-			return created, err
+			return result, err
 		}
 		if overlap {
+			result.SkippedBlockOverlap++
 			continue
+		}
+		if s.bookings != nil {
+			conflict, err := s.bookings.HasConfirmedOverlap(ctx, propertyID, dates)
+			if err != nil {
+				return result, err
+			}
+			if conflict {
+				result.SkippedBookingConflict = append(result.SkippedBookingConflict, DateRange{
+					From: dates.CheckIn,
+					To:   dates.CheckOut,
+				})
+				continue
+			}
 		}
 		b, err := block.New(propertyID, dates, r.Reason)
 		if err != nil {
 			continue
 		}
 		if err := s.blocks.Create(ctx, b); err != nil {
-			return created, err
+			return result, err
 		}
-		created++
+		result.Created++
 	}
-	return created, nil
+	return result, nil
 }
 
 // ListForHost returns the blocks on a listing the caller may manage (primary

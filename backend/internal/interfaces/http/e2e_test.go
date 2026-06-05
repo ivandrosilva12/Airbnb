@@ -191,7 +191,7 @@ func newHarness(t *testing.T) *harness {
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	cohostRepo := memory.NewCohostRepository()
 	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo)
-	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc)
+	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc).WithBookings(bookingRepo)
 	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo).WithCohosts(cohostSvc)
 	messageSvc.WithCohosts(cohostSvc)
 	// splitPaymentRepo declared earlier so the UoW can include it. Reuse here.

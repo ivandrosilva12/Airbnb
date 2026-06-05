@@ -475,6 +475,20 @@ func (r *BookingRepository) HasOverlap(_ context.Context, propertyID uuid.UUID, 
 	return false, nil
 }
 
+// HasConfirmedOverlap is the confirmed-only flavour of HasOverlap. Pending
+// bookings (still awaiting payment capture) do not count — only an accepted
+// reservation can conflict with an iCal-imported block (S168).
+func (r *BookingRepository) HasConfirmedOverlap(_ context.Context, propertyID uuid.UUID, dates booking.DateRange) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, b := range r.m {
+		if b.PropertyID == propertyID && b.Status == booking.StatusConfirmed && b.Dates.Overlaps(dates) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (r *BookingRepository) BookedPropertyIDs(_ context.Context, from, to time.Time) ([]uuid.UUID, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

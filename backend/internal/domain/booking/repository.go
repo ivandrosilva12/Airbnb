@@ -21,6 +21,13 @@ type Repository interface {
 	// HasOverlap reports whether an active booking already occupies the given
 	// date range for the property. Used to enforce no double-booking.
 	HasOverlap(ctx context.Context, propertyID uuid.UUID, dates DateRange) (bool, error)
+	// HasConfirmedOverlap reports whether a *confirmed* booking already
+	// occupies the given date range. Stricter than HasOverlap (which also
+	// counts pending holds) — used by iCal import (S168) to flag ranges
+	// that collide with reservations the host has already accepted, so
+	// the importer can surface them rather than silently dropping the
+	// block.
+	HasConfirmedOverlap(ctx context.Context, propertyID uuid.UUID, dates DateRange) (bool, error)
 	// ListActiveInRange returns active (pending/confirmed) bookings that overlap
 	// the [from, to) window for a property. Used to build the availability view;
 	// the window may include past dates, so raw times are taken rather than a

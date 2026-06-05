@@ -217,6 +217,23 @@ func (r *BookingRepository) HasOverlap(ctx context.Context, propertyID uuid.UUID
 	return exists, mapError(err)
 }
 
+// HasConfirmedOverlap is the confirmed-only flavour of HasOverlap (S168).
+// Pending holds are excluded — only an accepted reservation can conflict
+// with an iCal-imported block.
+func (r *BookingRepository) HasConfirmedOverlap(ctx context.Context, propertyID uuid.UUID, dates booking.DateRange) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM bookings
+			WHERE property_id=$1
+			  AND status = 'confirmed'
+			  AND check_in < $3
+			  AND $2 < check_out
+		)`, propertyID, dates.CheckIn, dates.CheckOut,
+	).Scan(&exists)
+	return exists, mapError(err)
+}
+
 func scanBooking(row rowScanner) (*booking.Booking, error) {
 	var (
 		b             booking.Booking
