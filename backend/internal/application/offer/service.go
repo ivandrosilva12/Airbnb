@@ -9,6 +9,7 @@ import (
 
 	bookingapp "github.com/airhost/backend/internal/application/booking"
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/offer"
 	"github.com/airhost/backend/internal/domain/property"
@@ -42,6 +43,19 @@ type Service struct {
 	// nil keeps observability off, matching the pre-S113 behaviour for
 	// focused unit tests (S113).
 	metrics OfferMetrics
+	// uow, when wired via WithUnitOfWork (S155), routes the Create /
+	// Decline / Withdraw writes through a UnitOfWork so the offers row
+	// and the OfferCreated / OfferDeclined / OfferWithdrawn outbox event
+	// commit atomically — closing the "row landed but event was lost"
+	// gap that existed when the service wrote through a pool-bound repo
+	// then called s.pub.Publish AFTER the commit. Nil falls back to the
+	// legacy in-process publish path so older tests and the e2e harness
+	// (which don't thread a UoW) keep working. port.Tx has no Offers
+	// field, so the offers Create / Update still goes through the
+	// service's pool-bound repo INSIDE the closure — only the outbox
+	// append participates in the same in-memory tx (mirrors the review
+	// fallback for the same situation).
+	uow port.UnitOfWork
 }
 
 // NewService wires the offer application service. It uses the booking service to
@@ -67,17 +81,44 @@ func (s *Service) WithMetrics(m OfferMetrics) *Service {
 	return s
 }
 
+// WithUnitOfWork wires a UoW into the service so the Create / Decline /
+// Withdraw writes commit the offers row atomically with the
+// OfferCreated / OfferDeclined / OfferWithdrawn outbox event — closing
+// the gap where a crash between the row write and the in-process publish
+// silently dropped the event (S155 — Offer UoW slice; mirrors the
+// review / booking / dispute / identity / splitpayment migrations).
+// Without it, the service falls back to the legacy in-process publish
+// path (no outbox event emitted, matching the pre-S155 behaviour for
+// tests / e2e harness that don't thread a UoW). Returns the same
+// service for chained construction.
+func (s *Service) WithUnitOfWork(uow port.UnitOfWork) *Service {
+	s.uow = uow
+	return s
+}
+
 // emit is a small helper that publishes through s.pub when wired, otherwise
 // silently drops — preserving the pre-S99 behaviour for tests that don't
 // thread a publisher through. When a metrics sink is attached, it also
 // increments the per-event counter so the count stays consistent with the
-// dispatched events even if a subscriber later fails (S113).
+// dispatched events even if a subscriber later fails (S113). On the
+// transactional path (S155, s.uow != nil) the caller skips this helper
+// and threads the event through the UoW's outbox instead, then bumps the
+// metric via bumpMetric post-commit.
 func (s *Service) emit(ctx context.Context, e event.Event) {
 	if s.pub != nil {
 		s.pub.Publish(ctx, e)
 	}
 	if s.metrics != nil {
 		s.metrics.IncOffer(e.EventName())
+	}
+}
+
+// bumpMetric increments the OffersTotal counter for an event AFTER the
+// UoW commits, so a commit-time rollback never inflates the metric
+// (S155 — mirrors the S151 ReviewsSubmitted shape).
+func (s *Service) bumpMetric(eventName string) {
+	if s.metrics != nil {
+		s.metrics.IncOffer(eventName)
 	}
 }
 
@@ -112,17 +153,40 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*offer.Offer, err
 	if err != nil {
 		return nil, err
 	}
-	if err := s.offers.Create(ctx, o); err != nil {
-		return nil, err
-	}
-	s.emit(ctx, event.OfferCreated{
+	evt := event.OfferCreated{
 		OfferID:       o.ID,
 		PropertyID:    o.PropertyID,
 		PropertyTitle: prop.Title,
 		HostID:        o.HostID,
 		GuestID:       o.GuestID,
 		Kind:          offerKind(o),
-	})
+	}
+	if s.uow == nil {
+		// Legacy path: offers Create + in-process publish, no outbox.
+		if err := s.offers.Create(ctx, o); err != nil {
+			return nil, err
+		}
+		s.emit(ctx, evt)
+		return o, nil
+	}
+	// Transactional path (S155): the offers Create and the OfferCreated
+	// outbox append commit together so a crash between them no longer
+	// drops the event.
+	if err := s.uow.Run(ctx, func(tx port.Tx) error {
+		if err := s.offers.Create(ctx, o); err != nil {
+			return err
+		}
+		rec, err := event.NewRecord(evt)
+		if err != nil {
+			return err
+		}
+		return tx.Outbox.Append(ctx, rec)
+	}); err != nil {
+		return nil, err
+	}
+	// Only bump the counter after the UoW commits successfully so a
+	// commit-time rollback never inflates the metric (S155).
+	s.bumpMetric(evt.EventName())
 	return o, nil
 }
 
@@ -186,17 +250,37 @@ func (s *Service) Decline(ctx context.Context, guestID, offerID uuid.UUID) error
 	if err := o.Decline(); err != nil {
 		return err
 	}
-	if err := s.offers.Update(ctx, o); err != nil {
-		return err
-	}
 	title := s.propertyTitle(ctx, o.PropertyID)
-	s.emit(ctx, event.OfferDeclined{
+	evt := event.OfferDeclined{
 		OfferID:       o.ID,
 		PropertyID:    o.PropertyID,
 		PropertyTitle: title,
 		HostID:        o.HostID,
 		GuestID:       o.GuestID,
-	})
+	}
+	if s.uow == nil {
+		// Legacy path: offers Update + in-process publish, no outbox.
+		if err := s.offers.Update(ctx, o); err != nil {
+			return err
+		}
+		s.emit(ctx, evt)
+		return nil
+	}
+	// Transactional path (S155): offers Update + OfferDeclined outbox
+	// append commit together.
+	if err := s.uow.Run(ctx, func(tx port.Tx) error {
+		if err := s.offers.Update(ctx, o); err != nil {
+			return err
+		}
+		rec, err := event.NewRecord(evt)
+		if err != nil {
+			return err
+		}
+		return tx.Outbox.Append(ctx, rec)
+	}); err != nil {
+		return err
+	}
+	s.bumpMetric(evt.EventName())
 	return nil
 }
 
@@ -212,17 +296,37 @@ func (s *Service) Withdraw(ctx context.Context, hostID, offerID uuid.UUID) error
 	if err := o.Withdraw(); err != nil {
 		return err
 	}
-	if err := s.offers.Update(ctx, o); err != nil {
-		return err
-	}
 	title := s.propertyTitle(ctx, o.PropertyID)
-	s.emit(ctx, event.OfferWithdrawn{
+	evt := event.OfferWithdrawn{
 		OfferID:       o.ID,
 		PropertyID:    o.PropertyID,
 		PropertyTitle: title,
 		HostID:        o.HostID,
 		GuestID:       o.GuestID,
-	})
+	}
+	if s.uow == nil {
+		// Legacy path: offers Update + in-process publish, no outbox.
+		if err := s.offers.Update(ctx, o); err != nil {
+			return err
+		}
+		s.emit(ctx, evt)
+		return nil
+	}
+	// Transactional path (S155): offers Update + OfferWithdrawn outbox
+	// append commit together.
+	if err := s.uow.Run(ctx, func(tx port.Tx) error {
+		if err := s.offers.Update(ctx, o); err != nil {
+			return err
+		}
+		rec, err := event.NewRecord(evt)
+		if err != nil {
+			return err
+		}
+		return tx.Outbox.Append(ctx, rec)
+	}); err != nil {
+		return err
+	}
+	s.bumpMetric(evt.EventName())
 	return nil
 }
 

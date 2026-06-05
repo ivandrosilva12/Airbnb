@@ -395,7 +395,15 @@ func run() error {
 		// S99 / WF-GAP-008 — emit OfferCreated/Declined/Withdrawn so the
 		// notification, email and realtime subscribers fan the right
 		// hint out to host or guest.
-		WithPublisher(dispatcher)
+		WithPublisher(dispatcher).
+		// S155 — route the Create / Decline / Withdraw writes through the
+		// same UoW the booking / review / dispute services use so a crash
+		// between the offers row landing and the OfferCreated /
+		// OfferDeclined / OfferWithdrawn outbox append can no longer drop
+		// the event. The outbox table is shared; the UoW dispatches
+		// recorded events post-commit through `dispatcher`, so the legacy
+		// in-process subscriber wiring keeps working.
+		WithUnitOfWork(uow)
 	savedSearchSvc := savedsearchapp.NewService(savedSearchRepo, searchSvc, notificationSvc)
 	// Dispute resolution runs inside a UnitOfWork (S89 — WF-GAP-003 +
 	// WF-GAP-013): the dispute row and its DisputeOpened / DisputeResolved
