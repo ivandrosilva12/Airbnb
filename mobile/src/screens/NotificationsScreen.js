@@ -77,13 +77,122 @@ export default function NotificationsScreen() {
   // guest can read the public review on the listing. Matches web S149: no
   // dedicated "my reviews" screen exists yet, so Trips is the closest
   // destination that surfaces the reviewed booking.
+  //
+  // S164 — wires deep-links for every remaining backend-emitted notification
+  // type so taps don't dead-end. The branches are grouped by destination:
+  //   - Trips:                booking_*, offer_declined/withdrawn,
+  //                           payment_captured/refunded
+  //   - Messages/Conversation: message_received, offer_received
+  //   - Dispute:              dispute_opened/resolved (relatedID == disputeID)
+  //   - Splits:               split_payment_completed
+  //   - MyExperienceBookings: experience_booking_*
+  //   - CohostInvitation:     cohost_invited (relatedID == invitationID)
+  //   - Verification:         kyc_step_up_required, identity_verified
+  // Unknown types fall through silently (consistent with prior behaviour).
   function onRowPress(n) {
     if (!n.read) markRead(n.id);
-    if (n.type === 'kyc_step_up_required') {
+    const nt = n.type || '';
+    // Identity flows route to the same Verification screen so the user can
+    // see their current status (pending review, verified, rejected, etc.).
+    if (nt === 'kyc_step_up_required' || nt === 'identity_verified') {
       navigation.navigate('Verification');
-    } else if (n.type === 'review_submitted') {
-      navigation.navigate('Trips');
+      return;
     }
+    if (nt === 'review_submitted') {
+      navigation.navigate('Trips');
+      return;
+    }
+    // booking_* (requested/confirmed/cancelled/modified/completed) and
+    // payment_* (captured/refunded) all surface on Trips — the screen lists
+    // every booking the user has + its current payment state.
+    if (nt.startsWith('booking_') || nt === 'payment_captured' || nt === 'payment_refunded') {
+      navigation.navigate('Trips');
+      return;
+    }
+    // Message + offer_received are conversation-bound. Prefer deep-linking
+    // straight into the thread if the backend supplied a conversationID via
+    // relatedID; otherwise fall back to the inbox.
+    if (nt === 'message_received' || nt === 'offer_received') {
+      if (n.relatedID) {
+        navigation.navigate('Conversation', { conversationID: n.relatedID });
+      } else {
+        navigation.navigate('Messages');
+      }
+      return;
+    }
+    // Offer lifecycle outside the conversation (declined / withdrawn) surfaces
+    // on Trips — the offer was tied to a booking the guest can see there.
+    if (nt === 'offer_declined' || nt === 'offer_withdrawn') {
+      navigation.navigate('Trips');
+      return;
+    }
+    if (nt === 'dispute_opened' || nt === 'dispute_resolved') {
+      // DisputeScreen expects a disputeID param; relatedID carries it.
+      navigation.navigate('Dispute', { disputeID: n.relatedID });
+      return;
+    }
+    if (nt === 'split_payment_completed') {
+      navigation.navigate('Splits');
+      return;
+    }
+    if (nt.startsWith('experience_booking_')) {
+      navigation.navigate('MyExperienceBookings');
+      return;
+    }
+    if (nt === 'cohost_invited') {
+      navigation.navigate('CohostInvitation', { invitationID: n.relatedID });
+      return;
+    }
+  }
+
+  // S164 — icon + chip category for every known notification type. Mirrors
+  // the web ICONS map (S163) but expanded to cover every backend emitter.
+  // categoryOf() bundles three render concerns: the emoji prefix, the i18n
+  // namespace used for the chip+CTA strings, and the visual style key
+  // (rendered via styles[`${key}TagText`]/`${key}TagCta`).
+  function categoryOf(type) {
+    const nt = type || '';
+    if (nt === 'kyc_step_up_required') {
+      return { icon: '🛡️', key: 'kycStepUp', style: 'action' };
+    }
+    if (nt === 'identity_verified') {
+      return { icon: '🛂', key: 'identity', style: 'identity' };
+    }
+    if (nt === 'review_submitted') {
+      return { icon: '⭐', key: 'review', style: 'review' };
+    }
+    if (nt === 'dispute_opened' || nt === 'dispute_resolved') {
+      return { icon: '⚖️', key: 'dispute', style: 'dispute' };
+    }
+    if (nt === 'split_payment_completed') {
+      return { icon: '💳', key: 'split', style: 'split' };
+    }
+    if (nt === 'offer_received' || nt === 'offer_declined' || nt === 'offer_withdrawn') {
+      return { icon: '💸', key: 'offer', style: 'offer' };
+    }
+    if (nt === 'cohost_invited') {
+      return { icon: '👥', key: 'cohost', style: 'cohost' };
+    }
+    if (nt === 'payment_captured') {
+      return { icon: '💰', key: 'payment', style: 'paymentIn' };
+    }
+    if (nt === 'payment_refunded') {
+      return { icon: '↩️', key: 'payment', style: 'paymentOut' };
+    }
+    if (nt.startsWith('experience_booking_')) {
+      return { icon: '🌟', key: 'experienceBooking', style: 'experience' };
+    }
+    if (nt === 'message_received') {
+      return { icon: '💬', key: null, style: null };
+    }
+    // booking_* — pick the prefix per lifecycle stage so the row reads at a
+    // glance. No chip rendered: Trips already shows the booking in context.
+    if (nt === 'booking_requested') return { icon: '📩', key: null, style: null };
+    if (nt === 'booking_confirmed') return { icon: '✅', key: null, style: null };
+    if (nt === 'booking_cancelled') return { icon: '❌', key: null, style: null };
+    if (nt === 'booking_modified') return { icon: '📝', key: null, style: null };
+    if (nt === 'booking_completed') return { icon: '🏁', key: null, style: null };
+    return { icon: '', key: null, style: null };
   }
 
   if (!authenticated) {
@@ -110,33 +219,33 @@ export default function NotificationsScreen() {
         keyExtractor={(i) => i.id}
         ListEmptyComponent={<Text style={styles.empty}>No notifications.</Text>}
         renderItem={({ item }) => {
-          const isStepUp = item.type === 'kyc_step_up_required';
-          const isReview = item.type === 'review_submitted';
+          // S164 — categoryOf resolves icon + chip styling per type. Rows
+          // without a chip key (e.g. booking_*, message_received) still get
+          // the emoji prefix to differentiate them at a glance.
+          const cat = categoryOf(item.type);
+          const tagTextStyle = cat.style ? styles[`${cat.style}TagText`] : null;
+          const tagCtaStyle = cat.style ? styles[`${cat.style}TagCta`] : null;
+          const tagLabel = cat.key ? t(`notif.${cat.key}.tag`) : '';
+          const ctaLabel = cat.key ? t(`notif.${cat.key}.ctaLabel`) : '';
           return (
             <Pressable style={[styles.row, !item.read && styles.unreadRow]} onPress={() => onRowPress(item)}>
               {!item.read && <View style={styles.dot} />}
               <View style={{ flex: 1 }}>
                 <Text style={styles.title}>
-                  {/* S145 — shield prefix flags the row as a security/identity
-                      action so it stands out even when already read.
-                      S150 — star prefix flags review_submitted in a softer,
-                      celebratory tone (a new review is good news, not a chore). */}
-                  {isStepUp ? '🛡️ ' : ''}{isReview ? '⭐ ' : ''}{item.title}
+                  {/* S145/S150/S164 — emoji prefix per category. Shield = KYC,
+                      star = review, ⚖️ = dispute, 💳 = split, 💸 = offer,
+                      👥 = cohost, 🛂 = identity_verified, 💰/↩️ = payment,
+                      🌟 = experience_booking_*, 📩/✅/❌/📝/🏁 = booking_*. */}
+                  {cat.icon ? `${cat.icon} ` : ''}{item.title}
                 </Text>
                 <Text style={styles.meta}>{item.body}</Text>
-                {isStepUp && (
+                {cat.key && tagTextStyle && tagCtaStyle && (
+                  // Chip + CTA share a row. Each style key has a paired
+                  // ${style}TagText (chip background) and ${style}TagCta
+                  // (arrow link) entry in the StyleSheet below.
                   <View style={styles.actionTag}>
-                    <Text style={styles.actionTagText}>{t('notif.kycStepUp.tag')}</Text>
-                    <Text style={styles.actionTagCta}>{t('notif.kycStepUp.ctaLabel')} →</Text>
-                  </View>
-                )}
-                {isReview && (
-                  // S150 — same chip+CTA shape as the KYC arm, but rendered in
-                  // gold/yellow to keep the tone informational rather than
-                  // urgent. Mirrors web S149's softer treatment.
-                  <View style={styles.actionTag}>
-                    <Text style={styles.reviewTagText}>{t('notif.review.tag')}</Text>
-                    <Text style={styles.reviewTagCta}>{t('notif.review.ctaLabel')} →</Text>
+                    <Text style={tagTextStyle}>{tagLabel}</Text>
+                    <Text style={tagCtaStyle}>{ctaLabel} →</Text>
                   </View>
                 )}
               </View>
@@ -194,4 +303,103 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   reviewTagCta: { color: '#a07900', fontSize: 12, fontWeight: '600' },
+  // S164 — palette per new category. Each pair keeps the chip+CTA shape
+  // identical (so the visual rhythm with kyc/review is preserved) and just
+  // varies the colours to signal severity:
+  //   dispute     — slate/gray-blue (sober, formal)
+  //   split       — teal (financial, neutral)
+  //   offer       — purple (offer/promo)
+  //   cohost      — indigo (collaboration)
+  //   identity    — green (success)
+  //   paymentIn   — green (money in)
+  //   paymentOut  — amber (money out, refund)
+  //   experience  — pink (matches the experiences brand accent)
+  disputeTagText: {
+    color: '#334155',
+    backgroundColor: '#e2e8f0',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  disputeTagCta: { color: '#475569', fontSize: 12, fontWeight: '600' },
+  splitTagText: {
+    color: '#0f766e',
+    backgroundColor: '#ccfbf1',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  splitTagCta: { color: '#0d9488', fontSize: 12, fontWeight: '600' },
+  offerTagText: {
+    color: '#6b21a8',
+    backgroundColor: '#f3e8ff',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  offerTagCta: { color: '#7c3aed', fontSize: 12, fontWeight: '600' },
+  cohostTagText: {
+    color: '#3730a3',
+    backgroundColor: '#e0e7ff',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  cohostTagCta: { color: '#4f46e5', fontSize: 12, fontWeight: '600' },
+  identityTagText: {
+    color: '#15803d',
+    backgroundColor: '#dcfce7',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  identityTagCta: { color: '#16a34a', fontSize: 12, fontWeight: '600' },
+  paymentInTagText: {
+    color: '#166534',
+    backgroundColor: '#dcfce7',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  paymentInTagCta: { color: '#15803d', fontSize: 12, fontWeight: '600' },
+  paymentOutTagText: {
+    color: '#92400e',
+    backgroundColor: '#fef3c7',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  paymentOutTagCta: { color: '#b45309', fontSize: 12, fontWeight: '600' },
+  experienceTagText: {
+    color: '#9d174d',
+    backgroundColor: '#fce7f3',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  experienceTagCta: { color: '#be185d', fontSize: 12, fontWeight: '600' },
 });
