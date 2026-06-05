@@ -1,9 +1,9 @@
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from './src/auth/AuthContext';
 import { RealtimeProvider } from './src/api/RealtimeContext';
-import { useRegisterPushToken } from './src/notifications/pushBootstrap';
+import { useRegisterPushToken, usePushTapRouting } from './src/notifications/pushBootstrap';
 import { I18nProvider, useT } from './src/i18n/I18nContext';
 import ExploreScreen from './src/screens/ExploreScreen';
 import PropertyScreen from './src/screens/PropertyScreen';
@@ -29,7 +29,15 @@ import ExperiencesScreen from './src/screens/ExperiencesScreen';
 import ExperienceDetailScreen from './src/screens/ExperienceDetailScreen';
 import MyExperienceBookingsScreen from './src/screens/MyExperienceBookingsScreen';
 import ArrivalInfoScreen from './src/screens/ArrivalInfoScreen';
+import CohostInvitationScreen from './src/screens/CohostInvitationScreen';
 import { HeaderAuthButton } from './src/screens/HeaderAuthButton';
+
+// navigationRef lets non-component code (here, the push-notification tap
+// handler in pushBootstrap) call navigate() without prop-drilling a
+// reference through the tree. Created once at module scope so multiple
+// re-renders of <App /> don't churn the ref the listener closed over.
+// See @react-navigation/native docs: "Navigating without the navigation prop".
+const navigationRef = createNavigationContainerRef();
 
 const Stack = createNativeStackNavigator();
 
@@ -37,8 +45,13 @@ const Stack = createNativeStackNavigator();
 // backend on login and unregisters it on logout. Mounted inside AuthProvider
 // (so it can read auth state) and RealtimeProvider (no dependency, just for
 // consistency with the existing wiring).
+//
+// It also subscribes to push-tap responses (S125) and routes known deep-link
+// payloads via navigationRef. The two concerns live in the same component
+// because they share the same lifetime (mounted whenever the app is up).
 function PushBootstrap() {
   useRegisterPushToken();
+  usePushTapRouting(navigationRef);
   return null;
 }
 
@@ -52,7 +65,7 @@ function PushBootstrap() {
 function AppNavigator() {
   const { t } = useT();
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         screenOptions={{
           headerStyle: { backgroundColor: '#fff' },
@@ -76,6 +89,12 @@ function AppNavigator() {
         <Stack.Screen name="HostListingForm" component={HostListingFormScreen} options={{ title: t('admin.listing') }} />
         <Stack.Screen name="HostHouseRules" component={HostHouseRulesScreen} options={{ title: t('houseRules.title') }} />
         <Stack.Screen name="HostCohosts" component={HostCohostsScreen} options={{ title: t('cohosts.title') }} />
+        {/* TODO(i18n): no key for the invitation screen title yet (S125). */}
+        <Stack.Screen
+          name="CohostInvitation"
+          component={CohostInvitationScreen}
+          options={{ title: 'Co-host invitation' }}
+        />
         {/* TODO(i18n): the screens below were added after the S91 base; titles still hardcoded. */}
         <Stack.Screen name="Splits" component={SplitsScreen} options={{ title: 'Split payments' }} />
         <Stack.Screen name="Dispute" component={DisputeScreen} options={{ title: 'Resolution case' }} />

@@ -126,6 +126,100 @@ export function useRegisterPushToken() {
   }, [authenticated, api]);
 }
 
+// usePushTapRouting wires the system push-tap into the in-app navigator
+// (S125). When a notification carries `data.type` (set by the backend
+// notifier — see backend/internal/application/notification/subscriber.go),
+// we route the tap to the right deep-link screen. The hook is deliberately
+// thin: every branch is a small `navigationRef.navigate(name, params)`
+// call, the payload shape is the same one the backend serializes.
+//
+// Supported types (extend as more push types come online):
+//   - "cohost.invited" -> CohostInvitation screen with the invitation id
+//                         + listing/host/permission hints. The accept and
+//                         decline live on that screen, not in the OS
+//                         notification UI.
+//
+// The hook also handles the "cold-start" case via getLastNotificationResponseAsync:
+// if the user tapped a push while the app was closed and that tap was what
+// launched it, the listener won't fire — we need to read the launch payload
+// once on mount instead.
+//
+// navigationRef MUST be a @react-navigation/native NavigationContainer ref.
+// Passing null is safe — the effect waits until isReady() flips true.
+export function usePushTapRouting(navigationRef) {
+  useEffect(() => {
+    const Notifications = loadNotifications();
+    if (!Notifications || !navigationRef) return undefined;
+
+    function route(response) {
+      const data = response?.notification?.request?.content?.data;
+      if (!data || typeof data !== 'object') return;
+      // navigateWhenReady defers the call until the NavigationContainer is
+      // mounted; otherwise a tap-launched cold start would try to navigate
+      // before the navigator is up and silently no-op.
+      const go = (name, params) => {
+        if (navigationRef.isReady && navigationRef.isReady()) {
+          navigationRef.navigate(name, params);
+        } else {
+          // Poll briefly; navigator readiness happens within the first frame.
+          const t = setInterval(() => {
+            if (navigationRef.isReady && navigationRef.isReady()) {
+              clearInterval(t);
+              navigationRef.navigate(name, params);
+            }
+          }, 50);
+          // Cap the wait so a broken ref doesn't leak the interval forever.
+          setTimeout(() => clearInterval(t), 5000);
+        }
+      };
+
+      switch (data.type) {
+        case 'cohost.invited':
+          go('CohostInvitation', {
+            invitationId: data.invitationId || data.id,
+            propertyTitle: data.propertyTitle,
+            hostName: data.hostName,
+            permissions: Array.isArray(data.permissions) ? data.permissions : undefined,
+          });
+          break;
+        default:
+          // Unknown payload — leave the in-app surface alone. The system
+          // tray notification is its own UX; not every push needs a
+          // dedicated screen.
+          break;
+      }
+    }
+
+    // 1. Live taps while the app is foregrounded or backgrounded.
+    let sub;
+    try {
+      sub = Notifications.addNotificationResponseReceivedListener(route);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('push: addNotificationResponseReceivedListener failed', e?.message);
+    }
+
+    // 2. Cold-start tap: the user opened the app from a notification, so
+    // there's no live listener event — the launch payload is on the
+    // last-response API instead. Run once on mount.
+    (async () => {
+      try {
+        if (typeof Notifications.getLastNotificationResponseAsync === 'function') {
+          const last = await Notifications.getLastNotificationResponseAsync();
+          if (last) route(last);
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('push: getLastNotificationResponseAsync failed', e?.message);
+      }
+    })();
+
+    return () => {
+      if (sub && typeof sub.remove === 'function') sub.remove();
+    };
+  }, [navigationRef]);
+}
+
 // unregisterPushTokenForCurrentDevice is called by the logout flow BEFORE
 // the auth state is cleared, so the api client passed in still carries a
 // valid bearer token. It is best-effort: a failure to unregister must not

@@ -200,6 +200,17 @@ export function createApi(getAccessToken) {
     myCohostListings: () => request('GET', '/me/cohost-listings', { auth: true }),
     myCohostMailbox: () => request('GET', '/me/cohost-mailbox', { auth: true }),
 
+    // Co-host invitation accept/decline (S125 mobile parity). Each grant
+    // created via inviteCohost is initially "invited" — the invitee taps a
+    // push notification (cohost.invited) which deep-links into the
+    // CohostInvitationScreen, and accepts or declines from there. The URL
+    // shape mirrors offers (POST /offers/:id/accept, /decline) since they
+    // are the same product pattern (invitation → bilateral action).
+    acceptCohostInvitation: (invitationId) =>
+      request('POST', `/cohost-invitations/${invitationId}/accept`, { auth: true }),
+    declineCohostInvitation: (invitationId) =>
+      request('POST', `/cohost-invitations/${invitationId}/decline`, { auth: true }),
+
     // Primary-host editor (S104 mobile parity with web's CohostsPanel).
     // The host lists, invites and revokes co-hosts on listings they own;
     // updating an existing grant's permission set replaces the full set
