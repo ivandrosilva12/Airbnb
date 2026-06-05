@@ -77,24 +77,73 @@ func TestEventHandler_HTMLEscapesUntrustedTitles(t *testing.T) {
 	}
 }
 
-func TestEventHandler_CancellationEmailsTheOtherParty(t *testing.T) {
+// TestEventHandler_BookingCancelled — S135. A single BookingCancelled event
+// fans out TWO emails (mirrors the DisputeResolved pattern): the guest gets a
+// guest-facing subject ("Your booking was cancelled — {title}") and the host
+// gets a host-facing subject ("A guest cancelled their booking — {title}").
+// When RefundFraction is non-zero the body mentions the refund percentage so
+// the recipient can act without first opening the app. Rides catBookings so
+// the existing booking opt-out preference applies on both sides.
+func TestEventHandler_BookingCancelled(t *testing.T) {
 	ctx := context.Background()
 	users := memory.NewUserRepository()
-	host := mustUser(t, users, "host@test.dev", user.RoleHost)
-	guest := mustUser(t, users, "guest@test.dev", user.RoleGuest)
+	host := mustUser(t, users, "cancel-host@test.dev", user.RoleHost)
+	guest := mustUser(t, users, "cancel-guest@test.dev", user.RoleGuest)
 
 	mailer := email.NewRecordingMailer()
 	dispatcher := event.NewDispatcher()
 	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
 
-	// When the guest cancels, the host is the one emailed.
+	// Guest cancelled — both parties still get emailed (the dispute-outcome
+	// pattern). A 50% refund is in flight.
 	dispatcher.Publish(ctx, event.BookingCancelled{
-		PropertyTitle: "Loft", HostID: host.ID, GuestID: guest.ID, CancelledBy: guest.ID,
+		BookingID:      uuid.New(),
+		PropertyID:     uuid.New(),
+		PropertyTitle:  "Loft",
+		HostID:         host.ID,
+		GuestID:        guest.ID,
+		CancelledBy:    guest.ID,
+		RefundFraction: 0.5,
 	})
 
 	sent := mailer.Sent()
-	if len(sent) != 1 || sent[0].To != host.Email || sent[0].Subject != "Booking cancelled" {
-		t.Fatalf("cancellation email = %+v, want one to %s", sent, host.Email)
+	if len(sent) != 2 {
+		t.Fatalf("sent %d emails, want 2 (%+v)", len(sent), sent)
+	}
+
+	var guestMail, hostMail *email.Sent
+	for i := range sent {
+		switch sent[i].To {
+		case guest.Email:
+			guestMail = &sent[i]
+		case host.Email:
+			hostMail = &sent[i]
+		}
+	}
+	if guestMail == nil {
+		t.Fatalf("no email to guest (%s) in %+v", guest.Email, sent)
+	}
+	if guestMail.Subject != "Your booking was cancelled — Loft" {
+		t.Fatalf("guest subject = %q, want %q", guestMail.Subject, "Your booking was cancelled — Loft")
+	}
+	if !strings.Contains(guestMail.Text, "Loft") {
+		t.Fatalf("guest body should mention the property title, got %q", guestMail.Text)
+	}
+	if !strings.Contains(guestMail.Text, "50%") {
+		t.Fatalf("guest body should mention the refund fraction, got %q", guestMail.Text)
+	}
+
+	if hostMail == nil {
+		t.Fatalf("no email to host (%s) in %+v", host.Email, sent)
+	}
+	if hostMail.Subject != "A guest cancelled their booking — Loft" {
+		t.Fatalf("host subject = %q, want %q", hostMail.Subject, "A guest cancelled their booking — Loft")
+	}
+	if !strings.Contains(hostMail.Text, "Loft") {
+		t.Fatalf("host body should mention the property title, got %q", hostMail.Text)
+	}
+	if !strings.Contains(hostMail.Text, "50%") {
+		t.Fatalf("host body should mention the refund fraction, got %q", hostMail.Text)
 	}
 }
 

@@ -82,12 +82,25 @@ func (s *Service) EventHandler() event.Handler {
 				fmt.Sprintf("Good news — your booking for %q is confirmed.", ev.PropertyTitle))
 
 		case event.BookingCancelled:
-			recipient := ev.GuestID
-			if ev.CancelledBy == ev.GuestID {
-				recipient = ev.HostID
+			// S135 — both parties learn about a cancellation, mirroring the
+			// dispute-outcome pattern. The event carries RefundFraction (0..1)
+			// but no money fields (no AmountCents/Currency) and no reason
+			// string, so the body sticks to the facts the snapshot guarantees:
+			// the property title plus the refund fraction when non-zero.
+			// Routed through catBookings so the existing "mute booking emails"
+			// preference still applies on both sides.
+			title := propertyTitleOr(ev.PropertyTitle, "your booking")
+			guestSubject := fmt.Sprintf("Your booking was cancelled — %s", title)
+			hostSubject := fmt.Sprintf("A guest cancelled their booking — %s", title)
+			guestBody := fmt.Sprintf("Your booking for %q was cancelled.", title)
+			hostBody := fmt.Sprintf("A booking for %q was cancelled.", title)
+			if ev.RefundFraction > 0 {
+				refundLine := fmt.Sprintf(" A refund of %.0f%% of any captured payment will be issued.", ev.RefundFraction*100)
+				guestBody += refundLine
+				hostBody += refundLine
 			}
-			s.send(ctx, recipient, catBookings, "Booking cancelled",
-				fmt.Sprintf("A booking for %q was cancelled.", ev.PropertyTitle))
+			s.send(ctx, ev.GuestID, catBookings, guestSubject, guestBody)
+			s.send(ctx, ev.HostID, catBookings, hostSubject, hostBody)
 
 		case event.BookingCompleted:
 			s.send(ctx, ev.GuestID, catBookings, "How was your stay?",
