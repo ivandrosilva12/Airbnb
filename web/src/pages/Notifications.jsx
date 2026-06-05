@@ -11,6 +11,7 @@ const ICONS = {
   saved_search_alert: '🔎',
   message_received: '💬',
   kyc_step_up_required: '🛡️',
+  review_submitted: '⭐',
 };
 
 export default function Notifications() {
@@ -26,6 +27,7 @@ export default function Notifications() {
     if (!n.read) markRead(n.id);
     if (n.type === 'message_received') navigate('/messages');
     else if (n.type === 'kyc_step_up_required') navigate('/settings');
+    else if (n.type === 'review_submitted') navigate('/trips');
     else if (n.type.startsWith('booking_')) navigate('/trips');
   }
 
@@ -48,7 +50,7 @@ export default function Notifications() {
           {items.map((n) => (
             <li
               key={n.id}
-              className={`notif-item${n.read ? '' : ' notif-unread'}${n.type === 'kyc_step_up_required' ? ' notif-kyc' : ''}`}
+              className={`notif-item${n.read ? '' : ' notif-unread'}${n.type === 'kyc_step_up_required' ? ' notif-kyc' : ''}${n.type === 'review_submitted' ? ' notif-review' : ''}`}
               onClick={() => onClick(n)}
               role="button"
               tabIndex={0}
@@ -66,6 +68,9 @@ export default function Notifications() {
                 <div className="notif-text">{n.body}</div>
                 {n.type === 'kyc_step_up_required' && (
                   <div className="notif-cta">{t('notif.kycStepUp.ctaLabel')}</div>
+                )}
+                {n.type === 'review_submitted' && (
+                  <div className="notif-cta notif-cta-review">{t('notif.review.ctaLabel')}</div>
                 )}
                 <div className="notif-time">{n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}</div>
               </div>

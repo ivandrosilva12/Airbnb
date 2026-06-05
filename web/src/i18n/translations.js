@@ -635,6 +635,7 @@ export const translations = {
     'notif.markUnread': 'Mark unread',
     'notif.none': 'No notifications yet.',
     'notif.kycStepUp.ctaLabel': 'Verify identity',
+    'notif.review.ctaLabel': 'See review',
 
     'host.becomeTitle': 'Become a host',
     'host.becomeText': 'Upgrade your account to publish listings and manage bookings.',
@@ -1515,6 +1516,7 @@ export const translations = {
     'notif.markUnread': 'Marcar como não lida',
     'notif.none': 'Ainda sem notificações.',
     'notif.kycStepUp.ctaLabel': 'Verificar identidade',
+    'notif.review.ctaLabel': 'Ver avaliação',
 
     'host.becomeTitle': 'Tornar-se anfitrião',
     'host.becomeText': 'Atualize a sua conta para publicar alojamentos e gerir reservas.',
@@ -2086,6 +2088,7 @@ export const translations = {
     'notif.markUnread': 'Marcar como no leída',
     'notif.none': 'Aún no hay notificaciones.',
     'notif.kycStepUp.ctaLabel': 'Verificar identidad',
+    'notif.review.ctaLabel': 'Ver reseña',
     'host.becomeTitle': 'Conviértete en anfitrión',
     'host.becomeText': 'Actualiza tu cuenta para publicar alojamientos y gestionar reservas.',
     'host.becomeBtn': 'Conviértete en anfitrión',
