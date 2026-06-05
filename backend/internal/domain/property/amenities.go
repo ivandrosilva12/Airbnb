@@ -22,6 +22,15 @@ var CanonicalAmenities = []string{
 	"elevator",
 	"breakfast",
 	"smoke-alarm",
+	// Accessibility codes (S161) — EAA / ADA compliance. Lets guests with
+	// mobility impairments filter listings that actually meet their needs
+	// instead of relying on free-text descriptions.
+	"wheelchair-accessible",
+	"step-free-entry",
+	"wide-doorways",
+	"roll-in-shower",
+	"accessible-parking",
+	"accessible-bathroom",
 }
 
 var amenitySet = func() map[string]struct{} {

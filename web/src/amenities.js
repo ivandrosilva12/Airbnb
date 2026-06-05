@@ -18,4 +18,13 @@ export const AMENITY_CODES = [
   'elevator',
   'breakfast',
   'smoke-alarm',
+  // Accessibility codes (S161) — must stay in sync with backend
+  // property.CanonicalAmenities so the EAA / ADA filter options render even
+  // when GET /amenities fails and we fall back to this client-side list.
+  'wheelchair-accessible',
+  'step-free-entry',
+  'wide-doorways',
+  'roll-in-shower',
+  'accessible-parking',
+  'accessible-bathroom',
 ];

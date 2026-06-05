@@ -389,6 +389,13 @@ export const translations = {
     'amenity.elevator': 'Elevator',
     'amenity.breakfast': 'Breakfast',
     'amenity.smoke-alarm': 'Smoke alarm',
+    // Accessibility (S161) — EAA / ADA filter labels.
+    'amenity.wheelchair-accessible': 'Wheelchair accessible',
+    'amenity.step-free-entry': 'Step-free entry',
+    'amenity.wide-doorways': 'Wide doorways',
+    'amenity.roll-in-shower': 'Roll-in shower',
+    'amenity.accessible-parking': 'Accessible parking',
+    'amenity.accessible-bathroom': 'Accessible bathroom',
 
     'detail.upToGuests': 'up to {n} guests',
     'detail.availability': 'Availability',
@@ -1206,6 +1213,13 @@ export const translations = {
     'amenity.elevator': 'Elevador',
     'amenity.breakfast': 'Pequeno-almoço',
     'amenity.smoke-alarm': 'Detetor de fumo',
+    // Acessibilidade (S161) — etiquetas de filtro EAA / ADA.
+    'amenity.wheelchair-accessible': 'Acesso para cadeira de rodas',
+    'amenity.step-free-entry': 'Entrada sem degraus',
+    'amenity.wide-doorways': 'Portas largas',
+    'amenity.roll-in-shower': 'Duche sem rebordo',
+    'amenity.accessible-parking': 'Estacionamento acessível',
+    'amenity.accessible-bathroom': 'Casa de banho acessível',
 
     'detail.upToGuests': 'até {n} hóspedes',
     'detail.availability': 'Disponibilidade',
@@ -1764,6 +1778,15 @@ export const translations = {
     'home.sort.newest': 'Más recientes',
     'home.sort.priceAsc': 'Precio: de menor a mayor',
     'home.sort.priceDesc': 'Precio: de mayor a menor',
+    // Accessibility (S161) — etiquetas de filtro EAA / ADA. Solo se traduce
+    // este subconjunto del bloque amenity.* — el resto sigue cayendo al
+    // inglés vía I18nContext hasta que se traduzcan en una pasada futura.
+    'amenity.wheelchair-accessible': 'Accesible para sillas de ruedas',
+    'amenity.step-free-entry': 'Entrada sin escalones',
+    'amenity.wide-doorways': 'Puertas anchas',
+    'amenity.roll-in-shower': 'Ducha sin escalón',
+    'amenity.accessible-parking': 'Aparcamiento accesible',
+    'amenity.accessible-bathroom': 'Baño accesible',
     // Saved searches
     'saved.save': 'Guardar esta búsqueda',
     'saved.namePrompt': 'Dale un nombre a esta búsqueda guardada:',
