@@ -8,6 +8,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/review"
@@ -20,11 +22,69 @@ type Service struct {
 	reviews    review.Repository
 	bookings   booking.Repository
 	properties property.Repository
+	// uow, when wired (S136), routes the synchronous Create writes
+	// (guest-to-property and host-to-guest) through a UnitOfWork so the
+	// reviews row and the ReviewSubmitted outbox event commit atomically —
+	// closing the "row landed but event was lost" gap that existed when
+	// the service wrote through a pool-bound repo with no outbox event at
+	// all. Nil falls back to the legacy pool-bound path so older tests
+	// that don't wire a UoW keep working.
+	uow port.UnitOfWork
 }
 
 // NewService wires the review application service.
 func NewService(reviews review.Repository, bookings booking.Repository, properties property.Repository) *Service {
 	return &Service{reviews: reviews, bookings: bookings, properties: properties}
+}
+
+// WithUnitOfWork wires a UoW into the service so synchronous review-create
+// writes (Create / CreateGuestReview) commit the reviews INSERT atomically
+// with the ReviewSubmitted outbox event (S136 — Review UoW slice).
+// Without it, the service falls back to the legacy pool-bound write path
+// (no outbox event emitted). Returns the same service for chained
+// construction.
+func (s *Service) WithUnitOfWork(uow port.UnitOfWork) *Service {
+	s.uow = uow
+	return s
+}
+
+// persistCreate writes a new review row + a ReviewSubmitted outbox event
+// atomically. When a UoW is wired (S136), both writes land in the same
+// transaction — so a crash between them no longer drops the event. When
+// the UoW is absent (legacy tests / call sites built before S136), it
+// falls back to the pool-bound repo and skips the event (matching the
+// pre-S136 behaviour). The tx-bound Reviews repo may be nil when the
+// UoW factory wasn't extended (e.g. the in-memory UoW used by an older
+// test that doesn't call WithReviews) — in that case we still route the
+// write through the UoW (so the outbox append participates in the same
+// commit) but using the service's pool-bound repo.
+func (s *Service) persistCreate(ctx context.Context, r *review.Review) error {
+	if s.uow == nil {
+		return s.reviews.Create(ctx, r)
+	}
+	return s.uow.Run(ctx, func(tx port.Tx) error {
+		repo := s.reviews
+		if tx.Reviews != nil {
+			repo = tx.Reviews
+		}
+		if err := repo.Create(ctx, r); err != nil {
+			return err
+		}
+		direction := string(r.Kind)
+		rec, err := event.NewRecord(event.ReviewSubmitted{
+			ReviewID:   r.ID,
+			BookingID:  r.BookingID,
+			PropertyID: r.PropertyID,
+			AuthorID:   r.AuthorID,
+			GuestID:    r.GuestID,
+			Direction:  direction,
+			Rating:     r.Rating,
+		})
+		if err != nil {
+			return err
+		}
+		return tx.Outbox.Append(ctx, rec)
+	})
 }
 
 // RespondToReview lets the property's host publish a public reply to a guest's
@@ -146,7 +206,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*review.Review, e
 	if err := r.SetCategories(in.Categories); err != nil {
 		return nil, err
 	}
-	if err := s.reviews.Create(ctx, r); err != nil {
+	if err := s.persistCreate(ctx, r); err != nil {
 		return nil, err
 	}
 	s.refreshPropertyRating(ctx, b.PropertyID)
@@ -214,7 +274,7 @@ func (s *Service) CreateGuestReview(ctx context.Context, in GuestReviewInput) (*
 	if err != nil {
 		return nil, err
 	}
-	if err := s.reviews.Create(ctx, r); err != nil {
+	if err := s.persistCreate(ctx, r); err != nil {
 		return nil, err
 	}
 	return r, nil

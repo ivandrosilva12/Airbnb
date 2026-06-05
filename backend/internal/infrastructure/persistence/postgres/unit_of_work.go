@@ -52,7 +52,11 @@ func (u *UnitOfWork) Run(ctx context.Context, fn func(tx port.Tx) error) error {
 		// / PaymentCaptured / PaymentRefunded outbox row lands atomically
 		// with the payment write.
 		Payments: NewPaymentTxRepository(tx),
-		Outbox:   outbox,
+		// S136 — Review UoW slice. The review service routes Create
+		// through this tx-bound repo so a ReviewSubmitted outbox row
+		// lands atomically with the reviews INSERT.
+		Reviews: NewReviewTxRepository(tx),
+		Outbox:  outbox,
 	}
 	if err := fn(repos); err != nil {
 		return err

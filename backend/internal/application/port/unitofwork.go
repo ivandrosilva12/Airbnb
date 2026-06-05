@@ -11,6 +11,7 @@ import (
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
 	"github.com/airhost/backend/internal/domain/payment"
+	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 )
 
@@ -45,7 +46,13 @@ type Tx struct {
 	// the PaymentAuthorized / PaymentCaptured / PaymentRefunded event
 	// (S123 — Payment UoW slice).
 	Payments payment.Repository
-	Outbox   event.OutboxStore
+	// Reviews, when wired by the UnitOfWork, lets the review service route
+	// Create writes through the same atomic-commit-with-outbox path the
+	// booking / messaging services already use. Without it, a crash
+	// between the reviews INSERT and the ReviewSubmitted outbox append
+	// would lose the event (S136 — Review UoW slice).
+	Reviews review.Repository
+	Outbox  event.OutboxStore
 }
 
 // UnitOfWork runs a function inside a transaction. On success the writes and the

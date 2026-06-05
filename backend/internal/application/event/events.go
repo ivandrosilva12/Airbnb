@@ -41,6 +41,13 @@ func init() {
 	// subscribers (notifications, accounting) without risk of split-brain.
 	Register(PaymentCaptured{}.EventName(), jsonDecoder[PaymentCaptured]())
 	Register(PaymentRefunded{}.EventName(), jsonDecoder[PaymentRefunded]())
+	// S136 — Review UoW slice. ReviewSubmitted lands in the outbox atomically
+	// with the review row write so notifications (host of the property /
+	// guest who hosted) and any future read-model projections (cached
+	// property rating recalc, Superhost re-evaluation) can subscribe without
+	// risk of seeing a review row that the relay never announced (or
+	// announcing a review the DB rolled back).
+	Register(ReviewSubmitted{}.EventName(), jsonDecoder[ReviewSubmitted]())
 	// S99 — offer lifecycle events (WF-GAP-008). OfferAccepted is intentionally
 	// omitted: Accept always produces a BookingConfirmed, which the existing
 	// subscribers already handle.
@@ -337,3 +344,31 @@ type CohostInvited struct {
 }
 
 func (CohostInvited) EventName() string { return "cohost.invited" }
+
+// ReviewSubmitted is published when a guest submits a property review or a
+// host submits a guest review after a completed stay (S136 — Review UoW
+// slice). It lands in the outbox atomically with the reviews INSERT so a
+// crash between persisting the row and announcing the event no longer
+// leaves the review invisible to subscribers (notifications, cached
+// rating recalc, Superhost re-evaluation).
+//
+// Direction names the side of the bidirectional review the event belongs
+// to ("guest_to_property" / "host_to_guest"), matching the review.Kind
+// values so subscribers can switch on a plain string without importing the
+// review domain.
+//
+// AuthorID is the user who wrote the review. For a guest-to-property
+// review AuthorID equals GuestID; for a host-to-guest review AuthorID is
+// the host. PropertyID + BookingID are carried so subscribers can resolve
+// the listing/host or the booking participants without an extra lookup.
+type ReviewSubmitted struct {
+	ReviewID   uuid.UUID
+	BookingID  uuid.UUID
+	PropertyID uuid.UUID
+	AuthorID   uuid.UUID
+	GuestID    uuid.UUID
+	Direction  string // "guest_to_property" or "host_to_guest"
+	Rating     int    // 1..5
+}
+
+func (ReviewSubmitted) EventName() string { return "review.submitted" }

@@ -6,24 +6,48 @@ import (
 	"github.com/airhost/backend/internal/domain/review"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ReviewRepository is the Postgres implementation of review.Repository.
+//
+// The repository can run against either a *pgxpool.Pool (own connection,
+// auto-managed) or a pgx.Tx (a UnitOfWork's transaction, so the reviews
+// INSERT commits atomically with the ReviewSubmitted outbox row). Use
+// NewReviewRepository for the pool flavour and NewReviewTxRepository
+// inside a UnitOfWork (S136 — Review UoW slice).
+//
+// Reads always run through whichever querier was installed (the pool, or
+// the tx when bound). When bound to a tx, a Create followed by a Find
+// inside the same UoW sees the uncommitted row.
 type ReviewRepository struct {
-	pool *pgxpool.Pool
+	q querier
 }
 
-// NewReviewRepository builds a ReviewRepository.
+// NewReviewRepository builds a pool-bound ReviewRepository. Each
+// Create/Update/Delete opens its own statement against the pool; the
+// review aggregate is a single-row write so no inner transaction is
+// needed (compare PaymentRepository, which spans payments +
+// payment_adjustments and wraps its own tx).
 func NewReviewRepository(pool *pgxpool.Pool) *ReviewRepository {
-	return &ReviewRepository{pool: pool}
+	return &ReviewRepository{q: pool}
+}
+
+// NewReviewTxRepository binds the repository to an active pgx.Tx so its
+// writes participate in the caller's UnitOfWork — the reviews row + the
+// ReviewSubmitted outbox row commit atomically (S136). Reads also run on
+// the same transaction so a Create followed by a Find inside the same
+// UoW sees the uncommitted row.
+func NewReviewTxRepository(tx pgx.Tx) *ReviewRepository {
+	return &ReviewRepository{q: tx}
 }
 
 const reviewColumns = `id, booking_id, property_id, author_id, guest_id, kind, rating, comment, response, responded_at, created_at, ` +
 	`rating_cleanliness, rating_accuracy, rating_communication, rating_location, rating_checkin, rating_value, updated_at`
 
 func (r *ReviewRepository) Create(ctx context.Context, rv *review.Review) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.q.Exec(ctx, `
 		INSERT INTO reviews (`+reviewColumns+`)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
 		rv.ID, rv.BookingID, rv.PropertyID, rv.AuthorID, rv.GuestID, string(rv.Kind), rv.Rating, rv.Comment,
@@ -35,7 +59,7 @@ func (r *ReviewRepository) Create(ctx context.Context, rv *review.Review) error 
 }
 
 func (r *ReviewRepository) FindByID(ctx context.Context, id uuid.UUID) (*review.Review, error) {
-	rv, err := scanReview(r.pool.QueryRow(ctx, `SELECT `+reviewColumns+` FROM reviews WHERE id=$1`, id))
+	rv, err := scanReview(r.q.QueryRow(ctx, `SELECT `+reviewColumns+` FROM reviews WHERE id=$1`, id))
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -43,7 +67,7 @@ func (r *ReviewRepository) FindByID(ctx context.Context, id uuid.UUID) (*review.
 }
 
 func (r *ReviewRepository) Update(ctx context.Context, rv *review.Review) error {
-	ct, err := r.pool.Exec(ctx,
+	ct, err := r.q.Exec(ctx,
 		`UPDATE reviews SET rating=$2, comment=$3, response=$4, responded_at=$5, updated_at=$6,
 		        rating_cleanliness=$7, rating_accuracy=$8, rating_communication=$9,
 		        rating_location=$10, rating_checkin=$11, rating_value=$12
@@ -62,7 +86,7 @@ func (r *ReviewRepository) Update(ctx context.Context, rv *review.Review) error 
 }
 
 func (r *ReviewRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	ct, err := r.pool.Exec(ctx, `DELETE FROM reviews WHERE id=$1`, id)
+	ct, err := r.q.Exec(ctx, `DELETE FROM reviews WHERE id=$1`, id)
 	if err != nil {
 		return mapError(err)
 	}
@@ -74,7 +98,7 @@ func (r *ReviewRepository) Delete(ctx context.Context, id uuid.UUID) error {
 
 func (r *ReviewRepository) ExistsForBookingKind(ctx context.Context, bookingID uuid.UUID, kind review.Kind) (bool, error) {
 	var exists bool
-	err := r.pool.QueryRow(ctx,
+	err := r.q.QueryRow(ctx,
 		`SELECT EXISTS(SELECT 1 FROM reviews WHERE booking_id=$1 AND kind=$2)`, bookingID, string(kind),
 	).Scan(&exists)
 	return exists, mapError(err)
@@ -90,10 +114,10 @@ func (r *ReviewRepository) ListAboutGuest(ctx context.Context, guestID uuid.UUID
 
 func (r *ReviewRepository) list(ctx context.Context, where string, arg any, page shared.Page) (shared.PageResult[*review.Review], error) {
 	var total int64
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE `+where, arg).Scan(&total); err != nil {
+	if err := r.q.QueryRow(ctx, `SELECT count(*) FROM reviews WHERE `+where, arg).Scan(&total); err != nil {
 		return shared.PageResult[*review.Review]{}, mapError(err)
 	}
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.q.Query(ctx,
 		`SELECT `+reviewColumns+` FROM reviews WHERE `+where+` ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		arg, page.Limit, page.Offset,
 	)
@@ -122,7 +146,7 @@ func (r *ReviewRepository) SummaryForGuest(ctx context.Context, guestID uuid.UUI
 }
 
 func (r *ReviewRepository) AnonymizeByAuthor(ctx context.Context, authorID uuid.UUID) error {
-	_, err := r.pool.Exec(ctx, `UPDATE reviews SET comment='' WHERE author_id=$1`, authorID)
+	_, err := r.q.Exec(ctx, `UPDATE reviews SET comment='' WHERE author_id=$1`, authorID)
 	return mapError(err)
 }
 
@@ -132,7 +156,7 @@ func (r *ReviewRepository) summary(ctx context.Context, where string, subjectID 
 		count                  int64
 		cl, ac, co, lo, ci, va *float64
 	)
-	err := r.pool.QueryRow(ctx,
+	err := r.q.QueryRow(ctx,
 		`SELECT AVG(rating), COUNT(*),
 		        AVG(NULLIF(rating_cleanliness,0)),
 		        AVG(NULLIF(rating_accuracy,0)),

@@ -239,7 +239,8 @@ func run() error {
 	propertySvc := propertyapp.NewService(propertyRepo, objectStore, identitySvc, cfg.Identity.RequireKYCToHost)
 	bookingSvc := bookingapp.NewService(bookingRepo, propertyRepo, blockRepo, couponRepo, priceRuleRepo, cfg.Pricing.ServiceFeeRate, identitySvc, cfg.Identity.RequireKYCToBook, uow).
 		WithHighValueThresholds(cfg.Identity.HighValueThresholdsCents)
-	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo)
+	reviewSvc := reviewapp.NewService(reviewRepo, bookingRepo, propertyRepo).
+		WithUnitOfWork(uow)
 	messageSvc := messageapp.NewService(messageRepo, propertyRepo, userBlockRepo, objectStore, uow)
 	// cohostSvc is wired below (after blockSvc) and message svc gets it via WithCohosts later.
 	searchSvc := searchapp.NewService(propertyRepo, bookingRepo, blockRepo)
