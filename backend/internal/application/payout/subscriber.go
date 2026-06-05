@@ -7,6 +7,7 @@ import (
 
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -18,6 +19,13 @@ import (
 // off the booking lifecycle: a confirmation credits the host with the net
 // payout, a cancellation debits the refunded portion. It is best-effort —
 // failures are logged and never propagated to the publishing use case.
+//
+// S158 — the experience-booking arms mirror the property arms (confirm credits,
+// cancel debits) so hosts of experiences earn from their listings the same way
+// hosts of properties do. Before this slice, ExperienceBookingConfirmed and
+// ExperienceBookingCancelled had notification + email + realtime subscribers
+// wired but no payout subscriber: experience hosts saw NOTHING in their
+// HostEarnings ledger despite the events firing.
 func (s *Service) EventHandler() event.Handler {
 	return func(ctx context.Context, e event.Event) {
 		switch ev := e.(type) {
@@ -25,6 +33,20 @@ func (s *Service) EventHandler() event.Handler {
 			s.recordEarning(ctx, ev)
 		case event.BookingCancelled:
 			s.recordRefund(ctx, ev)
+		case experiencebooking.ExperienceBookingConfirmed:
+			// S158 — experience host receives an earning ledger entry,
+			// mirroring the booking.confirmed path. Pricing is derived from
+			// the aggregate (the event payload doesn't snapshot it).
+			s.recordExperienceEarning(ctx, ev)
+		case experiencebooking.ExperienceBookingCancelled:
+			// S158 — refund the experience host's ledger by the full net
+			// amount on cancel. The experience BC has not settled a
+			// cancellation-policy ladder yet (refund computation is
+			// deliberately not modelled in the domain — see
+			// experiencebooking.Booking.Cancel) so the host gives back
+			// the entire earning on cancel; a future slice can plumb a
+			// per-policy fraction once the policy lands.
+			s.recordExperienceRefund(ctx, ev)
 		}
 	}
 }
@@ -194,4 +216,102 @@ func clampFraction(f float64) float64 {
 		return 1
 	}
 	return f
+}
+
+// recordExperienceEarning (S158) credits the experience host's ledger with the
+// net payout for a confirmed ExperienceBooking, mirroring recordEarning. The
+// event payload doesn't snapshot pricing, so the booking aggregate is the
+// source of truth.
+//
+// Idempotency: like the property arm, BookingConfirmed may be delivered more
+// than once (at-least-once outbox / webhook retries), so the helper short-
+// circuits if an earning already exists for this booking. Because booking IDs
+// are universally-unique UUIDs across both bounded contexts, sharing
+// HasEarningForBooking with the property arm cannot produce false-positives —
+// the ID space alone disambiguates "experience_booking" from "booking"
+// without needing a RefKind column in the payouts table.
+func (s *Service) recordExperienceEarning(ctx context.Context, ev experiencebooking.ExperienceBookingConfirmed) {
+	if s.experienceBookings == nil {
+		return // experiences repo not wired — silently skip
+	}
+	if has, err := s.payouts.HasEarningForBooking(ctx, ev.BookingID); err != nil {
+		logctx.LoggerFrom(ctx).Error("payout: experience earning lookup failed", "booking", ev.BookingID, "error", err)
+		return
+	} else if has {
+		return
+	}
+	b, err := s.experienceBookings.FindByID(ctx, ev.BookingID)
+	if err != nil {
+		logctx.LoggerFrom(ctx).Error("payout: experience booking lookup failed", "booking", ev.BookingID, "error", err)
+		return
+	}
+	net, err := experienceHostNet(b)
+	if err != nil {
+		logctx.LoggerFrom(ctx).Error("payout: invalid experience net amount", "booking", ev.BookingID, "error", err)
+		return
+	}
+	hostID := ev.HostID
+	if hostID == uuid.Nil {
+		hostID = b.HostID
+	}
+	// The Entry's PropertyID field stores the listing-side identifier; for an
+	// experience booking that's the experience id. Both columns are typed
+	// uuid.UUID, so the read paths (ListByHost / export) render an entry
+	// without caring which BC produced it.
+	if err := s.payouts.Create(ctx, payout.NewEarning(hostID, b.ID, b.ExperienceID, net)); err != nil {
+		logctx.LoggerFrom(ctx).Error("payout: persist experience earning failed", "booking", ev.BookingID, "error", err)
+	}
+}
+
+// recordExperienceRefund (S158) debits the experience host's ledger with the
+// full net amount when a confirmed ExperienceBooking is cancelled. Mirrors
+// recordRefund but with two differences worth flagging:
+//
+//   - The experience-cancel event does not carry a RefundFraction (the
+//     cancellation-policy ladder isn't modelled in the experience BC yet —
+//     see experiencebooking.Booking.Cancel), so the debit is always the full
+//     net earning. A future slice can plumb a fraction once a policy lands.
+//   - Only realised earnings can be reversed: a booking cancelled before
+//     confirmation never credited the host, so there's nothing to debit.
+func (s *Service) recordExperienceRefund(ctx context.Context, ev experiencebooking.ExperienceBookingCancelled) {
+	if s.experienceBookings == nil {
+		return
+	}
+	has, err := s.payouts.HasEarningForBooking(ctx, ev.BookingID)
+	if err != nil {
+		logctx.LoggerFrom(ctx).Error("payout: experience earning lookup failed", "booking", ev.BookingID, "error", err)
+		return
+	}
+	if !has {
+		return
+	}
+	b, err := s.experienceBookings.FindByID(ctx, ev.BookingID)
+	if err != nil {
+		logctx.LoggerFrom(ctx).Error("payout: experience booking lookup failed", "booking", ev.BookingID, "error", err)
+		return
+	}
+	net, err := experienceHostNet(b)
+	if err != nil {
+		logctx.LoggerFrom(ctx).Error("payout: invalid experience net amount", "booking", ev.BookingID, "error", err)
+		return
+	}
+	hostID := ev.HostID
+	if hostID == uuid.Nil {
+		hostID = b.HostID
+	}
+	if err := s.payouts.Create(ctx, payout.NewRefund(hostID, b.ID, b.ExperienceID, net)); err != nil {
+		logctx.LoggerFrom(ctx).Error("payout: persist experience refund failed", "booking", ev.BookingID, "error", err)
+	}
+}
+
+// experienceHostNet derives the amount owed to the host for an experience
+// booking: per-guest subtotal minus the platform service fee, which is
+// algebraically just the Subtotal (Total = Subtotal + ServiceFee, so
+// Total − ServiceFee == Subtotal). Implemented as an explicit subtraction
+// to mirror hostNet's shape — if the pricing model ever grows a deposit /
+// damage hold like property bookings have, the substitution is no longer
+// trivial and the explicit form is easier to amend.
+func experienceHostNet(b *experiencebooking.Booking) (shared.Money, error) {
+	netCents := b.Pricing.Total.AmountCents() - b.Pricing.ServiceFee.AmountCents()
+	return shared.NewMoney(netCents, b.Pricing.Total.Currency())
 }

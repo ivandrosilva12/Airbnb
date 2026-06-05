@@ -384,7 +384,12 @@ func run() error {
 		// snapshot HostID / PropertyTitle).
 		WithProperties(propertyRepo)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment)).
-		WithSplitPayments(splitPaymentRepo) // S88 — credit per-share on split bookings
+		WithSplitPayments(splitPaymentRepo). // S88 — credit per-share on split bookings
+		// S158 — credit the experience host on ExperienceBookingConfirmed and
+		// debit on ExperienceBookingCancelled. Before this slice the events
+		// fired but no payout subscriber listened, so experience hosts saw
+		// nothing in their HostEarnings ledger.
+		WithExperienceBookings(experienceBookingRepo)
 	// privacySvc orchestrates GDPR self-service (export + erase). The erase
 	// pipeline (S90 / WF-GAP-009) sweeps every PII-bearing table — adding a
 	// new table to the platform means extending NewService AND this call

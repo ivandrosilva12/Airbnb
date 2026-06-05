@@ -10,6 +10,7 @@ import (
 	"github.com/airhost/backend/internal/application/event"
 	payoutapp "github.com/airhost/backend/internal/application/payout"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -538,5 +539,165 @@ func TestEventHandler_SplitBookingCreditsPerShare(t *testing.T) {
 	}
 	if len(balances) != 1 || balances[0].NetCents() != 33000 {
 		t.Fatalf("host balance = %+v, want net 33000 EUR", balances)
+	}
+}
+
+// seedExperienceBooking builds a confirmed-eligible experience booking owned
+// by hostID, persists it, and returns the aggregate. Pricing is 2 guests ×
+// 30.00 EUR per seat with a 10 % service fee, so subtotal 60.00, fee 6.00,
+// total 66.00, host net 60.00 (subtotal == total − fee).
+func seedExperienceBooking(t *testing.T, repo *memory.ExperienceBookingRepository, hostID uuid.UUID) *experiencebooking.Booking {
+	t.Helper()
+	price, _ := shared.NewMoney(3000, "EUR")
+	session, err := experiencebooking.NewSession(time.Now().UTC().Add(48*time.Hour), 120, 30, 24*60)
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	b, err := experiencebooking.NewBooking(uuid.New(), hostID, uuid.New(), session, 2, 6, price, 0.10)
+	if err != nil {
+		t.Fatalf("new experience booking: %v", err)
+	}
+	if err := repo.Create(context.Background(), b); err != nil {
+		t.Fatalf("create experience booking: %v", err)
+	}
+	return b
+}
+
+// TestEventHandler_ExperienceConfirmCreditsHost — S158. The payout subscriber
+// must credit the host's ledger when an experience booking is confirmed,
+// closing the experience-revenue blind spot (events fired but no subscriber
+// listened, so HostEarnings stayed at zero). The credit equals the host's
+// net take (subtotal == total − service fee).
+func TestEventHandler_ExperienceConfirmCreditsHost(t *testing.T) {
+	ctx := context.Background()
+	payouts := memory.NewPayoutRepository()
+	experiences := memory.NewExperienceBookingRepository()
+	hostID := uuid.New()
+	b := seedExperienceBooking(t, experiences, hostID)
+
+	svc := payoutapp.NewService(
+		payouts, memory.NewBookingRepository(), memory.NewPropertyRepository(),
+		memory.NewUserRepository(), infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway(),
+	).WithExperienceBookings(experiences)
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingConfirmed{
+		BookingID:       b.ID,
+		ExperienceID:    b.ExperienceID,
+		ExperienceTitle: "Pasta workshop",
+		HostID:          hostID,
+		GuestID:         b.GuestID,
+		OccurredAt:      time.Now().UTC(),
+	})
+
+	balances, err := svc.Summary(ctx, hostID)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	// Host net is the subtotal (total − service fee): 6600 − 600 = 6000.
+	if len(balances) != 1 || balances[0].NetCents() != 6000 {
+		t.Fatalf("host balance = %+v, want net 6000 EUR (one experience earning)", balances)
+	}
+	page, err := svc.ListEntries(ctx, hostID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Kind != payout.KindEarning {
+		t.Fatalf("entries = %+v, want one earning", page.Items)
+	}
+	if page.Items[0].PropertyID != b.ExperienceID {
+		t.Fatalf("entry property_id = %s, want experience id %s", page.Items[0].PropertyID, b.ExperienceID)
+	}
+
+	// At-least-once delivery: a duplicate ExperienceBookingConfirmed must
+	// credit the host only once, mirroring the property-booking guard.
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingConfirmed{
+		BookingID: b.ID, ExperienceID: b.ExperienceID, HostID: hostID, GuestID: b.GuestID,
+	})
+	page, err = svc.ListEntries(ctx, hostID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list entries (dup): %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("entries after duplicate confirm = %d, want 1 (idempotent)", len(page.Items))
+	}
+}
+
+// TestEventHandler_ExperienceCancelDebitsHost — S158. After an experience
+// booking has been confirmed (the host has been credited), a cancellation
+// must debit the host's ledger by the full net amount so the running
+// balance for that booking nets to zero. The experience BC does not yet
+// model a refund-fraction ladder, so the entire earning is reversed.
+func TestEventHandler_ExperienceCancelDebitsHost(t *testing.T) {
+	ctx := context.Background()
+	payouts := memory.NewPayoutRepository()
+	experiences := memory.NewExperienceBookingRepository()
+	hostID := uuid.New()
+	b := seedExperienceBooking(t, experiences, hostID)
+
+	svc := payoutapp.NewService(
+		payouts, memory.NewBookingRepository(), memory.NewPropertyRepository(),
+		memory.NewUserRepository(), infrapayment.NewFakeDisburser(), infrapayment.NewFakeConnectGateway(),
+	).WithExperienceBookings(experiences)
+
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	// Confirm first so the host has a realised earning to reverse.
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingConfirmed{
+		BookingID: b.ID, ExperienceID: b.ExperienceID, HostID: hostID, GuestID: b.GuestID,
+	})
+	// Cancel — debit the full net (6000 cents). Balance should net to zero.
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingCancelled{
+		BookingID:    b.ID,
+		ExperienceID: b.ExperienceID,
+		HostID:       hostID,
+		GuestID:      b.GuestID,
+		CancelledBy:  b.GuestID,
+		OccurredAt:   time.Now().UTC(),
+	})
+
+	balances, err := svc.Summary(ctx, hostID)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if len(balances) != 1 || balances[0].NetCents() != 0 {
+		t.Fatalf("host balance after cancel = %+v, want net 0 EUR (earning fully reversed)", balances)
+	}
+	page, err := svc.ListEntries(ctx, hostID, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("entries = %d, want 2 (one earning, one refund)", len(page.Items))
+	}
+	var earning, refund int
+	for _, e := range page.Items {
+		switch e.Kind {
+		case payout.KindEarning:
+			earning++
+		case payout.KindRefund:
+			refund++
+		}
+	}
+	if earning != 1 || refund != 1 {
+		t.Fatalf("kinds = %d earning, %d refund; want 1+1", earning, refund)
+	}
+
+	// A cancellation that never had a prior earning must not produce a
+	// stray refund entry — mirrors the property-side guard.
+	otherHost := uuid.New()
+	other := seedExperienceBooking(t, experiences, otherHost)
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingCancelled{
+		BookingID: other.ID, ExperienceID: other.ExperienceID, HostID: otherHost, GuestID: other.GuestID,
+	})
+	otherPage, err := svc.ListEntries(ctx, otherHost, shared.NewPage(10, 0))
+	if err != nil {
+		t.Fatalf("list entries (other host): %v", err)
+	}
+	if len(otherPage.Items) != 0 {
+		t.Fatalf("entries for cancelled-before-confirm = %+v, want none", otherPage.Items)
 	}
 }

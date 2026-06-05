@@ -13,6 +13,7 @@ import (
 
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/booking"
+	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/payout"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -57,6 +58,13 @@ type Service struct {
 	// one earning per share so the host's ledger reflects each
 	// contributor's slice of the net payout. nil → single-lump behaviour.
 	splitRepo splitpayment.Repository
+	// experienceBookings is set via WithExperienceBookings (S158). When wired,
+	// the EventHandler resolves an experience booking's pricing on
+	// ExperienceBookingConfirmed/Cancelled so the host receives an earning
+	// credit (or refund debit) mirroring the property-booking path. nil → the
+	// experience arms are silently skipped (no host earnings are recorded),
+	// which is what the focused unit tests for property flows still want.
+	experienceBookings experiencebooking.Repository
 	// reserveLocks serialises the available-balance check and pending-disbursement
 	// insert per host, so two concurrent payout requests cannot reserve the same
 	// funds twice.
@@ -87,6 +95,18 @@ func NewService(
 // Returns the same service so construction can be chained.
 func (s *Service) WithSplitPayments(splits splitpayment.Repository) *Service {
 	s.splitRepo = splits
+	return s
+}
+
+// WithExperienceBookings plugs the experience-booking repository into the
+// service so the EventHandler can credit (and later debit) the host's ledger
+// off ExperienceBookingConfirmed / ExperienceBookingCancelled (S158). The
+// event payloads don't snapshot pricing, so the subscriber re-reads the
+// aggregate to derive the host's net take the same way property bookings do
+// (Total − ServiceFee). Returns the same service so construction can be
+// chained.
+func (s *Service) WithExperienceBookings(experiences experiencebooking.Repository) *Service {
+	s.experienceBookings = experiences
 	return s
 }
 
