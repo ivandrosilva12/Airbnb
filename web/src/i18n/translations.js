@@ -643,6 +643,15 @@ export const translations = {
     'notif.none': 'No notifications yet.',
     'notif.kycStepUp.ctaLabel': 'Verify identity',
     'notif.review.ctaLabel': 'See review',
+    // S163 — CTA labels for the 8 previously dead-end notification
+    // families. Wording matches the destination page the tap leads to.
+    'notif.dispute.ctaLabel': 'Open the case',
+    'notif.split.ctaLabel': 'View my trip',
+    'notif.offer.ctaLabel': 'Read the offer',
+    'notif.offer.tripsCtaLabel': 'View my trips',
+    'notif.cohost.ctaLabel': 'Open host dashboard',
+    'notif.identity.ctaLabel': 'View account settings',
+    'notif.payment.ctaLabel': 'View my trips',
 
     'host.becomeTitle': 'Become a host',
     'host.becomeText': 'Upgrade your account to publish listings and manage bookings.',
@@ -1531,6 +1540,14 @@ export const translations = {
     'notif.none': 'Ainda sem notificações.',
     'notif.kycStepUp.ctaLabel': 'Verificar identidade',
     'notif.review.ctaLabel': 'Ver avaliação',
+    // S163
+    'notif.dispute.ctaLabel': 'Abrir o caso',
+    'notif.split.ctaLabel': 'Ver a minha viagem',
+    'notif.offer.ctaLabel': 'Ler a oferta',
+    'notif.offer.tripsCtaLabel': 'Ver as minhas viagens',
+    'notif.cohost.ctaLabel': 'Abrir painel de anfitrião',
+    'notif.identity.ctaLabel': 'Ver definições da conta',
+    'notif.payment.ctaLabel': 'Ver as minhas viagens',
 
     'host.becomeTitle': 'Tornar-se anfitrião',
     'host.becomeText': 'Atualize a sua conta para publicar alojamentos e gerir reservas.',
@@ -2112,6 +2129,14 @@ export const translations = {
     'notif.none': 'Aún no hay notificaciones.',
     'notif.kycStepUp.ctaLabel': 'Verificar identidad',
     'notif.review.ctaLabel': 'Ver reseña',
+    // S163
+    'notif.dispute.ctaLabel': 'Abrir el caso',
+    'notif.split.ctaLabel': 'Ver mi viaje',
+    'notif.offer.ctaLabel': 'Leer la oferta',
+    'notif.offer.tripsCtaLabel': 'Ver mis viajes',
+    'notif.cohost.ctaLabel': 'Abrir panel de anfitrión',
+    'notif.identity.ctaLabel': 'Ver ajustes de la cuenta',
+    'notif.payment.ctaLabel': 'Ver mis viajes',
     'host.becomeTitle': 'Conviértete en anfitrión',
     'host.becomeText': 'Actualiza tu cuenta para publicar alojamientos y gestionar reservas.',
     'host.becomeBtn': 'Conviértete en anfitrión',
