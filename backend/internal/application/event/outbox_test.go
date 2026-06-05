@@ -252,6 +252,93 @@ func TestDurablePublisher_DeadLettersAfterMaxAttempts(t *testing.T) {
 	}
 }
 
+// fakeLatencyMetric records every ObserveDispatchLatency call so the test can
+// assert one observation fires per successful Recover dispatch (S154).
+type fakeLatencyMetric struct {
+	mu       sync.Mutex
+	observed []float64
+}
+
+func (f *fakeLatencyMetric) ObserveDispatchLatency(seconds float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.observed = append(f.observed, seconds)
+}
+
+func (f *fakeLatencyMetric) snapshot() []float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]float64, len(f.observed))
+	copy(out, f.observed)
+	return out
+}
+
+// TestDurablePublisher_LatencyMetricObservedOnEachSuccessfulRecoverDispatch
+// proves the S154 histogram fires once per record the recovery loop publishes,
+// and that the observed value is non-negative (i.e. wall-clock since CreatedAt).
+func TestDurablePublisher_LatencyMetricObservedOnEachSuccessfulRecoverDispatch(t *testing.T) {
+	store := NewMemoryOutbox()
+	d := NewDispatcher()
+	d.Subscribe(func(_ context.Context, _ Event) {})
+	metric := &fakeLatencyMetric{}
+	p := NewDurablePublisher(store, d).WithLatencyMetric(metric)
+
+	ctx := context.Background()
+	// Append three records — Recover should dispatch all three and the
+	// metric should see one observation per record (not per cycle).
+	for _, e := range []Event{
+		BookingRequested{BookingID: uuid.New()},
+		BookingConfirmed{BookingID: uuid.New()},
+		BookingCompleted{BookingID: uuid.New()},
+	} {
+		r, _ := NewRecord(e)
+		if err := store.Append(ctx, r); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+
+	n, err := p.Recover(ctx, 10)
+	if err != nil || n != 3 {
+		t.Fatalf("recover = %d err = %v, want 3 nil", n, err)
+	}
+	got := metric.snapshot()
+	if len(got) != 3 {
+		t.Fatalf("latency observations = %d, want 3 (got: %v)", len(got), got)
+	}
+	for i, v := range got {
+		if v < 0 {
+			t.Fatalf("observation[%d] = %v, want >= 0 (wall-clock since CreatedAt)", i, v)
+		}
+	}
+
+	// A second Recover with nothing left to deliver must not observe again.
+	if _, err := p.Recover(ctx, 10); err != nil {
+		t.Fatalf("second recover: %v", err)
+	}
+	if got2 := metric.snapshot(); len(got2) != 3 {
+		t.Fatalf("observations after empty recover = %d, want still 3", len(got2))
+	}
+}
+
+// TestDurablePublisher_LatencyMetricNilSafe proves a publisher without
+// WithLatencyMetric still works — guarding against a nil sink is required
+// because depth/DLQ observers are independent of the histogram (S154).
+func TestDurablePublisher_LatencyMetricNilSafe(t *testing.T) {
+	store := NewMemoryOutbox()
+	d := NewDispatcher()
+	d.Subscribe(func(_ context.Context, _ Event) {})
+	p := NewDurablePublisher(store, d) // no WithLatencyMetric
+
+	ctx := context.Background()
+	r, _ := NewRecord(BookingRequested{BookingID: uuid.New()})
+	if err := store.Append(ctx, r); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if _, err := p.Recover(ctx, 10); err != nil {
+		t.Fatalf("recover with nil metric: %v", err)
+	}
+}
+
 func TestDurablePublisher_DepthObserverSamplesPending(t *testing.T) {
 	store := NewMemoryOutbox()
 	d := NewDispatcher()

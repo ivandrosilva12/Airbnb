@@ -469,7 +469,11 @@ func run() error {
 	eventPublisher.
 		WithMaxAttempts(5).
 		WithDepthObserver(func(n int) { metrics.OutboxPending.Set(float64(n)) }).
-		WithDLQObserver(func(name, reason string) { metrics.OutboxDLQTotal.WithLabelValues(name, reason).Inc() })
+		WithDLQObserver(func(name, reason string) { metrics.OutboxDLQTotal.WithLabelValues(name, reason).Inc() }).
+		// S154 — sample create-to-dispatch latency per successful recovery
+		// delivery so ops can graph "how stale is what we actually flushed"
+		// alongside the OutboxPending backlog depth.
+		WithLatencyMetric(outboxLatencyAdapter{m: metrics})
 
 	// --- HTTP interface ----------------------------------------------------
 	syncFn := func(c *gin.Context, claims auth.Claims) (*domainuser.User, error) {
@@ -742,6 +746,21 @@ func (a reviewMetricsAdapter) IncReviewSubmitted(direction string) {
 		return
 	}
 	a.m.ReviewsSubmittedTotal.WithLabelValues(direction).Inc()
+}
+
+// outboxLatencyAdapter satisfies event.DispatchLatencyMetric by forwarding
+// to the observability OutboxDispatchLatencySeconds histogram. Kept at the
+// composition root so the application/event package never imports
+// observability (S154 — complements OutboxPending S97).
+type outboxLatencyAdapter struct {
+	m *observability.Metrics
+}
+
+func (a outboxLatencyAdapter) ObserveDispatchLatency(seconds float64) {
+	if a.m == nil || a.m.OutboxDispatchLatencySeconds == nil {
+		return
+	}
+	a.m.OutboxDispatchLatencySeconds.Observe(seconds)
 }
 
 // cohostAuditor satisfies propertyapp.Auditor by translating the

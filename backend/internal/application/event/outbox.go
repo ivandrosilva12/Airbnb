@@ -67,6 +67,14 @@ type DepthObserver func(count int)
 // Wired in main.go to a Prometheus CounterVec labeled by event name.
 type DLQObserver func(eventName string, reason string)
 
+// DispatchLatencyMetric is observed once per successful recovery dispatch with
+// the elapsed time between Record.CreatedAt and the moment of publish (S154).
+// Kept as an interface so the application/event package stays free of any
+// observability imports — main.go provides the Prometheus-backed adapter.
+type DispatchLatencyMetric interface {
+	ObserveDispatchLatency(seconds float64)
+}
+
 // --- event (de)serialization registry --------------------------------------
 
 var decoders = map[string]func([]byte) (Event, error){}
@@ -129,6 +137,9 @@ type DurablePublisher struct {
 	maxAttempts int
 	depthObs    DepthObserver
 	dlqObs      DLQObserver
+	// latencyMetric, when set, receives one observation per record
+	// successfully dispatched by Recover. See S154.
+	latencyMetric DispatchLatencyMetric
 }
 
 // NewDurablePublisher wraps a Dispatcher with outbox-backed durability.
@@ -155,6 +166,14 @@ func (p *DurablePublisher) WithDepthObserver(obs DepthObserver) *DurablePublishe
 // dead-lettered, labelled by event name and reason. Used to feed a counter.
 func (p *DurablePublisher) WithDLQObserver(obs DLQObserver) *DurablePublisher {
 	p.dlqObs = obs
+	return p
+}
+
+// WithLatencyMetric registers a sink that receives the create-to-dispatch
+// elapsed seconds for every record the recovery loop successfully publishes
+// (S154). Wired in main.go to a Prometheus histogram.
+func (p *DurablePublisher) WithLatencyMetric(m DispatchLatencyMetric) *DurablePublisher {
+	p.latencyMetric = m
 	return p
 }
 
@@ -237,6 +256,14 @@ func (p *DurablePublisher) Recover(ctx context.Context, limit int) (int, error) 
 			continue
 		}
 		delivered++
+		// S154 — observe create-to-dispatch latency once per successful
+		// recovery delivery. nil-guarded so tests / setups without a sink
+		// pay zero cost. We use the in-process clock against the record's
+		// CreatedAt, so the histogram captures backlog age, not just the
+		// time to drain a single record.
+		if p.latencyMetric != nil && !r.CreatedAt.IsZero() {
+			p.latencyMetric.ObserveDispatchLatency(time.Since(r.CreatedAt).Seconds())
+		}
 	}
 	// Sample the post-pass depth so the gauge reflects what's left to drain.
 	if hasDLQ && p.depthObs != nil {

@@ -61,6 +61,11 @@ type Metrics struct {
 	// counts records promoted to dead-letter, labeled by event name.
 	OutboxPending  prometheus.Gauge
 	OutboxDLQTotal *prometheus.CounterVec
+	// S154 — histogram of the time between an outbox record being created
+	// and the recovery loop dispatching it. Together with OutboxPending
+	// (depth) and OutboxDLQTotal (terminal failures) this gives ops the
+	// full health view: backlog depth + actual age of records flowing.
+	OutboxDispatchLatencySeconds prometheus.Histogram
 }
 
 // NewMetrics registers and returns the metric collectors. It uses a dedicated
@@ -187,6 +192,13 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Help: "Outbox records promoted to dead-letter, labeled by event name and reason (S97).",
 			},
 			[]string{"event", "reason"},
+		),
+		OutboxDispatchLatencySeconds: factory.NewHistogram(
+			prometheus.HistogramOpts{
+				Name:    "airhost_outbox_dispatch_latency_seconds",
+				Help:    "Latency between an outbox record being created and the recovery loop publishing it. Histogram buckets cover sub-second to multi-minute laggy dispatch (S154 — complements OutboxPending S97).",
+				Buckets: prometheus.ExponentialBuckets(0.05, 2, 12),
+			},
 		),
 	}
 }
