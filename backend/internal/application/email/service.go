@@ -241,6 +241,19 @@ func (s *Service) EventHandler() event.Handler {
 			perms := strings.Join(ev.Permissions, ", ")
 			s.send(ctx, ev.UserID, catAccount, "You're now a co-host",
 				fmt.Sprintf("A host granted you co-host permissions on %q: %s.", title, perms))
+
+		// KYC step-up required (S140 — email arm for WF-GAP-019). The
+		// booking service emits the event when an unverified guest hits
+		// the high-value gate; that emission is already dedup-guarded per
+		// (guest, listing, currency) TTL so this handler will see at most
+		// one event per quiet window. Routed through catAccount because
+		// identity verification is a security-adjacent prompt — non-opt-out,
+		// same channel as IdentityVerified.
+		case event.KYCStepUpRequired:
+			title := propertyTitleOr(ev.PropertyTitle, "a listing")
+			amount := fmt.Sprintf("%.2f %s", float64(ev.ThresholdCents)/100, ev.Currency)
+			s.send(ctx, ev.GuestID, catAccount, "Verify your identity to continue booking",
+				fmt.Sprintf("Bookings for %q at or above %s need a verified identity. Open the app to verify, then retry your booking.", title, amount))
 		}
 	}
 }

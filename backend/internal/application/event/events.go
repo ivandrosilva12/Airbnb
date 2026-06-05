@@ -57,6 +57,11 @@ func init() {
 	// S99 — co-host invitation (WF-GAP-016). The invitee is notified so the
 	// grant doesn't sit silently in their mailbox-of-things-you-can-do.
 	Register(CohostInvited{}.EventName(), jsonDecoder[CohostInvited]())
+	// S140 — KYC step-up required (WF-GAP-019 follow-on to S19). Emitted
+	// when an unverified guest hits the high-value booking gate. Dedupe at
+	// the emitter (in-memory TTL per guest+listing+currency) means the
+	// event fires at most once per quiet window even if the guest retries.
+	Register(KYCStepUpRequired{}.EventName(), jsonDecoder[KYCStepUpRequired]())
 }
 
 // BookingRequested is published when a guest creates a booking. The host should
@@ -372,3 +377,27 @@ type ReviewSubmitted struct {
 }
 
 func (ReviewSubmitted) EventName() string { return "review.submitted" }
+
+// KYCStepUpRequired is published when an unverified guest hits the high-value
+// step-up gate at booking time (S19 + S140 — WF-GAP-019). Two consumers feed
+// off it today: the notification BC drops an in-app prompt nudging the guest
+// to verify, and the email BC sends a transactional account email so a guest
+// who has in-app push muted still hears about it. A configurable TTL deduper
+// at the emitter (bookingapp.Service) collapses retries — a guest who hits
+// the gate three times in the same hour produces one event, not three.
+//
+// TotalCents is the all-in booking total that crossed the threshold (cleaning,
+// service fee, jurisdiction tax included). ThresholdCents + Currency mirror
+// what shared.KYCStepUpError surfaces to the HTTP caller so the subscriber
+// body can quote the exact amount the guest needs to verify for, in the
+// listing's currency.
+type KYCStepUpRequired struct {
+	GuestID        uuid.UUID
+	PropertyID     uuid.UUID
+	PropertyTitle  string // denormalised at emit; "" when the lookup raced a deletion
+	ThresholdCents int64
+	TotalCents     int64
+	Currency       string
+}
+
+func (KYCStepUpRequired) EventName() string { return "kyc.step_up_required" }

@@ -127,6 +127,12 @@ type Service struct {
 	// rate only.
 	taxQuoter TaxQuoter
 	uow       port.UnitOfWork
+	// stepUpDedup collapses repeated KYCStepUpRequired emissions for the
+	// same (guest, listing, currency) tuple inside a TTL window (S140 —
+	// WF-GAP-019 follow-on). Built with a 24h default in NewService so
+	// a guest who clicks "Book" three times in a row produces one event
+	// instead of three. WithStepUpEventTTL overrides the window.
+	stepUpDedup *stepUpDeduper
 }
 
 // NewService wires the booking application service. serviceFeeRate is the
@@ -136,7 +142,17 @@ type Service struct {
 // atomically. priceRules provides the listing's seasonal/per-date overrides
 // used when summing the night-by-night subtotal.
 func NewService(bookings booking.Repository, properties property.Repository, blocks block.Repository, coupons coupon.Repository, priceRules pricerule.Repository, serviceFeeRate float64, identity IdentityVerifier, requireKYC bool, uow port.UnitOfWork) *Service {
-	return &Service{bookings: bookings, properties: properties, blocks: blocks, coupons: coupons, priceRules: priceRules, serviceFeeRate: serviceFeeRate, identity: identity, requireKYC: requireKYC, uow: uow}
+	return &Service{
+		bookings: bookings, properties: properties, blocks: blocks, coupons: coupons,
+		priceRules: priceRules, serviceFeeRate: serviceFeeRate, identity: identity,
+		requireKYC: requireKYC, uow: uow,
+		// 24h default — one step-up event per guest/listing/currency per
+		// day is enough to drive the notification + email arms without
+		// spamming a guest who retries the booking repeatedly. Override
+		// via WithStepUpEventTTL when the test or deployment wants a
+		// different window (e.g. 0 to disable, short windows in tests).
+		stepUpDedup: newStepUpDeduper(24*time.Hour, time.Now),
+	}
 }
 
 // WithSplitter plugs in the split-payment context so the booking service can
@@ -160,6 +176,18 @@ func (s *Service) WithHouseRules(v HouseRulesVerifier) *Service {
 // A nil quoter keeps the legacy listing-rate-only path.
 func (s *Service) WithTaxQuoter(q TaxQuoter) *Service {
 	s.taxQuoter = q
+	return s
+}
+
+// WithStepUpEventTTL configures the quiet window for KYCStepUpRequired
+// emissions (S140 — WF-GAP-019). A guest hitting the high-value gate
+// repeatedly inside the window only produces one event; subsequent attempts
+// trip the gate (the error is still returned to the HTTP caller) but stay
+// silent for downstream subscribers. ttl <= 0 disables the deduper —
+// every gate-failure fires an event, which tests use to bypass timing.
+// Returns the receiver for chaining.
+func (s *Service) WithStepUpEventTTL(ttl time.Duration) *Service {
+	s.stepUpDedup = newStepUpDeduper(ttl, time.Now)
 	return s
 }
 
@@ -277,10 +305,19 @@ func (s *Service) confirmAfterSplit(ctx context.Context, bookingID uuid.UUID) {
 }
 
 // enforceStepUp is a no-op unless the booking's total reaches the configured
-// per-currency high-value threshold AND the guest is not yet verified. The
+// per-currency high-value threshold AND the guest is not yet verified. When
+// the gate trips, a KYCStepUpRequired event is appended to the outbox (subject
+// to the per-tuple TTL deduper so a retrying guest doesn't spam subscribers)
+// BEFORE the error is returned to the caller (S140 — WF-GAP-019). The
 // returned error carries the threshold + currency so the transport layer can
 // surface a verify-and-retry prompt with the right context.
-func (s *Service) enforceStepUp(ctx context.Context, guestID uuid.UUID, totalCents int64, currency string) error {
+//
+// PropertyID + PropertyTitle are denormalised into the event so notification
+// + email subscribers can name the listing without a follow-up lookup. An
+// outbox-append failure does NOT propagate to the caller — losing a single
+// notification is preferable to blocking a booking that the user has already
+// been told is denied.
+func (s *Service) enforceStepUp(ctx context.Context, guestID, propertyID uuid.UUID, propertyTitle string, totalCents int64, currency string) error {
 	if len(s.highValueThresholds) == 0 {
 		return nil
 	}
@@ -294,6 +331,25 @@ func (s *Service) enforceStepUp(ctx context.Context, guestID uuid.UUID, totalCen
 	}
 	if verified {
 		return nil
+	}
+	// Best-effort event emission, dedup-guarded. If the outbox append
+	// fails we still return the gate error — the booking is denied either
+	// way; a missed notification is the lesser harm.
+	if s.stepUpDedup.markFresh(stepUpDedupKey(guestID, propertyID, currency)) {
+		_ = s.uow.Run(ctx, func(tx port.Tx) error {
+			rec, err := event.NewRecord(event.KYCStepUpRequired{
+				GuestID:        guestID,
+				PropertyID:     propertyID,
+				PropertyTitle:  propertyTitle,
+				ThresholdCents: threshold,
+				TotalCents:     totalCents,
+				Currency:       currency,
+			})
+			if err != nil {
+				return err
+			}
+			return tx.Outbox.Append(ctx, rec)
+		})
 	}
 	return shared.NewKYCStepUpError(threshold, currency)
 }
@@ -482,7 +538,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 	// global RequireKYCToBook check above already returns ErrValidation for
 	// the unconditional case; if it passed (or wasn't set), we only need
 	// the step-up gate here for high-value bookings.
-	if err := s.enforceStepUp(ctx, in.GuestID, b.Pricing.Total.AmountCents(), b.Pricing.Total.Currency()); err != nil {
+	if err := s.enforceStepUp(ctx, in.GuestID, prop.ID, prop.Title, b.Pricing.Total.AmountCents(), b.Pricing.Total.Currency()); err != nil {
 		return nil, err
 	}
 

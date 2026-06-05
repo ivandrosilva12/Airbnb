@@ -2,6 +2,7 @@ package bookingapp_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -623,5 +624,153 @@ func TestCreate_SpecialOfferOverridesRules(t *testing.T) {
 	}
 	if got := b.Pricing.Subtotal.AmountCents(); got != 24000 {
 		t.Errorf("subtotal = %d, want 24000 (special offer overrides rules and weekend)", got)
+	}
+}
+
+// TestCreate_StepUpEmitsKYCStepUpRequiredEvent verifies that hitting the
+// high-value gate produces a KYCStepUpRequired event on the outbox (S140 —
+// WF-GAP-019) before the gate error is returned to the caller. Both the
+// recording outbox and a subscriber should see exactly one event, with
+// the right field shape (guest, listing, threshold, currency, total).
+func TestCreate_StepUpEmitsKYCStepUpRequiredEvent(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	outbox := event.NewMemoryOutbox()
+	dispatcher := event.NewDispatcher()
+	var seen []event.KYCStepUpRequired
+	dispatcher.Subscribe(func(_ context.Context, e event.Event) {
+		if ev, ok := e.(event.KYCStepUpRequired); ok {
+			seen = append(seen, ev)
+		}
+	})
+	relay := event.NewDurablePublisher(outbox, dispatcher)
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay)
+	verifier := stubVerifier{verified: map[uuid.UUID]bool{}}
+	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, verifier, false, uow).
+		WithHighValueThresholds(map[string]int64{"EUR": 10000}) // 100.00 — fixture stay totals 300.00, well above
+
+	_, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1})
+	if err == nil {
+		t.Fatal("expected the high-value gate to deny the booking")
+	}
+	var stepUp *shared.KYCStepUpError
+	if !errors.As(err, &stepUp) {
+		t.Fatalf("expected *shared.KYCStepUpError, got %T (%v)", err, err)
+	}
+
+	if len(seen) != 1 {
+		t.Fatalf("expected exactly 1 KYCStepUpRequired event, got %d (%v)", len(seen), seen)
+	}
+	ev := seen[0]
+	if ev.GuestID != f.guestID {
+		t.Errorf("event.GuestID = %s, want %s", ev.GuestID, f.guestID)
+	}
+	if ev.PropertyID != f.prop.ID {
+		t.Errorf("event.PropertyID = %s, want %s", ev.PropertyID, f.prop.ID)
+	}
+	if ev.PropertyTitle != f.prop.Title {
+		t.Errorf("event.PropertyTitle = %q, want %q", ev.PropertyTitle, f.prop.Title)
+	}
+	if ev.Currency != "EUR" {
+		t.Errorf("event.Currency = %q, want EUR", ev.Currency)
+	}
+	if ev.ThresholdCents != 10000 {
+		t.Errorf("event.ThresholdCents = %d, want 10000", ev.ThresholdCents)
+	}
+	if ev.TotalCents != 30000 { // 3 nights * 100.00, no fees
+		t.Errorf("event.TotalCents = %d, want 30000", ev.TotalCents)
+	}
+}
+
+// TestCreate_StepUpDedupesEmissionsWithinTTL verifies that a guest who
+// retries the same booking inside the TTL window only produces one event,
+// even though the gate trips each time (S140 dedupe — WF-GAP-019).
+func TestCreate_StepUpDedupesEmissionsWithinTTL(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	outbox := event.NewMemoryOutbox()
+	dispatcher := event.NewDispatcher()
+	count := 0
+	dispatcher.Subscribe(func(_ context.Context, e event.Event) {
+		if _, ok := e.(event.KYCStepUpRequired); ok {
+			count++
+		}
+	})
+	relay := event.NewDurablePublisher(outbox, dispatcher)
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay)
+	verifier := stubVerifier{verified: map[uuid.UUID]bool{}}
+	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, verifier, false, uow).
+		WithHighValueThresholds(map[string]int64{"EUR": 10000}).
+		WithStepUpEventTTL(time.Hour) // wide-enough window that both retries collide
+
+	for i := 0; i < 3; i++ {
+		if _, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1}); err == nil {
+			t.Fatalf("attempt %d: expected the gate to deny the booking", i)
+		}
+	}
+	if count != 1 {
+		t.Errorf("got %d KYCStepUpRequired events across 3 retries, want 1 (dedupe collapsed the rest)", count)
+	}
+}
+
+// TestCreate_StepUpEmitsPerAttemptWhenTTLDisabled verifies that wiring a
+// zero TTL disables dedupe entirely — every gate-trip emits an event.
+// Tests/ops can use this to inspect every gate-failure individually.
+func TestCreate_StepUpEmitsPerAttemptWhenTTLDisabled(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	outbox := event.NewMemoryOutbox()
+	dispatcher := event.NewDispatcher()
+	count := 0
+	dispatcher.Subscribe(func(_ context.Context, e event.Event) {
+		if _, ok := e.(event.KYCStepUpRequired); ok {
+			count++
+		}
+	})
+	relay := event.NewDurablePublisher(outbox, dispatcher)
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay)
+	verifier := stubVerifier{verified: map[uuid.UUID]bool{}}
+	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, verifier, false, uow).
+		WithHighValueThresholds(map[string]int64{"EUR": 10000}).
+		WithStepUpEventTTL(0) // dedupe off
+
+	for i := 0; i < 3; i++ {
+		if _, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1}); err == nil {
+			t.Fatalf("attempt %d: expected the gate to deny the booking", i)
+		}
+	}
+	if count != 3 {
+		t.Errorf("got %d KYCStepUpRequired events across 3 retries, want 3 (dedupe disabled)", count)
+	}
+}
+
+// TestCreate_StepUpVerifiedGuestEmitsNoEvent verifies that a verified
+// guest's booking neither triggers the gate nor produces a step-up event.
+func TestCreate_StepUpVerifiedGuestEmitsNoEvent(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	outbox := event.NewMemoryOutbox()
+	dispatcher := event.NewDispatcher()
+	count := 0
+	dispatcher.Subscribe(func(_ context.Context, e event.Event) {
+		if _, ok := e.(event.KYCStepUpRequired); ok {
+			count++
+		}
+	})
+	relay := event.NewDurablePublisher(outbox, dispatcher)
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay)
+	verifier := stubVerifier{verified: map[uuid.UUID]bool{f.guestID: true}}
+	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, verifier, false, uow).
+		WithHighValueThresholds(map[string]int64{"EUR": 10000})
+
+	if _, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1}); err != nil {
+		t.Fatalf("verified guest booking should succeed: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("got %d KYCStepUpRequired events for a verified guest, want 0", count)
 	}
 }

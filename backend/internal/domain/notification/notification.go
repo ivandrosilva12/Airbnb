@@ -51,6 +51,12 @@ const (
 	// into the 48-hour reveal window (S102 — WF-GAP-007). The guest is
 	// nudged to check the listing for check-in instructions, wifi, etc.
 	TypeArrivalInfoAvailable Type = "arrival_info_available"
+	// TypeKYCStepUpRequired fires when an unverified guest hits the
+	// high-value booking gate (S140 — WF-GAP-019). The guest is nudged
+	// to verify their identity so the next attempt at the same listing
+	// can clear. Account-channel because identity verification is a
+	// security-adjacent flow, not a per-booking event.
+	TypeKYCStepUpRequired Type = "kyc_step_up_required"
 )
 
 // Notification is the aggregate root for a single in-app notification.

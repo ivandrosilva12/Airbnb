@@ -101,6 +101,20 @@ func (s *Service) EventHandler() event.Handler {
 				fmt.Sprintf("A host added you as a co-host on %q. Check the cohost mailbox to start helping.", title),
 				ev.PropertyID, PushCatAccount)
 
+		case event.KYCStepUpRequired:
+			// S140 / WF-GAP-019 — the guest hit the high-value gate
+			// without a verified identity. Account-category push because
+			// the prompt is to verify identity, not to act on a booking.
+			// The bookingapp.Service dedupes emissions per (guest, listing,
+			// currency) TTL so a guest retrying the same booking doesn't
+			// spawn duplicate prompts. PropertyID is the resource the user
+			// taps from the notification to deep-link back to the listing.
+			title := propertyTitleOr(ev.PropertyTitle, "a property")
+			err = s.create(ctx, ev.GuestID, notification.TypeKYCStepUpRequired,
+				"Verify your identity to continue",
+				fmt.Sprintf("Bookings for %q at this amount need a verified identity. Verify to retry.", title),
+				ev.PropertyID, PushCatAccount)
+
 		case event.DisputeOpened:
 			// The non-opener party is notified so they can respond. We always notify
 			// the opposite side; admins see the case in the moderation queue.
