@@ -155,6 +155,37 @@ export function createApi(getAccessToken) {
     addDisputeEvidence: (id, body) => request('POST', `/disputes/${id}/evidence`, { body, auth: true }),
     hostRespondDispute: (id, response) =>
       request('POST', `/disputes/${id}/host-response`, { body: { response }, auth: true }),
+    // postDisputeReply (S129 mobile) — a "reply" to an open dispute is a
+    // free-text body plus an optional list of photo evidence URLs. The
+    // backend has no batched /replies endpoint; the closest primitive is
+    // POST /disputes/:id/evidence, which already records each {url, note}
+    // pair on the case timeline. We model a reply by fanning the user's
+    // single submit out across that primitive: if photo URLs are present
+    // we post one evidence per URL (each carrying the body as its note,
+    // so screen readers and exports show the same context next to each
+    // photo); otherwise we post one note-only evidence. The final server
+    // response (the updated dispute) is returned so the caller can
+    // refresh its in-memory timeline without an extra GET.
+    postDisputeReply: async (id, { body, photoUrls = [] }) => {
+      const text = (body || '').trim();
+      const urls = (photoUrls || []).map((u) => u.trim()).filter(Boolean);
+      let last = null;
+      if (urls.length === 0) {
+        last = await request('POST', `/disputes/${id}/evidence`, {
+          body: { url: '', note: text },
+          auth: true,
+        });
+      } else {
+        for (const url of urls) {
+          // eslint-disable-next-line no-await-in-loop
+          last = await request('POST', `/disputes/${id}/evidence`, {
+            body: { url, note: text },
+            auth: true,
+          });
+        }
+      }
+      return last;
+    },
 
     // Host
     hostMetrics: () => request('GET', '/host/metrics', { auth: true }),

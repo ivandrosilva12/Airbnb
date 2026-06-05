@@ -25,6 +25,11 @@ export default function DisputeScreen({ route, navigation }) {
   const [error, setError] = useState(null);
   const [evDraft, setEvDraft] = useState({ url: '', note: '' });
   const [hostDraft, setHostDraft] = useState('');
+  // S129: free-text reply composer with an optional comma-separated list of
+  // photo evidence URLs. Kept separate from evDraft because submit semantics
+  // differ — a reply may fan out to several backend evidence rows.
+  const [replyDraft, setReplyDraft] = useState({ body: '', urlsRaw: '' });
+  const [replyBusy, setReplyBusy] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -86,6 +91,54 @@ export default function DisputeScreen({ route, navigation }) {
     }
   }
 
+  // submitReply (S129) posts a free-text reply with optional photo URLs to
+  // an open / under_review case. The backend has no batched /replies route,
+  // so the API wrapper fans out across POST /disputes/:id/evidence — one
+  // row per URL, or one note-only row when there are no URLs.
+  // We optimistically prepend a synthetic timeline entry so the user sees
+  // their reply immediately, then refetch via load() to reconcile with the
+  // server (which assigns real ids/timestamps and surfaces any moderation
+  // side-effects).
+  async function submitReply() {
+    const body = replyDraft.body.trim();
+    if (!body) return; // submit button is also disabled, this is belt-and-braces
+    const photoUrls = replyDraft.urlsRaw
+      .split(',')
+      .map((u) => u.trim())
+      .filter(Boolean);
+    setReplyBusy(true);
+    setError(null);
+    // Optimistic prepend — synthesize one timeline entry per URL (or one
+    // note-only entry). Real ids and addedAt arrive on the refetch below.
+    const now = new Date().toISOString();
+    const optimistic = photoUrls.length === 0
+      ? [{ id: `optimistic-${Date.now()}`, url: '', note: body, addedAt: now, optimistic: true }]
+      : photoUrls.map((u, i) => ({
+          id: `optimistic-${Date.now()}-${i}`,
+          url: u,
+          note: body,
+          addedAt: now,
+          optimistic: true,
+        }));
+    setD((prev) => prev && { ...prev, evidence: [...optimistic, ...(prev.evidence || [])] });
+    try {
+      await api.postDisputeReply(id, { body, photoUrls });
+      // Refetch the dispute so the timeline reflects the canonical server
+      // state (real ids + ordering); load() also clears any stale error.
+      await load();
+      setReplyDraft({ body: '', urlsRaw: '' });
+    } catch (e) {
+      // Roll back the optimistic prepend on failure.
+      setD((prev) => prev && {
+        ...prev,
+        evidence: (prev.evidence || []).filter((ev) => !ev.optimistic),
+      });
+      setError(e.message);
+    } finally {
+      setReplyBusy(false);
+    }
+  }
+
   if (!authenticated) {
     return (
       <View style={styles.center}>
@@ -107,6 +160,11 @@ export default function DisputeScreen({ route, navigation }) {
   // listing"; the backend gates the action by listing ownership and returns
   // 403 otherwise, surfaced as a normal error.
   const canHostRespond = isHostRole && !isOpener && !isTerminal && !d.hostResponse;
+  // canReply (S129): both parties (guest opener AND host) can post a reply
+  // while the case is still active. We treat under_review the same as open
+  // because moderators may want to see additional context from either side
+  // before deciding. Terminal cases (resolved/rejected) are read-only.
+  const canReply = d.status === 'open' || d.status === 'under_review';
   const amountStr = d.requestedAmountCents > 0
     ? `${(d.requestedAmountCents / 100).toFixed(2)} ${d.currency}`
     : '—';
@@ -231,6 +289,49 @@ export default function DisputeScreen({ route, navigation }) {
             accessibilityState={{ disabled: busy, busy }}
           >
             <Text style={styles.btnText}>{busy ? 'Saving…' : 'Post response'}</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* S129: free-text reply composer. Parity with web S24's evidence form —
+          guest OR host can post a body with optional photo URLs.
+          TODO(media): inline picker — for now, URLs are paste-only to avoid
+          pulling in expo-image-picker in this slice.
+          TODO(i18n): all user-facing strings here are EN-only. */}
+      {canReply && (
+        <View style={styles.form} accessibilityLabel="Reply composer">
+          <Text style={styles.formLabel} accessibilityRole="header">Reply</Text>
+          <TextInput
+            style={[styles.input, { minHeight: 90 }]}
+            multiline
+            maxLength={2000}
+            placeholder="Add your reply to this case"
+            placeholderTextColor="#999"
+            value={replyDraft.body}
+            onChangeText={(v) => setReplyDraft((s) => ({ ...s, body: v }))}
+            accessibilityLabel="Reply body"
+            accessibilityHint="Up to 2000 characters; visible to the other party and the moderator"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Photo URLs, comma-separated (optional)"
+            placeholderTextColor="#999"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={replyDraft.urlsRaw}
+            onChangeText={(v) => setReplyDraft((s) => ({ ...s, urlsRaw: v }))}
+            accessibilityLabel="Photo evidence URLs"
+            accessibilityHint="Paste one or more photo URLs separated by commas; leave empty to send a text-only reply"
+          />
+          <Pressable
+            style={[styles.btn, (replyBusy || !replyDraft.body.trim()) && styles.btnDisabled]}
+            disabled={replyBusy || !replyDraft.body.trim()}
+            onPress={submitReply}
+            accessibilityRole="button"
+            accessibilityLabel={replyBusy ? 'Sending reply' : 'Send reply'}
+            accessibilityState={{ disabled: replyBusy || !replyDraft.body.trim(), busy: replyBusy }}
+          >
+            <Text style={styles.btnText}>{replyBusy ? 'Sending…' : 'Send reply'}</Text>
           </Pressable>
         </View>
       )}
