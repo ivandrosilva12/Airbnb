@@ -136,7 +136,8 @@ func mustUser(t *testing.T, repo *memory.UserRepository, email string, role user
 // S86 — ExperienceBooking events trigger transactional emails the same
 // way property booking events do. The created event emails the host, the
 // confirmed event emails the guest, and a cancel emails the OTHER party
-// (whoever didn't trigger the cancel).
+// (whoever didn't trigger the cancel). S127 refined the subject lines to
+// embed the experience title; this test tracks the new convention.
 func TestEventHandler_ExperienceBookingEmails(t *testing.T) {
 	ctx := context.Background()
 	users := memory.NewUserRepository()
@@ -166,9 +167,79 @@ func TestEventHandler_ExperienceBookingEmails(t *testing.T) {
 		t.Fatalf("sent %d emails, want 3 (%+v)", len(sent), sent)
 	}
 	assertSent(t, sent, host.Email, "New experience booking")
-	assertSent(t, sent, guest.Email, "Experience booking confirmed")
+	assertSent(t, sent, guest.Email, "Your experience is confirmed — Pasta workshop")
 	// host cancelled → guest is told
-	assertSent(t, sent, guest.Email, "Experience booking cancelled")
+	assertSent(t, sent, guest.Email, "Your experience booking was cancelled — Pasta workshop")
+}
+
+// TestEventHandler_ExperienceBookingEvents — S127. The email arm of the
+// ExperienceBooking lifecycle (follow-on to S86): confirmed lands in the
+// guest's inbox with the experience title in the subject + booking ref in
+// the body; cancelled is routed to the OTHER party with the same conventions.
+// Rides catExperiences so a future user-domain split between booking and
+// experience opt-outs has a seam to plug into.
+func TestEventHandler_ExperienceBookingEvents(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	host := mustUser(t, users, "s127-host@test.dev", user.RoleHost)
+	guest := mustUser(t, users, "s127-guest@test.dev", user.RoleGuest)
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).EventHandler())
+
+	confirmedID := uuid.New()
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingConfirmed{
+		BookingID: confirmedID, ExperienceID: uuid.New(), ExperienceTitle: "Sunset kayak",
+		HostID: host.ID, GuestID: guest.ID,
+	})
+
+	cancelledID := uuid.New()
+	// Host cancels → the GUEST (the other party) gets the email.
+	dispatcher.Publish(ctx, experiencebooking.ExperienceBookingCancelled{
+		BookingID: cancelledID, ExperienceID: uuid.New(), ExperienceTitle: "Sunset kayak",
+		HostID: host.ID, GuestID: guest.ID, CancelledBy: host.ID,
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 2 {
+		t.Fatalf("sent %d emails, want 2 (%+v)", len(sent), sent)
+	}
+
+	var confirm, cancel *email.Sent
+	for i := range sent {
+		switch sent[i].Subject {
+		case "Your experience is confirmed — Sunset kayak":
+			confirm = &sent[i]
+		case "Your experience booking was cancelled — Sunset kayak":
+			cancel = &sent[i]
+		}
+	}
+	if confirm == nil {
+		t.Fatalf("missing confirmed email in %+v", sent)
+	}
+	if confirm.To != guest.Email {
+		t.Fatalf("confirm recipient = %q, want guest %q", confirm.To, guest.Email)
+	}
+	if !strings.Contains(confirm.Text, confirmedID.String()) {
+		t.Fatalf("confirm body should embed the booking reference %s, got %q", confirmedID, confirm.Text)
+	}
+	if !strings.Contains(confirm.Text, "Sunset kayak") {
+		t.Fatalf("confirm body should mention the experience title, got %q", confirm.Text)
+	}
+
+	if cancel == nil {
+		t.Fatalf("missing cancelled email in %+v", sent)
+	}
+	if cancel.To != guest.Email {
+		t.Fatalf("cancel recipient = %q, want the OTHER party (guest %q) since host cancelled", cancel.To, guest.Email)
+	}
+	if !strings.Contains(cancel.Text, cancelledID.String()) {
+		t.Fatalf("cancel body should embed the booking reference %s, got %q", cancelledID, cancel.Text)
+	}
+	if !strings.Contains(cancel.Text, "Sunset kayak") {
+		t.Fatalf("cancel body should mention the experience title, got %q", cancel.Text)
+	}
 }
 
 func assertSent(t *testing.T, sent []email.Sent, to, subject string) {

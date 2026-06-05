@@ -54,6 +54,13 @@ const (
 	catBookings category = iota
 	catMessages
 	catAccount // account/security emails — always delivered, not opt-out
+	// catExperiences (S127) is the experience-booking lifecycle channel. It
+	// rides the same opt-out preference as catBookings today (the user
+	// domain doesn't yet expose a separate Experiences toggle) but exists
+	// as a distinct enum so that subject/body conventions and a future
+	// per-channel preference can fork from property bookings without
+	// rewriting every call site.
+	catExperiences
 )
 
 // EventHandler returns an event.Handler that emails the relevant party. It is
@@ -109,27 +116,43 @@ func (s *Service) EventHandler() event.Handler {
 			s.send(ctx, ev.GuestID, catAccount, "Resolution Center decision", body)
 			s.send(ctx, ev.HostID, catAccount, "Resolution Center decision", body)
 
-		// Experience-booking lifecycle (S86). Same opt-out category as
-		// property bookings so a guest who muted booking emails on web
-		// doesn't suddenly start getting them from experiences.
+		// Experience-booking lifecycle (S86 + S127). Routed through
+		// catExperiences so the lifecycle is a separately addressable
+		// channel (it currently maps onto the same Bookings opt-out
+		// preference, but the category seam lets a future user-domain
+		// migration carve out a dedicated experience-only toggle without
+		// rewriting these handlers).
 		case experiencebooking.ExperienceBookingCreated:
 			title := experienceTitleOr(ev.ExperienceTitle, "your experience")
-			s.send(ctx, ev.HostID, catBookings, "New experience booking",
+			s.send(ctx, ev.HostID, catExperiences, "New experience booking",
 				fmt.Sprintf("A guest just booked %q. Review it in your host dashboard.", title))
 
 		case experiencebooking.ExperienceBookingConfirmed:
+			// S127 — guest-facing confirmation. The event carries no
+			// scheduled-start timestamp (the session time lives on the
+			// Experience aggregate, not the booking event snapshot), so
+			// the body references the booking ref rather than re-reading
+			// the experience to enrich it — keeps the subscriber
+			// dependency-free and the snapshot honest.
 			title := experienceTitleOr(ev.ExperienceTitle, "your experience")
-			s.send(ctx, ev.GuestID, catBookings, "Experience booking confirmed",
-				fmt.Sprintf("Good news — your booking for %q is confirmed.", title))
+			s.send(ctx, ev.GuestID, catExperiences,
+				fmt.Sprintf("Your experience is confirmed — %s", title),
+				fmt.Sprintf("Good news — your booking for %q is confirmed. Booking reference: %s.", title, ev.BookingID))
 
 		case experiencebooking.ExperienceBookingCancelled:
+			// S127 — emails the OTHER party (whoever didn't cancel). The
+			// event doesn't carry a refund amount or reason today — the
+			// cancellation-policy ladder for experiences hasn't been
+			// settled yet (see ExperienceBookingCancelled doc-comment) —
+			// so the body sticks to the facts the snapshot guarantees.
 			title := experienceTitleOr(ev.ExperienceTitle, "an experience")
 			recipient := ev.GuestID
 			if ev.CancelledBy == ev.GuestID {
 				recipient = ev.HostID
 			}
-			s.send(ctx, recipient, catBookings, "Experience booking cancelled",
-				fmt.Sprintf("A booking for %q was cancelled.", title))
+			s.send(ctx, recipient, catExperiences,
+				fmt.Sprintf("Your experience booking was cancelled — %s", title),
+				fmt.Sprintf("A booking for %q was cancelled. Booking reference: %s.", title, ev.BookingID))
 
 		case event.SplitPaymentCompleted:
 			// S93 / WF-GAP-011 — fan email out to organizer + payers.
@@ -289,6 +312,11 @@ func optedIn(prefs user.EmailPreferences, cat category) bool {
 		return true // account/security emails cannot be opted out of
 	case catMessages:
 		return prefs.Messages
+	case catExperiences:
+		// No dedicated Experiences preference yet — fall back to the
+		// booking-flow opt-out so a guest who muted booking emails on web
+		// doesn't suddenly start getting them from the experiences arm.
+		return prefs.Bookings
 	default:
 		return prefs.Bookings
 	}
