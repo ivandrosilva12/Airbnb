@@ -18,6 +18,11 @@ export default function PropertyScreen({ route, navigation }) {
   const [guests, setGuests] = useState('1');
   const [coupon, setCoupon] = useState('');
   const [couponInfo, setCouponInfo] = useState(null);
+  // S133 — inline coupon error (separate from the page-level `error` so an
+  // invalid promo code doesn't blank out the booking form's own errors).
+  // Mirrors web PropertyDetail's `couponError` state.
+  const [couponError, setCouponError] = useState(null);
+  const [couponLoading, setCouponLoading] = useState(false);
   const [myId, setMyId] = useState(null);
   const [respondingId, setRespondingId] = useState(null);
   const [respondText, setRespondText] = useState('');
@@ -89,22 +94,43 @@ export default function PropertyScreen({ route, navigation }) {
   };
 
   async function applyCoupon() {
-    setError(null);
+    // S133 — clear coupon-specific state only; don't clobber the page-level
+    // `error` (e.g. a step-up or rules acceptance message remains visible).
+    setCouponError(null);
     setCouponInfo(null);
     if (!authenticated) {
       login();
       return;
     }
     if (!checkIn || !checkOut) {
-      setError('Choose your dates first.');
+      // TODO(i18n)
+      setCouponError('Choose your dates first.');
       return;
     }
+    const code = coupon.trim();
+    if (!code) {
+      return;
+    }
+    setCouponLoading(true);
     try {
-      const res = await api.previewCoupon({ propertyId: id, checkIn, checkOut, code: coupon.trim() });
+      const res = await api.previewCoupon({ propertyId: id, checkIn, checkOut, code });
       setCouponInfo(res);
     } catch (e) {
-      setError(e.message);
+      // TODO(i18n) — server already returns a localized message, but the
+      // fallback below keeps the UI sane if the server returns nothing.
+      setCouponError(e.message || 'Coupon code is invalid or expired');
+    } finally {
+      setCouponLoading(false);
     }
+  }
+
+  // S133 — clear an applied coupon and re-show the un-discounted preview.
+  // The pricing-preview comes from local computation (subtotal × nights), so
+  // dropping `couponInfo` is enough to restore the original breakdown.
+  function removeCoupon() {
+    setCoupon('');
+    setCouponInfo(null);
+    setCouponError(null);
   }
 
   // Reflect whether this listing is already in the wishlist so the heart is
@@ -311,27 +337,79 @@ export default function PropertyScreen({ route, navigation }) {
             onChangeText={setGuests}
             accessibilityLabel="Number of guests"
           />
+          {/* S133 — coupon code entry. Uppercase-only (codes are stored
+              case-insensitively but normalise to upper on the wire), 32
+              chars matches the backend cap. When a coupon is already
+              applied we lock the input + swap Apply for Remove so the
+              guest can't double-submit. */}
           <View style={styles.couponRow}>
             <TextInput
-              style={[styles.input, { flex: 1, marginBottom: 0 }]}
-              placeholder="Promo code"
+              style={[styles.input, { flex: 1, marginBottom: 0 }, !!couponInfo && styles.inputDisabled]}
+              placeholder="Promo code" // TODO(i18n)
               autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={32}
+              editable={!couponInfo && !couponLoading}
               value={coupon}
-              onChangeText={(v) => { setCoupon(v); setCouponInfo(null); }}
-              accessibilityLabel="Promo code"
+              onChangeText={(v) => {
+                // Force-uppercase so the visible value mirrors what we'll
+                // POST. Mirrors the web autoCapitalize behaviour for codes.
+                setCoupon(v.toUpperCase());
+                setCouponError(null);
+              }}
+              accessibilityLabel="Promo code" // TODO(i18n)
             />
-            <Pressable
-              style={styles.couponBtn}
-              onPress={applyCoupon}
-              disabled={!coupon.trim()}
-              accessibilityRole="button"
-              accessibilityLabel="Apply promo code"
-              accessibilityState={{ disabled: !coupon.trim() }}
-            >
-              <Text style={styles.secondaryText}>Apply</Text>
-            </Pressable>
+            {couponInfo ? (
+              <Pressable
+                style={styles.couponBtn}
+                onPress={removeCoupon}
+                accessibilityRole="button"
+                accessibilityLabel="Remove promo code" // TODO(i18n)
+              >
+                <Text style={styles.secondaryText}>Remove{/* TODO(i18n) */}</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                style={styles.couponBtn}
+                onPress={applyCoupon}
+                disabled={!coupon.trim() || couponLoading}
+                accessibilityRole="button"
+                accessibilityLabel="Apply promo code" // TODO(i18n)
+                accessibilityState={{ disabled: !coupon.trim() || couponLoading, busy: couponLoading }}
+              >
+                <Text style={styles.secondaryText}>
+                  {couponLoading ? 'Applying…' : 'Apply'/* TODO(i18n) */}
+                </Text>
+              </Pressable>
+            )}
           </View>
-          {couponInfo && <Text style={styles.success} accessibilityRole="alert">Coupon applied — you save {couponInfo.discount.display}.</Text>}
+          {/* S133 — discount line, styled to read as part of the price
+              breakdown so the guest can see the new total before they
+              tap Reserve. We render the saved amount with a leading minus
+              to mirror the web `bd-discount` row. */}
+          {couponInfo && (
+            <View style={styles.discountRow} accessibilityRole="text">
+              <Text style={styles.discountLabel}>
+                {/* TODO(i18n) */}
+                Discount ({couponInfo.code})
+              </Text>
+              <Text style={styles.discountVal} accessibilityLabel={`Discount minus ${couponInfo.discount.display}`}>
+                −{couponInfo.discount.display}
+              </Text>
+            </View>
+          )}
+          {couponInfo && (
+            <Text style={styles.success} accessibilityRole="alert">
+              {/* TODO(i18n) */}
+              Coupon applied — you save {couponInfo.discount.display}.
+            </Text>
+          )}
+          {couponError && (
+            <Text style={styles.couponError} accessibilityRole="alert">
+              {/* TODO(i18n) */}
+              {couponError}
+            </Text>
+          )}
           {/* S64 — per-jurisdiction tax breakdown. Renders only when we
               actually have rules matching this stay; an empty result
               (anonymous listing in a no-tax jurisdiction) shows nothing. */}
@@ -626,6 +704,12 @@ const styles = StyleSheet.create({
   secondaryText: { fontWeight: '600', color: '#222' },
   couponRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   couponBtn: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 16, justifyContent: 'center' },
+  // S133 — coupon-applied input lock + discount breakdown styling.
+  inputDisabled: { backgroundColor: '#f5f5f5', color: '#717171' },
+  discountRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, marginBottom: 4 },
+  discountLabel: { color: '#1a7f47', fontWeight: '600' },
+  discountVal: { color: '#1a7f47', fontWeight: '700' },
+  couponError: { color: '#c0392b', marginTop: 6, marginBottom: 6 },
   // S64 — house rules + tax preview styles, kept minimal to match the
   // visual weight of the existing bookBox.
   taxBox: { backgroundColor: '#fafafa', borderRadius: 8, padding: 10, marginBottom: 10 },
