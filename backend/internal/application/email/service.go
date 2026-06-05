@@ -13,6 +13,7 @@ import (
 	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
+	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/google/uuid"
@@ -20,10 +21,11 @@ import (
 
 // Service sends event-driven emails.
 type Service struct {
-	users    user.Repository
-	mailer   port.Mailer
-	bookings booking.Repository      // optional — only used by the split-payment subscriber
-	splits   splitpayment.Repository // optional — only used by the split-payment subscriber
+	users      user.Repository
+	mailer     port.Mailer
+	bookings   booking.Repository      // optional — only used by the split-payment subscriber
+	splits     splitpayment.Repository // optional — only used by the split-payment subscriber
+	properties property.Repository     // optional — only used by the review subscriber (S147)
 }
 
 // NewService wires the email application service.
@@ -44,6 +46,19 @@ func (s *Service) WithBookings(r booking.Repository) *Service {
 // split completes. Optional — the handler short-circuits when nil.
 func (s *Service) WithSplitPayments(r splitpayment.Repository) *Service {
 	s.splits = r
+	return s
+}
+
+// WithProperties attaches a property repository so the event subscriber can
+// resolve a listing's host + title when handling ReviewSubmitted (S147 —
+// closes the dangling S136 subscriber). The event payload doesn't carry
+// HostID or PropertyTitle (the review domain doesn't snapshot them), so the
+// handler needs the repo to address a guest-to-property review to the host
+// and to embed the listing title in the body. Optional — the handler short-
+// circuits when nil, matching the pattern used by WithBookings /
+// WithSplitPayments for the split-completion subscriber.
+func (s *Service) WithProperties(r property.Repository) *Service {
+	s.properties = r
 	return s
 }
 
@@ -254,7 +269,52 @@ func (s *Service) EventHandler() event.Handler {
 			amount := fmt.Sprintf("%.2f %s", float64(ev.ThresholdCents)/100, ev.Currency)
 			s.send(ctx, ev.GuestID, catAccount, "Verify your identity to continue booking",
 				fmt.Sprintf("Bookings for %q at or above %s need a verified identity. Open the app to verify, then retry your booking.", title, amount))
+
+		// Review arm (S147 — closes the dangling S136 subscriber). S136
+		// brought reviews under the UoW + outbox so a ReviewSubmitted event
+		// lands atomically with the row write, but until now no subscriber
+		// consumed it. The recipient is the OTHER party: a guest-to-property
+		// review emails the host (resolved via the properties repo because
+		// the event doesn't snapshot HostID), and a host-to-guest review
+		// emails the guest (whose id is already on the event). Both ride
+		// catBookings — same post-stay channel as BookingCompleted's "leave a
+		// review" prompts, so a user who muted booking emails doesn't
+		// suddenly start getting them from the review arm. Falls back
+		// silently when the properties dep is nil or the listing was deleted
+		// between the review write and the email dispatch (mirrors the
+		// short-circuit pattern in handleSplitCompleted).
+		case event.ReviewSubmitted:
+			s.handleReviewSubmitted(ctx, ev)
 		}
+	}
+}
+
+// handleReviewSubmitted dispatches the email arm of S147. The event payload
+// doesn't carry HostID or PropertyTitle so we resolve them via the optional
+// properties repo. A guest-to-property review emails the host; a
+// host-to-guest review emails the guest (no property lookup strictly
+// required for the latter, but we still resolve the title so the body can
+// mention what stay the review refers to). Failures are logged and
+// short-circuited — never propagated to the publisher.
+func (s *Service) handleReviewSubmitted(ctx context.Context, ev event.ReviewSubmitted) {
+	if s.properties == nil {
+		slog.Error("email review-submitted: properties repo not wired", "review", ev.ReviewID)
+		return
+	}
+	p, err := s.properties.FindByID(ctx, ev.PropertyID)
+	if err != nil {
+		slog.Error("email review-submitted: property lookup failed", "property", ev.PropertyID, "review", ev.ReviewID, "error", err)
+		return
+	}
+	title := propertyTitleOr(p.Title, "your listing")
+	stars := fmt.Sprintf("%d/5 stars", ev.Rating)
+	switch ev.Direction {
+	case "guest_to_property":
+		s.send(ctx, p.HostID, catBookings, "You got a new review",
+			fmt.Sprintf("A guest left a %s review for %q. Open the app to read it and reply.", stars, title))
+	case "host_to_guest":
+		s.send(ctx, ev.GuestID, catBookings, "Your host left you a review",
+			fmt.Sprintf("Your host left you a %s review after your stay at %q. Open the app to see what they wrote.", stars, title))
 	}
 }
 

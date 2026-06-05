@@ -358,7 +358,11 @@ func run() error {
 	emailSvc := emailapp.NewService(userRepo, email.NewMailer(cfg.Email)).
 		// S93 / WF-GAP-011 — same split-completion fan-out as notifications.
 		WithBookings(bookingRepo).
-		WithSplitPayments(splitPaymentRepo)
+		WithSplitPayments(splitPaymentRepo).
+		// S147 — review arm needs the properties repo to resolve a listing's
+		// host + title when handling ReviewSubmitted (the event doesn't
+		// snapshot HostID / PropertyTitle).
+		WithProperties(propertyRepo)
 	payoutSvc := payoutapp.NewService(payoutRepo, bookingRepo, propertyRepo, userRepo, paymentgw.NewDisburser(cfg.Payment), paymentgw.NewConnectGateway(cfg.Payment)).
 		WithSplitPayments(splitPaymentRepo) // S88 — credit per-share on split bookings
 	// privacySvc orchestrates GDPR self-service (export + erase). The erase

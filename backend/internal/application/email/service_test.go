@@ -10,6 +10,7 @@ import (
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
+	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/airhost/backend/internal/infrastructure/email"
@@ -836,4 +837,138 @@ func TestEventHandler_DisputeOutcomeEvents(t *testing.T) {
 	}
 	assertSent(t, sent2, host.Email, "Your dispute was rejected")
 	assertSent(t, sent2, guest.Email, "Your dispute was rejected")
+}
+
+// TestEventHandler_ReviewSubmitted_GuestToProperty_EmailsHost — S147 closes
+// the dangling S136 subscriber. A guest-to-property ReviewSubmitted event
+// must email the listing's host (resolved via the properties repo because
+// the event doesn't snapshot HostID); subject "You got a new review", body
+// names the property title and the rating (1-5 stars).
+func TestEventHandler_ReviewSubmitted_GuestToProperty_EmailsHost(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	host := mustUser(t, users, "review-host@test.dev", user.RoleHost)
+	guest := mustUser(t, users, "review-guest@test.dev", user.RoleGuest)
+
+	properties := memory.NewPropertyRepository()
+	propID := uuid.New()
+	if err := properties.Create(ctx, &property.Property{
+		ID:     propID,
+		HostID: host.ID,
+		Title:  "Sunny Loft",
+	}); err != nil {
+		t.Fatalf("seed property: %v", err)
+	}
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).WithProperties(properties).EventHandler())
+
+	dispatcher.Publish(ctx, event.ReviewSubmitted{
+		ReviewID:   uuid.New(),
+		BookingID:  uuid.New(),
+		PropertyID: propID,
+		AuthorID:   guest.ID,
+		GuestID:    guest.ID,
+		Direction:  "guest_to_property",
+		Rating:     5,
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want 1 (%+v)", len(sent), sent)
+	}
+	if sent[0].To != host.Email {
+		t.Fatalf("recipient = %q, want host %q", sent[0].To, host.Email)
+	}
+	if sent[0].Subject != "You got a new review" {
+		t.Fatalf("subject = %q, want %q", sent[0].Subject, "You got a new review")
+	}
+	if !strings.Contains(sent[0].Text, "Sunny Loft") {
+		t.Fatalf("body should mention the property title, got %q", sent[0].Text)
+	}
+	if !strings.Contains(sent[0].Text, "5/5") {
+		t.Fatalf("body should mention the rating (5/5), got %q", sent[0].Text)
+	}
+}
+
+// TestEventHandler_ReviewSubmitted_HostToGuest_EmailsGuest — host-on-guest
+// reviews flip the recipient: the guest (whose id is already on the event)
+// is the one told. Subject "Your host left you a review", body mentions
+// the rating + a CTA pointing them at the app.
+func TestEventHandler_ReviewSubmitted_HostToGuest_EmailsGuest(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	host := mustUser(t, users, "review-host2@test.dev", user.RoleHost)
+	guest := mustUser(t, users, "review-guest2@test.dev", user.RoleGuest)
+
+	properties := memory.NewPropertyRepository()
+	propID := uuid.New()
+	if err := properties.Create(ctx, &property.Property{
+		ID:     propID,
+		HostID: host.ID,
+		Title:  "Beach Cottage",
+	}); err != nil {
+		t.Fatalf("seed property: %v", err)
+	}
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).WithProperties(properties).EventHandler())
+
+	dispatcher.Publish(ctx, event.ReviewSubmitted{
+		ReviewID:   uuid.New(),
+		BookingID:  uuid.New(),
+		PropertyID: propID,
+		AuthorID:   host.ID,
+		GuestID:    guest.ID,
+		Direction:  "host_to_guest",
+		Rating:     4,
+	})
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d emails, want 1 (%+v)", len(sent), sent)
+	}
+	if sent[0].To != guest.Email {
+		t.Fatalf("recipient = %q, want guest %q", sent[0].To, guest.Email)
+	}
+	if sent[0].Subject != "Your host left you a review" {
+		t.Fatalf("subject = %q, want %q", sent[0].Subject, "Your host left you a review")
+	}
+	if !strings.Contains(sent[0].Text, "4/5") {
+		t.Fatalf("body should mention the rating (4/5), got %q", sent[0].Text)
+	}
+}
+
+// TestEventHandler_ReviewSubmitted_PropertyLookupFailsSilently — defensive
+// case: the listing was deleted between the review write and the email
+// dispatch (or any other repo error). The handler must log + short-circuit
+// rather than panic or propagate; no email is sent.
+func TestEventHandler_ReviewSubmitted_PropertyLookupFailsSilently(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserRepository()
+	guest := mustUser(t, users, "review-orphan@test.dev", user.RoleGuest)
+
+	// Empty repo — FindByID returns shared.ErrNotFound. The handler must
+	// log and short-circuit; no panic and no email.
+	properties := memory.NewPropertyRepository()
+
+	mailer := email.NewRecordingMailer()
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(emailapp.NewService(users, mailer).WithProperties(properties).EventHandler())
+
+	dispatcher.Publish(ctx, event.ReviewSubmitted{
+		ReviewID:   uuid.New(),
+		BookingID:  uuid.New(),
+		PropertyID: uuid.New(), // never seeded — lookup will miss
+		AuthorID:   guest.ID,
+		GuestID:    guest.ID,
+		Direction:  "guest_to_property",
+		Rating:     3,
+	})
+
+	if sent := mailer.Sent(); len(sent) != 0 {
+		t.Fatalf("expected 0 emails when property lookup fails, got %d (%+v)", len(sent), sent)
+	}
 }
