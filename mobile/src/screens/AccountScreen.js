@@ -32,6 +32,10 @@ export default function AccountScreen({ navigation }) {
       { screen: 'Saved', label: t('fav.title'), icon: '♥' },
       { screen: 'Messages', label: t('nav.messages'), icon: '💬' },
       { screen: 'Notifications', label: t('nav.notifications'), icon: '🔔' },
+      // TODO(i18n): no key for nav.savedSearches yet — S137 parity with web's
+      // saved-searches chip row. Sits next to Notifications because alerts on
+      // saved searches feed the notifications panel.
+      { screen: 'SavedSearches', label: 'Saved searches', icon: '🔎' },
       // TODO(i18n): split-payment / dispute / saved-replies translation keys
       // were added after the S91 base — wire them up in the next i18n sweep.
       { screen: 'Splits', label: 'Split payments', icon: '🤝' },

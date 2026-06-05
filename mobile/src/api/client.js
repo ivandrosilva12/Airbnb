@@ -71,10 +71,15 @@ export function createApi(getAccessToken) {
     getExperienceBooking: (id) => request('GET', `/experience-bookings/${id}`, { auth: true }),
     cancelExperienceBooking: (id) =>
       request('POST', `/experience-bookings/${id}/cancel`, { auth: true }),
-    // Saved searches & alerts
+    // Saved searches & alerts. setSearchAlerts mirrors the web wrapper added
+    // in S132 — PATCH /saved-searches/:id with {alertsEnabled} flips the
+    // new-listing email/push alert toggle. Used by SavedSearchesScreen's bell
+    // icon (S137 mobile parity).
     listSavedSearches: () => request('GET', '/saved-searches', { auth: true }),
     saveSearch: (body) => request('POST', '/saved-searches', { body, auth: true }),
     deleteSavedSearch: (id) => request('DELETE', `/saved-searches/${id}`, { auth: true }),
+    setSearchAlerts: (id, alertsEnabled) =>
+      request('PATCH', `/saved-searches/${id}`, { body: { alertsEnabled }, auth: true }),
     getReviews: (id) => request('GET', `/properties/${id}/reviews`),
     getReviewSummary: (id) => request('GET', `/properties/${id}/reviews/summary`),
     // House rules (S64 mobile parity). Public read — anonymous-friendly

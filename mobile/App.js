@@ -25,6 +25,7 @@ import SplitsScreen from './src/screens/SplitsScreen';
 import DisputeScreen from './src/screens/DisputeScreen';
 import MyDisputesScreen from './src/screens/MyDisputesScreen';
 import SavedRepliesScreen from './src/screens/SavedRepliesScreen';
+import SavedSearchesScreen from './src/screens/SavedSearchesScreen';
 import ExperiencesScreen from './src/screens/ExperiencesScreen';
 import ExperienceDetailScreen from './src/screens/ExperienceDetailScreen';
 import MyExperienceBookingsScreen from './src/screens/MyExperienceBookingsScreen';
@@ -100,6 +101,8 @@ function AppNavigator() {
         <Stack.Screen name="Dispute" component={DisputeScreen} options={{ title: 'Resolution case' }} />
         <Stack.Screen name="MyDisputes" component={MyDisputesScreen} options={{ title: 'Resolution cases' }} />
         <Stack.Screen name="SavedReplies" component={SavedRepliesScreen} options={{ title: 'Saved replies' }} />
+        {/* TODO(i18n): no key for saved.screenTitle yet — added in S137. */}
+        <Stack.Screen name="SavedSearches" component={SavedSearchesScreen} options={{ title: 'Saved searches' }} />
         <Stack.Screen name="Experiences" component={ExperiencesScreen} options={{ title: 'Experiences' }} />
         <Stack.Screen name="ExperienceDetail" component={ExperienceDetailScreen} options={{ title: 'Experience' }} />
         <Stack.Screen name="MyExperienceBookings" component={MyExperienceBookingsScreen} options={{ title: 'My experiences' }} />
