@@ -439,7 +439,8 @@ func run() error {
 	realtimeHub := realtime.NewHub()
 	realtimeSvc := realtimeapp.NewService(realtimeHub).
 		WithBookings(bookingRepo).
-		WithSplitPayments(splitPaymentRepo)
+		WithSplitPayments(splitPaymentRepo).
+		WithProperties(propertyRepo) // S166 — host-lookup for guest_to_property reviews
 
 	// Notifications, payments, emails, host payouts and live updates are produced
 	// by reacting to domain events.

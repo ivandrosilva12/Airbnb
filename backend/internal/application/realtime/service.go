@@ -11,6 +11,7 @@ import (
 	"github.com/airhost/backend/internal/application/event"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
+	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/google/uuid"
 )
@@ -23,9 +24,10 @@ type Broadcaster interface {
 
 // Service translates domain events into realtime client hints.
 type Service struct {
-	hub      Broadcaster
-	bookings booking.Repository      // optional — only used by the split-payment subscriber
-	splits   splitpayment.Repository // optional — only used by the split-payment subscriber
+	hub        Broadcaster
+	bookings   booking.Repository      // optional — only used by the split-payment subscriber
+	splits     splitpayment.Repository // optional — only used by the split-payment subscriber
+	properties property.Repository     // optional — only used by ReviewSubmitted (guest_to_property) to resolve the host
 }
 
 // NewService wires the realtime application service.
@@ -43,6 +45,15 @@ func (s *Service) WithBookings(r booking.Repository) *Service {
 // can push a refresh hint to every payer when a split completes. Optional.
 func (s *Service) WithSplitPayments(r splitpayment.Repository) *Service {
 	s.splits = r
+	return s
+}
+
+// WithProperties attaches a property repository so the ReviewSubmitted handler
+// (S166) can resolve the listing's host on a guest_to_property review without
+// forcing the event payload to carry HostID. Optional — the handler logs and
+// short-circuits when the repo is missing or the listing has been deleted.
+func (s *Service) WithProperties(r property.Repository) *Service {
+	s.properties = r
 	return s
 }
 
@@ -133,6 +144,53 @@ func (s *Service) EventHandler() event.Handler {
 		// trips/splits views refresh.
 		case event.SplitPaymentCompleted:
 			s.handleSplitCompleted(ctx, ev)
+
+		// S166 — review participants get a realtime ping so their inbox
+		// badge refreshes immediately instead of waiting for the next
+		// 30s poll. host_to_guest goes to GuestID directly; guest_to_
+		// property needs a host lookup because the event payload is
+		// kept lean (HostID isn't on it). If the properties repo is
+		// not wired we log and skip the realtime hint — the email
+		// + notification arms still fire, the user just has to wait
+		// for the next poll for their badge to refresh.
+		case event.ReviewSubmitted:
+			switch ev.Direction {
+			case "guest_to_property":
+				if s.properties == nil {
+					slog.Error("realtime review-submitted: properties repo not wired", "review", ev.ReviewID)
+					break
+				}
+				p, err := s.properties.FindByID(ctx, ev.PropertyID)
+				if err != nil {
+					slog.Error("realtime review-submitted: property lookup failed", "property", ev.PropertyID, "error", err)
+					break
+				}
+				s.push(p.HostID, Update{Type: "notification"})
+			case "host_to_guest":
+				s.push(ev.GuestID, Update{Type: "notification"})
+			}
+
+		// S166 — BookingCompleted prompts BOTH parties to leave a review
+		// (mirrors the email + notification arms). The badge refresh
+		// flips on without polling.
+		case event.BookingCompleted:
+			s.push(ev.GuestID, Update{Type: "notification"})
+			s.push(ev.HostID, Update{Type: "notification"})
+
+		// S166 — per-share split-payment lifecycle. The payer of the
+		// share is the one who needs to know their hold landed (or was
+		// released), so they're the one we ping. PayerID is guarded
+		// for uuid.Nil out of paranoia: a guest-side actor without an
+		// account would emit a zero UUID and we don't want to fan a
+		// hint to the empty-UUID bucket.
+		case event.SplitShareAuthorized:
+			if ev.PayerID != uuid.Nil {
+				s.push(ev.PayerID, Update{Type: "notification"})
+			}
+		case event.SplitShareRefunded:
+			if ev.PayerID != uuid.Nil {
+				s.push(ev.PayerID, Update{Type: "notification"})
+			}
 		}
 	}
 }

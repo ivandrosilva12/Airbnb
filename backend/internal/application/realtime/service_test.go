@@ -10,6 +10,7 @@ import (
 	realtimeapp "github.com/airhost/backend/internal/application/realtime"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
+	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 	"github.com/airhost/backend/internal/infrastructure/persistence/memory"
 	"github.com/google/uuid"
@@ -255,5 +256,181 @@ func TestEventHandler_DisputeEventsPushHints(t *testing.T) {
 	got := map[uuid.UUID]bool{hub.sent[0].UserID: true, hub.sent[1].UserID: true}
 	if !got[hostID] || !got[guestID] {
 		t.Fatalf("resolved pushes targets = %v, want both host and guest", got)
+	}
+}
+
+// TestRealtime_ReviewSubmittedHostToGuest_PingsGuest — S166. A host_to_guest
+// review needs no property lookup; the recipient is GuestID on the event.
+func TestRealtime_ReviewSubmittedHostToGuest_PingsGuest(t *testing.T) {
+	ctx := context.Background()
+	hub := &fakeBroadcaster{}
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(realtimeapp.NewService(hub).EventHandler())
+
+	guestID := uuid.New()
+	dispatcher.Publish(ctx, event.ReviewSubmitted{
+		ReviewID:   uuid.New(),
+		BookingID:  uuid.New(),
+		PropertyID: uuid.New(),
+		AuthorID:   uuid.New(), // the host wrote it
+		GuestID:    guestID,
+		Direction:  "host_to_guest",
+		Rating:     5,
+	})
+
+	if len(hub.sent) != 1 || hub.sent[0].UserID != guestID {
+		t.Fatalf("host_to_guest push = %+v, want one to guest %s", hub.sent, guestID)
+	}
+	if hub.sent[0].Payload != `{"type":"notification"}` {
+		t.Fatalf("payload = %q, want notification", hub.sent[0].Payload)
+	}
+}
+
+// TestRealtime_ReviewSubmittedGuestToProperty_PingsHost — S166. A
+// guest_to_property review carries no HostID so the realtime service needs
+// the property repo to resolve the recipient.
+func TestRealtime_ReviewSubmittedGuestToProperty_PingsHost(t *testing.T) {
+	ctx := context.Background()
+	propertyRepo := memory.NewPropertyRepository()
+
+	hostID := uuid.New()
+	propID := uuid.New()
+	if err := propertyRepo.Create(ctx, &property.Property{
+		ID: propID, HostID: hostID, Title: "Seaside",
+	}); err != nil {
+		t.Fatalf("seed property: %v", err)
+	}
+
+	hub := &fakeBroadcaster{}
+	svc := realtimeapp.NewService(hub).WithProperties(propertyRepo)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	guestID := uuid.New()
+	dispatcher.Publish(ctx, event.ReviewSubmitted{
+		ReviewID:   uuid.New(),
+		BookingID:  uuid.New(),
+		PropertyID: propID,
+		AuthorID:   guestID, // the guest wrote it
+		GuestID:    guestID,
+		Direction:  "guest_to_property",
+		Rating:     4,
+	})
+
+	if len(hub.sent) != 1 || hub.sent[0].UserID != hostID {
+		t.Fatalf("guest_to_property push = %+v, want one to host %s", hub.sent, hostID)
+	}
+}
+
+// TestRealtime_ReviewSubmittedGuestToProperty_NoPropertiesRepo — S166. Without
+// the optional repo wired the handler must log and skip rather than panic.
+func TestRealtime_ReviewSubmittedGuestToProperty_NoPropertiesRepo(t *testing.T) {
+	ctx := context.Background()
+	hub := &fakeBroadcaster{}
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(realtimeapp.NewService(hub).EventHandler())
+
+	dispatcher.Publish(ctx, event.ReviewSubmitted{
+		ReviewID: uuid.New(), BookingID: uuid.New(), PropertyID: uuid.New(),
+		AuthorID: uuid.New(), GuestID: uuid.New(),
+		Direction: "guest_to_property", Rating: 4,
+	})
+
+	if len(hub.sent) != 0 {
+		t.Fatalf("push without repo = %+v, want none", hub.sent)
+	}
+}
+
+// TestRealtime_BookingCompleted_PingsBothSides — S166. Both guest and host get
+// the review-prompt badge refresh when a stay completes.
+func TestRealtime_BookingCompleted_PingsBothSides(t *testing.T) {
+	ctx := context.Background()
+	hub := &fakeBroadcaster{}
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(realtimeapp.NewService(hub).EventHandler())
+
+	hostID := uuid.New()
+	guestID := uuid.New()
+	dispatcher.Publish(ctx, event.BookingCompleted{
+		BookingID: uuid.New(), PropertyID: uuid.New(),
+		PropertyTitle: "Seaside", HostID: hostID, GuestID: guestID,
+	})
+
+	if len(hub.sent) != 2 {
+		t.Fatalf("booking-completed pushes = %d, want 2 (%+v)", len(hub.sent), hub.sent)
+	}
+	got := map[uuid.UUID]bool{hub.sent[0].UserID: true, hub.sent[1].UserID: true}
+	if !got[hostID] || !got[guestID] {
+		t.Fatalf("booking-completed targets = %v, want both host and guest", got)
+	}
+}
+
+// TestRealtime_SplitShareAuthorized_PingsPayer — S166. The payer of the share
+// learns their hold landed without waiting for the next poll.
+func TestRealtime_SplitShareAuthorized_PingsPayer(t *testing.T) {
+	ctx := context.Background()
+	hub := &fakeBroadcaster{}
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(realtimeapp.NewService(hub).EventHandler())
+
+	payerID := uuid.New()
+	dispatcher.Publish(ctx, event.SplitShareAuthorized{
+		SplitPaymentID: uuid.New(),
+		BookingID:      uuid.New(),
+		ShareID:        uuid.New(),
+		PayerID:        payerID,
+		AmountCents:    5000,
+		Currency:       "EUR",
+		GatewayRef:     "auth_abc",
+	})
+
+	if len(hub.sent) != 1 || hub.sent[0].UserID != payerID {
+		t.Fatalf("split-share-authorized push = %+v, want one to payer %s", hub.sent, payerID)
+	}
+	if hub.sent[0].Payload != `{"type":"notification"}` {
+		t.Fatalf("payload = %q", hub.sent[0].Payload)
+	}
+}
+
+// TestRealtime_SplitShareAuthorized_SkipsWhenPayerNil — S166. Defensive: a
+// zero-UUID PayerID must not fan a hint into the empty bucket.
+func TestRealtime_SplitShareAuthorized_SkipsWhenPayerNil(t *testing.T) {
+	ctx := context.Background()
+	hub := &fakeBroadcaster{}
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(realtimeapp.NewService(hub).EventHandler())
+
+	dispatcher.Publish(ctx, event.SplitShareAuthorized{
+		SplitPaymentID: uuid.New(), BookingID: uuid.New(),
+		ShareID: uuid.New(), PayerID: uuid.Nil,
+		AmountCents: 5000, Currency: "EUR",
+	})
+
+	if len(hub.sent) != 0 {
+		t.Fatalf("nil-payer push = %+v, want none", hub.sent)
+	}
+}
+
+// TestRealtime_SplitShareRefunded_PingsPayer — S166. Mirrors Authorized: the
+// payer learns their hold was released as soon as the event fires.
+func TestRealtime_SplitShareRefunded_PingsPayer(t *testing.T) {
+	ctx := context.Background()
+	hub := &fakeBroadcaster{}
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(realtimeapp.NewService(hub).EventHandler())
+
+	payerID := uuid.New()
+	dispatcher.Publish(ctx, event.SplitShareRefunded{
+		SplitPaymentID: uuid.New(),
+		BookingID:      uuid.New(),
+		ShareID:        uuid.New(),
+		PayerID:        payerID,
+		AmountCents:    5000,
+		Currency:       "EUR",
+		GatewayRef:     "auth_abc",
+	})
+
+	if len(hub.sent) != 1 || hub.sent[0].UserID != payerID {
+		t.Fatalf("split-share-refunded push = %+v, want one to payer %s", hub.sent, payerID)
 	}
 }
