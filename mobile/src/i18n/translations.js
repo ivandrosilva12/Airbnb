@@ -556,6 +556,11 @@ export const translations = {
     // recognises it as action-required instead of just another info row.
     'notif.kycStepUp.ctaLabel': 'Verify identity',
     'notif.kycStepUp.tag': 'Action required',
+    // S150 — review_submitted row mirrors the same CTA+tag pattern, but in a
+    // softer, "informational" tone (gold) since reading a fresh review is a
+    // delight rather than a chore.
+    'notif.review.ctaLabel': 'See review',
+    'notif.review.tag': 'New review',
 
     'host.becomeTitle': 'Become a host',
     'host.becomeText': 'Upgrade your account to publish listings and manage bookings.',
@@ -1366,6 +1371,8 @@ export const translations = {
     'notif.none': 'Ainda sem notificações.',
     'notif.kycStepUp.ctaLabel': 'Verificar identidade',
     'notif.kycStepUp.tag': 'Ação necessária',
+    'notif.review.ctaLabel': 'Ver avaliação',
+    'notif.review.tag': 'Nova avaliação',
 
     'host.becomeTitle': 'Tornar-se anfitrião',
     'host.becomeText': 'Atualize a sua conta para publicar alojamentos e gerir reservas.',
@@ -1872,6 +1879,8 @@ export const translations = {
     'notif.none': 'Aún no hay notificaciones.',
     'notif.kycStepUp.ctaLabel': 'Verificar identidad',
     'notif.kycStepUp.tag': 'Acción requerida',
+    'notif.review.ctaLabel': 'Ver reseña',
+    'notif.review.tag': 'Nueva reseña',
     'host.becomeTitle': 'Conviértete en anfitrión',
     'host.becomeText': 'Actualiza tu cuenta para publicar alojamientos y gestionar reservas.',
     'host.becomeBtn': 'Conviértete en anfitrión',

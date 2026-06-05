@@ -71,10 +71,18 @@ export default function NotificationsScreen() {
   // kyc_step_up_required type is emitted by the backend (S140) when a guest
   // attempts a high-value booking without a verified identity, so the row
   // routes straight to the Verification flow — same UX contract as the web.
+  //
+  // S150 — review_submitted (emitted by S148 once a guest leaves a review)
+  // routes to the Trips screen, where the reviewed stay is visible and the
+  // guest can read the public review on the listing. Matches web S149: no
+  // dedicated "my reviews" screen exists yet, so Trips is the closest
+  // destination that surfaces the reviewed booking.
   function onRowPress(n) {
     if (!n.read) markRead(n.id);
     if (n.type === 'kyc_step_up_required') {
       navigation.navigate('Verification');
+    } else if (n.type === 'review_submitted') {
+      navigation.navigate('Trips');
     }
   }
 
@@ -103,20 +111,32 @@ export default function NotificationsScreen() {
         ListEmptyComponent={<Text style={styles.empty}>No notifications.</Text>}
         renderItem={({ item }) => {
           const isStepUp = item.type === 'kyc_step_up_required';
+          const isReview = item.type === 'review_submitted';
           return (
             <Pressable style={[styles.row, !item.read && styles.unreadRow]} onPress={() => onRowPress(item)}>
               {!item.read && <View style={styles.dot} />}
               <View style={{ flex: 1 }}>
                 <Text style={styles.title}>
                   {/* S145 — shield prefix flags the row as a security/identity
-                      action so it stands out even when already read. */}
-                  {isStepUp ? '🛡️ ' : ''}{item.title}
+                      action so it stands out even when already read.
+                      S150 — star prefix flags review_submitted in a softer,
+                      celebratory tone (a new review is good news, not a chore). */}
+                  {isStepUp ? '🛡️ ' : ''}{isReview ? '⭐ ' : ''}{item.title}
                 </Text>
                 <Text style={styles.meta}>{item.body}</Text>
                 {isStepUp && (
                   <View style={styles.actionTag}>
                     <Text style={styles.actionTagText}>{t('notif.kycStepUp.tag')}</Text>
                     <Text style={styles.actionTagCta}>{t('notif.kycStepUp.ctaLabel')} →</Text>
+                  </View>
+                )}
+                {isReview && (
+                  // S150 — same chip+CTA shape as the KYC arm, but rendered in
+                  // gold/yellow to keep the tone informational rather than
+                  // urgent. Mirrors web S149's softer treatment.
+                  <View style={styles.actionTag}>
+                    <Text style={styles.reviewTagText}>{t('notif.review.tag')}</Text>
+                    <Text style={styles.reviewTagCta}>{t('notif.review.ctaLabel')} →</Text>
                   </View>
                 )}
               </View>
@@ -160,4 +180,18 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   actionTagCta: { color: '#ff385c', fontSize: 12, fontWeight: '600' },
+  // S150 — softer gold palette for the review_submitted chip. Same shape as
+  // actionTagText, but the colours signal "good news to read" instead of
+  // "you must act now".
+  reviewTagText: {
+    color: '#7a5b00',
+    backgroundColor: '#fff8db',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  reviewTagCta: { color: '#a07900', fontSize: 12, fontWeight: '600' },
 });
