@@ -23,6 +23,7 @@ export default function ConversationScreen({ route, navigation }) {
   const { subscribe } = useRealtime();
   const [messages, setMessages] = useState([]);
   const [myId, setMyId] = useState(null);
+  const [myRole, setMyRole] = useState(null);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -32,6 +33,16 @@ export default function ConversationScreen({ route, navigation }) {
   // who never bother creating one — the chip row just stops at the canned
   // QUICK_REPLIES in that case, no extra section, no visual clutter.
   const [savedTemplates, setSavedTemplates] = useState([]);
+  // S121: inline saved-replies picker. The chip row above the composer is
+  // a peek; this panel is the full list (label + body preview) and is the
+  // hosts-only workflow for hosts with a deep playbook. The picker is
+  // hidden behind a toggle so it doesn't crowd the chat by default.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  // selection tracks the TextInput caret so a tapped template inserts at
+  // the cursor instead of being appended at the end. Fallback is append.
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const isHost = myRole === 'host' || myRole === 'admin';
 
   // The counterparty is the sender of any message that isn't ours.
   const otherId = messages.find((m) => myId && m.senderId !== myId)?.senderId || null;
@@ -70,7 +81,10 @@ export default function ConversationScreen({ route, navigation }) {
         // Silent failure: a guest with no saved templates just gets [].
         api.listMessageTemplates().catch(() => ({ items: [] })),
       ]);
-      if (me) setMyId(me.id);
+      if (me) {
+        setMyId(me.id);
+        setMyRole(me.role || null);
+      }
       setMessages(res.items || []);
       setBlockedIds(blocks?.blocked || []);
       setSavedTemplates(tpls?.items || []);
@@ -142,6 +156,45 @@ export default function ConversationScreen({ route, navigation }) {
     } finally {
       setSending(false);
     }
+  }
+
+  // togglePicker opens/closes the saved-replies panel. We re-fetch on open
+  // so a host who just added a template in another tab sees it instantly,
+  // and a host whose only template just disappeared gets the empty state.
+  async function togglePicker() {
+    if (pickerOpen) {
+      setPickerOpen(false);
+      return;
+    }
+    setPickerOpen(true);
+    setPickerLoading(true);
+    try {
+      const tpls = await api.listMessageTemplates();
+      setSavedTemplates(tpls?.items || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPickerLoading(false);
+    }
+  }
+
+  // insertTemplate splices the body into the draft at the current cursor
+  // position. If the caret is unknown (never focused) we append. The picker
+  // closes after a pick because a host typically inserts one template at a
+  // time — re-opening is cheap and matches the web's modal-like feel.
+  function insertTemplate(body) {
+    setDraft((prev) => {
+      const start = Math.min(selection.start ?? prev.length, prev.length);
+      const end = Math.min(selection.end ?? prev.length, prev.length);
+      if (start === 0 && end === 0 && prev.length > 0) {
+        // No real cursor capture yet — append with a separator if there's
+        // already text so we don't run words together.
+        const sep = /\s$/.test(prev) ? '' : ' ';
+        return prev + sep + body;
+      }
+      return prev.slice(0, start) + body + prev.slice(end);
+    });
+    setPickerOpen(false);
   }
 
   if (loading) return <ActivityIndicator style={{ flex: 1 }} color="#ff385c" />;
@@ -249,6 +302,50 @@ export default function ConversationScreen({ route, navigation }) {
           </Pressable>
         ))}
       </ScrollView>
+      {/* S121: hosts-only inline saved-replies picker. Rendered above the
+          composer so the panel pushes the input down (not the chat up) and
+          stays out of the keyboard's way. Closed by default. */}
+      {isHost && pickerOpen && (
+        <View style={styles.pickerPanel} accessibilityLabel="Saved replies picker">
+          <View style={styles.pickerHeader}>
+            {/* TODO(i18n) */}
+            <Text style={styles.pickerTitle}>Saved replies</Text>
+            <Pressable
+              onPress={togglePicker}
+              accessibilityRole="button"
+              accessibilityLabel="Close saved replies picker"
+            >
+              <Text style={styles.pickerClose}>Close</Text>
+            </Pressable>
+          </View>
+          {pickerLoading ? (
+            <ActivityIndicator style={{ marginVertical: 12 }} color="#ff385c" />
+          ) : savedTemplates.length === 0 ? (
+            // TODO(i18n)
+            <Text style={styles.pickerEmpty}>
+              No saved replies yet. Tap your Account → Saved replies to create one.
+            </Text>
+          ) : (
+            <ScrollView style={styles.pickerList} keyboardShouldPersistTaps="handled">
+              {savedTemplates.map((tpl) => {
+                const heading = (tpl.label && tpl.label.trim()) || tpl.body.split('\n')[0];
+                return (
+                  <Pressable
+                    key={tpl.id}
+                    style={styles.pickerRow}
+                    onPress={() => insertTemplate(tpl.body)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Insert saved reply: ${heading}`}
+                  >
+                    <Text style={styles.pickerRowTitle} numberOfLines={1}>{heading}</Text>
+                    <Text style={styles.pickerRowBody} numberOfLines={2}>{tpl.body}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      )}
       <View style={styles.composer}>
         <Pressable
           style={styles.attachBtn}
@@ -266,9 +363,23 @@ export default function ConversationScreen({ route, navigation }) {
           placeholder="Message…"
           value={draft}
           onChangeText={setDraft}
+          onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
           multiline
           accessibilityLabel="Message text"
         />
+        {/* Hosts-only templates toggle. Sits between input and Send so it's
+            thumb-reachable and visually paired with the send action. */}
+        {isHost && (
+          <Pressable
+            style={[styles.templatesBtn, pickerOpen && styles.templatesBtnActive]}
+            onPress={togglePicker}
+            accessibilityRole="button"
+            accessibilityLabel={pickerOpen ? 'Close saved replies' : 'Open saved replies'}
+            accessibilityState={{ expanded: pickerOpen }}
+          >
+            <Text style={styles.templatesText}>📋</Text>
+          </Pressable>
+        )}
         <Pressable
           style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
           onPress={send}
@@ -309,7 +420,19 @@ const styles = StyleSheet.create({
   attachBtn: { paddingHorizontal: 8, paddingVertical: 8, justifyContent: 'center' },
   attachText: { fontSize: 22 },
   input: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, maxHeight: 100 },
+  templatesBtn: { paddingHorizontal: 8, paddingVertical: 8, justifyContent: 'center', borderRadius: 8 },
+  templatesBtnActive: { backgroundColor: '#fff0f3' },
+  templatesText: { fontSize: 20 },
   sendBtn: { backgroundColor: '#ff385c', borderRadius: 18, paddingHorizontal: 18, paddingVertical: 10 },
   sendBtnDisabled: { opacity: 0.6 },
   sendText: { color: '#fff', fontWeight: '700' },
+  pickerPanel: { maxHeight: 260, borderTopWidth: 1, borderColor: '#eee', backgroundColor: '#fafafa' },
+  pickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderColor: '#eee' },
+  pickerTitle: { fontWeight: '700', color: '#222' },
+  pickerClose: { color: '#ff385c', fontWeight: '600' },
+  pickerEmpty: { color: '#717171', textAlign: 'center', paddingHorizontal: 16, paddingVertical: 18 },
+  pickerList: { paddingHorizontal: 8, paddingVertical: 4 },
+  pickerRow: { paddingHorizontal: 8, paddingVertical: 10, borderBottomWidth: 1, borderColor: '#eee' },
+  pickerRowTitle: { color: '#222', fontWeight: '700', fontSize: 14 },
+  pickerRowBody: { color: '#717171', fontSize: 12, marginTop: 2 },
 });
