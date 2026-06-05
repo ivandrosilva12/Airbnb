@@ -445,6 +445,12 @@ func run() error {
 	// vector below is additive. The dispute package declares a
 	// DisputeMetrics interface to avoid importing observability.
 	disputeSvc.WithMetrics(disputeMetricsAdapter{m: metrics})
+	// S151 — count ReviewSubmitted events labeled by direction
+	// (guest_to_property / host_to_guest) so ops can graph the
+	// review flow. The review package declares a ReviewMetrics
+	// interface to avoid importing observability; the adapter below
+	// forwards to the ReviewsSubmittedTotal CounterVec.
+	reviewSvc.WithMetrics(reviewMetricsAdapter{m: metrics})
 	// S97 — outbox DLQ + depth metric (WF-GAP-018). After 5 failed
 	// delivery attempts the relay promotes the record to dead-letter
 	// state, keeping the recovery scan cheap and surfacing stuck events
@@ -711,6 +717,21 @@ func (a disputeMetricsAdapter) IncDispute(eventName string) {
 		return
 	}
 	a.m.DisputeLifecycleTotal.WithLabelValues(eventName).Inc()
+}
+
+// reviewMetricsAdapter satisfies reviewapp.ReviewMetrics by forwarding
+// to the observability ReviewsSubmittedTotal CounterVec. Kept at the
+// composition root so the review application package never imports
+// observability (S151 — follow-on to S136/S147/S148).
+type reviewMetricsAdapter struct {
+	m *observability.Metrics
+}
+
+func (a reviewMetricsAdapter) IncReviewSubmitted(direction string) {
+	if a.m == nil || a.m.ReviewsSubmittedTotal == nil {
+		return
+	}
+	a.m.ReviewsSubmittedTotal.WithLabelValues(direction).Inc()
 }
 
 // cohostAuditor satisfies propertyapp.Auditor by translating the

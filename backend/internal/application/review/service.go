@@ -17,6 +17,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// ReviewMetrics is the optional Prometheus sink for ReviewSubmitted
+// domain events. It is defined here (rather than imported from the
+// observability package) so the application layer does not depend on
+// infrastructure: the wiring in main.go passes the concrete
+// *observability.Metrics, which satisfies this interface via an inline
+// adapter. direction is the review's Kind — one of "guest_to_property"
+// or "host_to_guest" (S151 — follow-on to S136/S147/S148).
+type ReviewMetrics interface {
+	IncReviewSubmitted(direction string)
+}
+
 // Service orchestrates review use cases.
 type Service struct {
 	reviews    review.Repository
@@ -30,6 +41,12 @@ type Service struct {
 	// all. Nil falls back to the legacy pool-bound path so older tests
 	// that don't wire a UoW keep working.
 	uow port.UnitOfWork
+	// metrics, when wired via WithMetrics, counts each ReviewSubmitted
+	// event published from persistCreate by direction so ops can graph
+	// the guest-to-property / host-to-guest review flow. Optional — nil
+	// keeps observability off, matching the pre-S151 behaviour for
+	// focused unit tests (S151).
+	metrics ReviewMetrics
 }
 
 // NewService wires the review application service.
@@ -48,6 +65,17 @@ func (s *Service) WithUnitOfWork(uow port.UnitOfWork) *Service {
 	return s
 }
 
+// WithMetrics plugs in the Prometheus sink so every ReviewSubmitted
+// event published from persistCreate increments the
+// ReviewsSubmittedTotal counter labeled by direction (S151). Nil leaves
+// observability off. Returns the receiver for fluent wiring — main.go
+// calls .WithMetrics(metrics) right after .WithUnitOfWork, mirroring
+// the offer/dispute services.
+func (s *Service) WithMetrics(m ReviewMetrics) *Service {
+	s.metrics = m
+	return s
+}
+
 // persistCreate writes a new review row + a ReviewSubmitted outbox event
 // atomically. When a UoW is wired (S136), both writes land in the same
 // transaction — so a crash between them no longer drops the event. When
@@ -62,7 +90,7 @@ func (s *Service) persistCreate(ctx context.Context, r *review.Review) error {
 	if s.uow == nil {
 		return s.reviews.Create(ctx, r)
 	}
-	return s.uow.Run(ctx, func(tx port.Tx) error {
+	if err := s.uow.Run(ctx, func(tx port.Tx) error {
 		repo := s.reviews
 		if tx.Reviews != nil {
 			repo = tx.Reviews
@@ -84,7 +112,15 @@ func (s *Service) persistCreate(ctx context.Context, r *review.Review) error {
 			return err
 		}
 		return tx.Outbox.Append(ctx, rec)
-	})
+	}); err != nil {
+		return err
+	}
+	// Only bump the counter after the UoW commits successfully so a
+	// commit-time rollback never inflates the metric (S151).
+	if s.metrics != nil {
+		s.metrics.IncReviewSubmitted(string(r.Kind))
+	}
+	return nil
 }
 
 // RespondToReview lets the property's host publish a public reply to a guest's

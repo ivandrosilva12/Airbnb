@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/airhost/backend/internal/application/event"
 	reviewapp "github.com/airhost/backend/internal/application/review"
 	"github.com/airhost/backend/internal/domain/booking"
 	"github.com/airhost/backend/internal/domain/property"
@@ -416,5 +417,77 @@ func TestGuestReview_OnlyHostAfterCompletion(t *testing.T) {
 	// A guest-to-property review on the same booking is still allowed (different direction).
 	if _, err := f.svc.Create(ctx, reviewapp.CreateInput{GuestID: guestID, BookingID: b.ID, Rating: 4}); err != nil {
 		t.Fatalf("property review after guest review should be allowed: %v", err)
+	}
+}
+
+// fakeReviewMetrics records IncReviewSubmitted calls so the test can
+// assert the counter was bumped with the expected direction label
+// (S151).
+type fakeReviewMetrics struct {
+	calls []string
+}
+
+func (f *fakeReviewMetrics) IncReviewSubmitted(direction string) {
+	f.calls = append(f.calls, direction)
+}
+
+// TestReview_Create_IncrementsMetric_GuestToProperty verifies that a
+// successful Create bumps the ReviewsSubmittedTotal counter via the
+// ReviewMetrics sink, labeled "guest_to_property". The UoW must be
+// wired since persistCreate only takes the metrics branch on the
+// atomic path (S151 — follow-on to S136/S147/S148).
+func TestReview_Create_IncrementsMetric_GuestToProperty(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay).WithReviews(f.reviews)
+	metrics := &fakeReviewMetrics{}
+	f.svc = f.svc.WithUnitOfWork(uow).WithMetrics(metrics)
+
+	guestID := uuid.New()
+	prop := makeProperty(t, f.properties, uuid.New())
+	b := makeBooking(t, guestID, prop.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, b)
+
+	if _, err := f.svc.Create(ctx, reviewapp.CreateInput{GuestID: guestID, BookingID: b.ID, Rating: 5}); err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+
+	if len(metrics.calls) != 1 {
+		t.Fatalf("IncReviewSubmitted call count = %d, want 1 (calls = %v)", len(metrics.calls), metrics.calls)
+	}
+	if metrics.calls[0] != "guest_to_property" {
+		t.Fatalf("IncReviewSubmitted direction = %q, want %q", metrics.calls[0], "guest_to_property")
+	}
+}
+
+// TestReview_CreateGuestReview_IncrementsMetric_HostToGuest verifies
+// that a successful host-to-guest review bumps the
+// ReviewsSubmittedTotal counter labeled "host_to_guest" (S151).
+func TestReview_CreateGuestReview_IncrementsMetric_HostToGuest(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	outbox := event.NewMemoryOutbox()
+	relay := event.NewDurablePublisher(outbox, event.NewDispatcher())
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay).WithReviews(f.reviews)
+	metrics := &fakeReviewMetrics{}
+	f.svc = f.svc.WithUnitOfWork(uow).WithMetrics(metrics)
+
+	hostID := uuid.New()
+	guestID := uuid.New()
+	prop := makeProperty(t, f.properties, hostID)
+	b := makeBooking(t, guestID, prop.ID, booking.StatusCompleted)
+	_ = f.bookings.Create(ctx, b)
+
+	if _, err := f.svc.CreateGuestReview(ctx, reviewapp.GuestReviewInput{HostID: hostID, BookingID: b.ID, Rating: 5, Comment: "Great guest"}); err != nil {
+		t.Fatalf("create guest review: %v", err)
+	}
+
+	if len(metrics.calls) != 1 {
+		t.Fatalf("IncReviewSubmitted call count = %d, want 1 (calls = %v)", len(metrics.calls), metrics.calls)
+	}
+	if metrics.calls[0] != "host_to_guest" {
+		t.Fatalf("IncReviewSubmitted direction = %q, want %q", metrics.calls[0], "host_to_guest")
 	}
 }

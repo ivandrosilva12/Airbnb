@@ -47,6 +47,14 @@ type Metrics struct {
 	// the event to the publisher / outbox, so a subscriber failure
 	// downstream cannot suppress the metric.
 	DisputeLifecycleTotal *prometheus.CounterVec
+	// S151 — ReviewSubmitted domain events, labeled by direction
+	// (guest_to_property / host_to_guest). Incremented from
+	// reviewapp.persistCreate AFTER the UoW commits the reviews row + the
+	// outbox event, so a commit-time rollback never inflates the metric.
+	// Mirrors the S113/S117 metrics-via-interface pattern so the review
+	// application package never imports observability (S151 — follow-on
+	// to S136/S147/S148).
+	ReviewsSubmittedTotal *prometheus.CounterVec
 	// S97 — outbox observability (WF-GAP-018). OutboxPending tracks the
 	// number of records the recovery scan would still pick up; spikes mean
 	// the dispatcher is falling behind or a subscriber is stuck. DLQ
@@ -159,6 +167,13 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Help: "Total dispute lifecycle events published, labeled by event (dispute.opened / .resolved / .rejected) so ops can graph the full open→decide flow plus the open→resolved ratio — follow-on to S29/S89/WF-GAP-013 (S117).",
 			},
 			[]string{"event"},
+		),
+		ReviewsSubmittedTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "airhost_reviews_submitted_total",
+				Help: "Total ReviewSubmitted domain events published, labeled by direction (guest_to_property / host_to_guest). Incremented after the UoW commits the review row + outbox append (S151 — follow-on to S136/S147/S148).",
+			},
+			[]string{"direction"},
 		),
 		OutboxPending: factory.NewGauge(
 			prometheus.GaugeOpts{
