@@ -30,6 +30,15 @@ type Service struct {
 	// no-op publisher so the service still works in tests that don't wire
 	// the booking auto-confirm subscriber.
 	publisher event.Publisher
+	// uow, when wired (S123), routes the synchronous payment subscriber's
+	// Create/Update writes through a UnitOfWork so the payment row and the
+	// PaymentAuthorized / PaymentCaptured / PaymentRefunded outbox event
+	// commit atomically — closing the "row landed but event was lost"
+	// gap that existed when the subscriber wrote through a pool-bound
+	// repo and then asked the publisher to enqueue separately. Nil
+	// falls back to the legacy pool-bound path so older tests that don't
+	// wire a UoW keep working.
+	uow port.UnitOfWork
 }
 
 // NewService wires the payment application service. The booking and property
@@ -38,6 +47,17 @@ type Service struct {
 // the deposit subscriber and damage-via-deposit paths are no-ops.
 func NewService(repo payment.Repository, gateway port.PaymentGateway, bookings booking.Repository, properties property.Repository) *Service {
 	return &Service{repo: repo, gateway: gateway, bookings: bookings, properties: properties, publisher: event.Nop()}
+}
+
+// WithUnitOfWork wires a UoW into the subscriber so synchronous writes
+// (authorize on BookingRequested, capture on BookingConfirmed, refund on
+// BookingCancelled) commit atomically with their lifecycle outbox events
+// (S123 — Payment UoW slice). Without it, the subscriber falls back to
+// the legacy pool-bound write path (no atomicity guarantee). Returns the
+// same service for chained construction.
+func (s *Service) WithUnitOfWork(uow port.UnitOfWork) *Service {
+	s.uow = uow
+	return s
 }
 
 // WithDeposits enables the security-deposit flow on the service. Returns the

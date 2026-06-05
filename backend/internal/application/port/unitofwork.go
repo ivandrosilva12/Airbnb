@@ -10,6 +10,7 @@ import (
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/identity"
 	"github.com/airhost/backend/internal/domain/message"
+	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/splitpayment"
 )
 
@@ -37,7 +38,14 @@ type Tx struct {
 	// can no longer let the same code be redeemed past its cap (S101 —
 	// WF-GAP-006).
 	Coupons coupon.Repository
-	Outbox  event.OutboxStore
+	// Payments, when wired by the UnitOfWork, lets the payment subscriber
+	// route Create/Update writes through the same atomic-commit-with-outbox
+	// path the booking service uses. Without it, a crash between the
+	// payment row landing and the outbox event being appended would lose
+	// the PaymentAuthorized / PaymentCaptured / PaymentRefunded event
+	// (S123 — Payment UoW slice).
+	Payments payment.Repository
+	Outbox   event.OutboxStore
 }
 
 // UnitOfWork runs a function inside a transaction. On success the writes and the

@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/application/port"
 	"github.com/airhost/backend/internal/domain/experiencebooking"
 	"github.com/airhost/backend/internal/domain/payment"
 	"github.com/airhost/backend/internal/domain/shared"
@@ -137,7 +138,16 @@ func (s *Service) authorizeExperience(ctx context.Context, ev experiencebooking.
 	} else if err := p.Authorize(ref); err != nil {
 		p.Fail(err.Error())
 	}
-	if err := s.repo.Create(ctx, p); err != nil {
+	var evt event.Event
+	if p.Status == payment.StatusAuthorized {
+		evt = event.PaymentAuthorized{
+			BookingID:  p.BookingID,
+			PaymentID:  p.ID,
+			GuestID:    p.GuestID,
+			GatewayRef: p.GatewayRef,
+		}
+	}
+	if err := s.persistCreate(ctx, p, evt); err != nil {
 		logctx.LoggerFrom(ctx).Error("payment: failed to persist authorization", "booking", ev.BookingID, "error", err)
 	}
 }
@@ -255,13 +265,31 @@ func (s *Service) authorize(ctx context.Context, ev event.BookingRequested) {
 	}
 	p := payment.New(ev.BookingID, ev.GuestID, amount)
 
+	// Gateway call happens OUTSIDE the UoW: it's an external side-effect
+	// that we can't roll back, and we only want the local payment row +
+	// outbox event to be atomic. The gateway result (success or failure)
+	// determines what the UoW persists below.
 	ref, err := s.gateway.Authorize(ctx, amount, ev.BookingID.String())
 	if err != nil {
 		p.Fail(err.Error())
 	} else if err := p.Authorize(ref); err != nil {
 		p.Fail(err.Error())
 	}
-	if err := s.repo.Create(ctx, p); err != nil {
+
+	// Only emit PaymentAuthorized when the row actually transitioned to
+	// authorized — a failed gateway call lands a Failed row, which is
+	// not an authorization. Subscribers (booking auto-confirm) must not
+	// fire on a failure.
+	var evt event.Event
+	if p.Status == payment.StatusAuthorized {
+		evt = event.PaymentAuthorized{
+			BookingID:  p.BookingID,
+			PaymentID:  p.ID,
+			GuestID:    p.GuestID,
+			GatewayRef: p.GatewayRef,
+		}
+	}
+	if err := s.persistCreate(ctx, p, evt); err != nil {
 		logctx.LoggerFrom(ctx).Error("payment: failed to persist authorization", "booking", ev.BookingID, "error", err)
 	}
 }
@@ -304,7 +332,20 @@ func (s *Service) reauthorize(ctx context.Context, ev event.BookingModified) {
 	} else if err := p.Reauthorize(ref, newAmount); err != nil {
 		p.Fail(err.Error())
 	}
-	if err := s.repo.Update(ctx, p); err != nil {
+	// Re-authorization keeps the payment in StatusAuthorized when the new
+	// hold succeeds — we re-emit PaymentAuthorized with the fresh
+	// gateway ref so downstream subscribers see the updated reference
+	// (and the booking auto-confirm path stays consistent).
+	var evt event.Event
+	if p.Status == payment.StatusAuthorized {
+		evt = event.PaymentAuthorized{
+			BookingID:  p.BookingID,
+			PaymentID:  p.ID,
+			GuestID:    p.GuestID,
+			GatewayRef: p.GatewayRef,
+		}
+	}
+	if err := s.persistUpdate(ctx, p, evt); err != nil {
 		logctx.LoggerFrom(ctx).Error("payment: persist re-authorization failed", "booking", ev.BookingID, "error", err)
 	}
 }
@@ -317,11 +358,103 @@ func (s *Service) transition(ctx context.Context, bookingID uuid.UUID, action st
 		}
 		return
 	}
+	// Record the pre-apply status so we can emit the right lifecycle
+	// event based on the transition that actually happened. The apply
+	// closure mutates p in place — checking its post-call status is what
+	// tells us whether this was a capture, a refund, or a no-op.
+	prevStatus := p.Status
 	if err := apply(p); err != nil {
 		logctx.LoggerFrom(ctx).Error("payment: "+action+" failed", "booking", bookingID, "error", err)
 		return
 	}
-	if err := s.repo.Update(ctx, p); err != nil {
+	evt := s.lifecycleEventFor(action, prevStatus, p)
+	if err := s.persistUpdate(ctx, p, evt); err != nil {
 		logctx.LoggerFrom(ctx).Error("payment: persist failed", "action", action, "booking", bookingID, "error", err)
 	}
+}
+
+// lifecycleEventFor returns the outbox event that should fire alongside a
+// transition, or nil when the transition is a no-op (e.g. refund called on
+// an already-refunded payment). The action argument names the intent;
+// status reveals whether the aggregate actually moved.
+func (s *Service) lifecycleEventFor(action string, prevStatus payment.Status, p *payment.Payment) event.Event {
+	switch action {
+	case "capture":
+		if prevStatus != payment.StatusCaptured && p.Status == payment.StatusCaptured {
+			return event.PaymentCaptured{
+				BookingID:   p.BookingID,
+				PaymentID:   p.ID,
+				GuestID:     p.GuestID,
+				AmountCents: p.Amount.AmountCents(),
+				Currency:    p.Amount.Currency(),
+				GatewayRef:  p.GatewayRef,
+			}
+		}
+	case "refund":
+		if p.Status == payment.StatusRefunded && prevStatus != payment.StatusRefunded {
+			return event.PaymentRefunded{
+				BookingID:     p.BookingID,
+				PaymentID:     p.ID,
+				GuestID:       p.GuestID,
+				RefundedCents: p.RefundedCents,
+				Currency:      p.Amount.Currency(),
+				GatewayRef:    p.GatewayRef,
+			}
+		}
+	}
+	return nil
+}
+
+// persistCreate writes a new payment row + (optionally) an outbox event
+// atomically. When a UoW is wired (S123), both writes land in the same
+// transaction — so a crash between them no longer drops the event. When
+// the UoW is absent (legacy tests / call sites built before S123), it
+// falls back to the pool-bound repo and skips the event (the existing
+// behaviour pre-S123).
+func (s *Service) persistCreate(ctx context.Context, p *payment.Payment, evt event.Event) error {
+	if s.uow == nil {
+		return s.repo.Create(ctx, p)
+	}
+	return s.uow.Run(ctx, func(tx port.Tx) error {
+		repo := s.repo
+		if tx.Payments != nil {
+			repo = tx.Payments
+		}
+		if err := repo.Create(ctx, p); err != nil {
+			return err
+		}
+		if evt == nil {
+			return nil
+		}
+		rec, err := event.NewRecord(evt)
+		if err != nil {
+			return err
+		}
+		return tx.Outbox.Append(ctx, rec)
+	})
+}
+
+// persistUpdate is the Update counterpart of persistCreate — same atomicity
+// contract, same legacy fallback for callers without a UoW.
+func (s *Service) persistUpdate(ctx context.Context, p *payment.Payment, evt event.Event) error {
+	if s.uow == nil {
+		return s.repo.Update(ctx, p)
+	}
+	return s.uow.Run(ctx, func(tx port.Tx) error {
+		repo := s.repo
+		if tx.Payments != nil {
+			repo = tx.Payments
+		}
+		if err := repo.Update(ctx, p); err != nil {
+			return err
+		}
+		if evt == nil {
+			return nil
+		}
+		rec, err := event.NewRecord(evt)
+		if err != nil {
+			return err
+		}
+		return tx.Outbox.Append(ctx, rec)
+	})
 }

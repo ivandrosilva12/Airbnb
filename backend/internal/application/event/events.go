@@ -35,6 +35,12 @@ func init() {
 	// this once the gateway settles an async authorization via webhook, and
 	// the booking service subscriber promotes pending→confirmed when allowed.
 	Register(PaymentAuthorized{}.EventName(), jsonDecoder[PaymentAuthorized]())
+	// S123 — payment lifecycle events emitted when the payment subscriber
+	// settles a booking. They land in the outbox atomically with the
+	// payment row write so the relay can fan them out to downstream
+	// subscribers (notifications, accounting) without risk of split-brain.
+	Register(PaymentCaptured{}.EventName(), jsonDecoder[PaymentCaptured]())
+	Register(PaymentRefunded{}.EventName(), jsonDecoder[PaymentRefunded]())
 	// S99 — offer lifecycle events (WF-GAP-008). OfferAccepted is intentionally
 	// omitted: Accept always produces a BookingConfirmed, which the existing
 	// subscribers already handle.
@@ -243,6 +249,37 @@ type PaymentAuthorized struct {
 }
 
 func (PaymentAuthorized) EventName() string { return "payment.authorized" }
+
+// PaymentCaptured is published (S123) when the payment subscriber turns an
+// authorized hold into a charge — typically when a booking is confirmed.
+// It lands in the outbox atomically with the payment-row UPDATE so
+// downstream subscribers (notifications, accounting) see the same view of
+// the world as storage.
+type PaymentCaptured struct {
+	BookingID   uuid.UUID
+	PaymentID   uuid.UUID
+	GuestID     uuid.UUID
+	AmountCents int64
+	Currency    string
+	GatewayRef  string
+}
+
+func (PaymentCaptured) EventName() string { return "payment.captured" }
+
+// PaymentRefunded is published (S123) when the payment subscriber refunds
+// some or all of an authorized or captured payment — typically driven by
+// a BookingCancelled with a refund fraction. It carries the refunded
+// amount so subscribers can render an accurate notification/receipt.
+type PaymentRefunded struct {
+	BookingID     uuid.UUID
+	PaymentID     uuid.UUID
+	GuestID       uuid.UUID
+	RefundedCents int64
+	Currency      string
+	GatewayRef    string
+}
+
+func (PaymentRefunded) EventName() string { return "payment.refunded" }
 
 // OfferCreated is published when a host sends a guest a pre-approval or a
 // special offer (S9 — special offers, WF-GAP-008 — eventing). The guest is

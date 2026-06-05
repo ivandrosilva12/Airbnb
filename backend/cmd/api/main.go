@@ -267,7 +267,13 @@ func run() error {
 		// PaymentAuthorized so the booking subscriber can promote
 		// pending→confirmed without the webhook handler touching the
 		// booking aggregate directly.
-		WithPublisher(dispatcher)
+		WithPublisher(dispatcher).
+		// S123 — Payment UoW slice. Routes the synchronous subscriber's
+		// Create/Update writes through the UoW so the payment row + the
+		// PaymentAuthorized / PaymentCaptured / PaymentRefunded outbox
+		// row commit atomically. A crash between them no longer drops
+		// the event.
+		WithUnitOfWork(uow)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
 	// auditSvc is wired here (earlier than its old position) so cohostSvc
 	// below can plug an Auditor adapter on construction (S120). The

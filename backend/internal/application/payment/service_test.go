@@ -395,3 +395,91 @@ func TestEventHandler_ExperienceBookingCancelled_NoPaymentIsSafe(t *testing.T) {
 	})
 	// Nothing to assert beyond "didn't crash".
 }
+
+// TestEventHandler_AuthorizeRoutesThroughUnitOfWork — S123. When a UoW is
+// wired into the service, the synchronous BookingRequested → authorize
+// path must persist the payment row AND append a PaymentAuthorized
+// outbox record in the same UoW. The in-memory UoW exposes the recorded
+// outbox via the OutboxStore we passed in; we assert both happened.
+func TestEventHandler_AuthorizeRoutesThroughUnitOfWork(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewPaymentRepository()
+	outbox := event.NewMemoryOutbox()
+	uow := memory.NewUnitOfWork(nil, nil, nil, nil, nil, outbox, nil).WithPayments(repo)
+
+	svc := paymentapp.NewService(repo, infrapayment.NewFakeGateway(), memory.NewBookingRepository(), memory.NewPropertyRepository()).
+		WithUnitOfWork(uow)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	bookingID := uuid.New()
+	guestID := uuid.New()
+	dispatcher.Publish(ctx, event.BookingRequested{
+		BookingID: bookingID, GuestID: guestID, TotalCents: 12000, Currency: "EUR",
+	})
+
+	// Payment row landed via the UoW's tx.Payments handle.
+	p, err := svc.GetForBooking(ctx, guestID, bookingID)
+	if err != nil {
+		t.Fatalf("get payment: %v", err)
+	}
+	if p.Status != payment.StatusAuthorized {
+		t.Fatalf("status = %s, want authorized", p.Status)
+	}
+
+	// AND a PaymentAuthorized record landed in the outbox in the same
+	// UoW — the atomicity contract S123 is closing. Without the UoW
+	// wiring, the legacy path skips the outbox append, so we'd see zero
+	// pending events here.
+	pending, err := outbox.FetchUnprocessed(ctx, 10)
+	if err != nil {
+		t.Fatalf("fetch outbox: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("outbox pending = %d, want 1 (one PaymentAuthorized per authorize UoW)", len(pending))
+	}
+	if pending[0].Name != (event.PaymentAuthorized{}).EventName() {
+		t.Fatalf("outbox event_name = %q, want %q", pending[0].Name, (event.PaymentAuthorized{}).EventName())
+	}
+}
+
+// TestEventHandler_CaptureRefundEmitPaymentLifecycleEvents — S123. Once a
+// UoW is wired, the capture and refund transitions must each append a
+// matching lifecycle event (PaymentCaptured / PaymentRefunded). Drives
+// the full happy-path lifecycle and asserts the outbox holds exactly the
+// three records (authorize, capture, refund) the path produces.
+func TestEventHandler_CaptureRefundEmitPaymentLifecycleEvents(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewPaymentRepository()
+	outbox := event.NewMemoryOutbox()
+	uow := memory.NewUnitOfWork(nil, nil, nil, nil, nil, outbox, nil).WithPayments(repo)
+
+	svc := paymentapp.NewService(repo, infrapayment.NewFakeGateway(), memory.NewBookingRepository(), memory.NewPropertyRepository()).
+		WithUnitOfWork(uow)
+	dispatcher := event.NewDispatcher()
+	dispatcher.Subscribe(svc.EventHandler())
+
+	bookingID := uuid.New()
+	guestID := uuid.New()
+	dispatcher.Publish(ctx, event.BookingRequested{BookingID: bookingID, GuestID: guestID, TotalCents: 10000, Currency: "EUR"})
+	dispatcher.Publish(ctx, event.BookingConfirmed{BookingID: bookingID, GuestID: guestID})
+	dispatcher.Publish(ctx, event.BookingCancelled{BookingID: bookingID, GuestID: guestID, RefundFraction: 0.5})
+
+	pending, err := outbox.FetchUnprocessed(ctx, 10)
+	if err != nil {
+		t.Fatalf("fetch outbox: %v", err)
+	}
+	if len(pending) != 3 {
+		t.Fatalf("outbox pending = %d, want 3 (authorize + capture + refund)", len(pending))
+	}
+	want := []string{
+		(event.PaymentAuthorized{}).EventName(),
+		(event.PaymentCaptured{}).EventName(),
+		(event.PaymentRefunded{}).EventName(),
+	}
+	for i, w := range want {
+		if pending[i].Name != w {
+			t.Errorf("outbox[%d].Name = %q, want %q", i, pending[i].Name, w)
+		}
+	}
+}

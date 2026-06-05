@@ -11,25 +11,70 @@ import (
 )
 
 // PaymentRepository is the Postgres implementation of payment.Repository.
+//
+// The repository can run against either a *pgxpool.Pool (own connection,
+// auto-managed transaction for Create/Update) or a pgx.Tx (a UnitOfWork's
+// transaction, so the payment write commits atomically with the outbox
+// append). Use NewPaymentRepository for the pool flavour and
+// NewPaymentTxRepository inside a UnitOfWork (S123).
 type PaymentRepository struct {
-	pool *pgxpool.Pool
+	pool querier
+	// tx is non-nil when the repository is bound to an active transaction.
+	// Create/Update then run their statements directly against tx instead
+	// of starting a fresh inner transaction. Read methods always run
+	// through pool (which is the same tx when bound).
+	tx pgx.Tx
 }
 
-// NewPaymentRepository builds a PaymentRepository.
+// NewPaymentRepository builds a PaymentRepository that owns its connections.
+// Create/Update each open an inner transaction so the payment row and its
+// payment_adjustments rows commit together.
 func NewPaymentRepository(pool *pgxpool.Pool) *PaymentRepository {
 	return &PaymentRepository{pool: pool}
+}
+
+// NewPaymentTxRepository binds the repository to an active pgx.Tx so its
+// writes participate in the caller's UnitOfWork — the payment row + any
+// adjustment rows commit atomically with the outbox append the UoW
+// performs (S123 — Payment UoW slice). Reads also run on the same
+// transaction so a Create followed by a Find inside the same UoW sees the
+// uncommitted row.
+func NewPaymentTxRepository(tx pgx.Tx) *PaymentRepository {
+	return &PaymentRepository{pool: tx, tx: tx}
 }
 
 const paymentColumns = `id, booking_id, guest_id, amount_cents, currency, status,
 	gateway_ref, failure_reason, refunded_cents, damage_claim_cents, created_at, updated_at`
 
 func (r *PaymentRepository) Create(ctx context.Context, p *payment.Payment) error {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	// When bound to an outer UnitOfWork transaction, write directly against
+	// it so a downstream outbox failure rolls back the payment row too.
+	// When running standalone, wrap the two-statement INSERT (payment +
+	// adjustments) in a private tx so a crash mid-flow doesn't leave a
+	// payment row without its adjustments.
+	if r.tx != nil {
+		return r.createWithin(ctx, r.tx, p)
+	}
+	pool, ok := r.pool.(*pgxpool.Pool)
+	if !ok {
+		// Should never happen — the constructor always installs a pool or
+		// a tx — but if it does we degrade to running statements without
+		// an inner transaction rather than panic.
+		return r.createWithin(ctx, r.pool, p)
+	}
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return mapError(err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	if _, err := tx.Exec(ctx, `
+	if err := r.createWithin(ctx, tx, p); err != nil {
+		return err
+	}
+	return mapError(tx.Commit(ctx))
+}
+
+func (r *PaymentRepository) createWithin(ctx context.Context, q querier, p *payment.Payment) error {
+	if _, err := q.Exec(ctx, `
 		INSERT INTO payments (`+paymentColumns+`)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 		p.ID, p.BookingID, p.GuestID, p.Amount.AmountCents(), p.Amount.Currency(), string(p.Status),
@@ -37,19 +82,33 @@ func (r *PaymentRepository) Create(ctx context.Context, p *payment.Payment) erro
 	); err != nil {
 		return mapError(err)
 	}
-	if err := upsertAdjustments(ctx, tx, p); err != nil {
+	if err := upsertAdjustments(ctx, q, p); err != nil {
 		return mapError(err)
 	}
-	return mapError(tx.Commit(ctx))
+	return nil
 }
 
 func (r *PaymentRepository) Update(ctx context.Context, p *payment.Payment) error {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	if r.tx != nil {
+		return r.updateWithin(ctx, r.tx, p)
+	}
+	pool, ok := r.pool.(*pgxpool.Pool)
+	if !ok {
+		return r.updateWithin(ctx, r.pool, p)
+	}
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return mapError(err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	if _, err := tx.Exec(ctx, `
+	if err := r.updateWithin(ctx, tx, p); err != nil {
+		return err
+	}
+	return mapError(tx.Commit(ctx))
+}
+
+func (r *PaymentRepository) updateWithin(ctx context.Context, q querier, p *payment.Payment) error {
+	if _, err := q.Exec(ctx, `
 		UPDATE payments SET status=$2, gateway_ref=$3, failure_reason=$4,
 		    refunded_cents=$5, damage_claim_cents=$6, updated_at=$7
 		WHERE id=$1`,
@@ -58,23 +117,23 @@ func (r *PaymentRepository) Update(ctx context.Context, p *payment.Payment) erro
 	); err != nil {
 		return mapError(err)
 	}
-	if err := upsertAdjustments(ctx, tx, p); err != nil {
+	if err := upsertAdjustments(ctx, q, p); err != nil {
 		return mapError(err)
 	}
-	return mapError(tx.Commit(ctx))
+	return nil
 }
 
 // upsertAdjustments inserts any Adjustment rows the aggregate carries that
 // have not been persisted yet. ON CONFLICT DO NOTHING makes re-applying the
 // same dispute outcome a no-op (idempotency at storage level), complementing
 // the aggregate's HasAdjustmentFor guard.
-func upsertAdjustments(ctx context.Context, tx pgx.Tx, p *payment.Payment) error {
+func upsertAdjustments(ctx context.Context, q querier, p *payment.Payment) error {
 	for _, a := range p.Adjustments {
 		var refID any
 		if a.RefID != uuid.Nil {
 			refID = a.RefID
 		}
-		if _, err := tx.Exec(ctx, `
+		if _, err := q.Exec(ctx, `
 			INSERT INTO payment_adjustments
 			    (id, payment_id, kind, amount_cents, reason, ref_kind, ref_id, created_at)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
