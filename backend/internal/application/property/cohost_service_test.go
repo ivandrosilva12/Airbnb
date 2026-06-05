@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	propertyapp "github.com/airhost/backend/internal/application/property"
+	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
@@ -245,5 +246,77 @@ func TestAuthorizeAdmitsOwnerOrCohost(t *testing.T) {
 	// Stranger — forbidden.
 	if _, err := f.svc.Authorize(ctx, f.stranger.ID, f.property.ID, property.PermManageCalendar); !errors.Is(err, shared.ErrForbidden) {
 		t.Fatalf("stranger authorize: err = %v, want ErrForbidden", err)
+	}
+}
+
+// fakeAuditor records propertyapp.AuditRecord calls so a test can assert
+// the cohost service wrote exactly one audit row, with the expected
+// action, actor, subject (target) id and metadata shape (S120).
+type fakeAuditor struct {
+	records []propertyapp.AuditRecord
+}
+
+func (f *fakeAuditor) Record(_ context.Context, rec propertyapp.AuditRecord) error {
+	f.records = append(f.records, rec)
+	return nil
+}
+
+// TestInvite_RecordsAuditEvent verifies that a successful Invite appends
+// a "cohost.invited" audit record with the inviting host as actor, the
+// invitee as subject (target id), and the property id + permission list
+// in metadata so the row is self-contained for compliance review (S120).
+func TestInvite_RecordsAuditEvent(t *testing.T) {
+	f := newCohostFixture(t)
+	ctx := context.Background()
+	auditor := &fakeAuditor{}
+	f.svc.WithAuditor(auditor)
+
+	perms := []property.CohostPermission{property.PermReplyMessages, property.PermManageCalendar}
+	if _, err := f.svc.Invite(ctx, propertyapp.InviteInput{
+		HostID:      f.host.ID,
+		PropertyID:  f.property.ID,
+		Email:       "cohost@test.dev",
+		Permissions: perms,
+	}); err != nil {
+		t.Fatalf("invite: %v", err)
+	}
+
+	if len(auditor.records) != 1 {
+		t.Fatalf("audit record count = %d, want 1", len(auditor.records))
+	}
+	rec := auditor.records[0]
+	if rec.Action != audit.ActionCohostInvited {
+		t.Fatalf("action = %q, want %q", rec.Action, audit.ActionCohostInvited)
+	}
+	if rec.ActorID != f.host.ID {
+		t.Fatalf("actor id = %v, want host id %v", rec.ActorID, f.host.ID)
+	}
+	if rec.TargetID != f.cohostU.ID {
+		t.Fatalf("target (subject) id = %v, want invitee id %v", rec.TargetID, f.cohostU.ID)
+	}
+	if rec.TargetType != audit.TargetUser {
+		t.Fatalf("target type = %q, want %q", rec.TargetType, audit.TargetUser)
+	}
+	// Metadata must carry the property id (so a "who got access to X" query
+	// joins on it without re-fetching the cohost grant) AND the permission
+	// list (so a revoked grant still shows what was granted).
+	if got, want := rec.Metadata["property_id"], f.property.ID.String(); got != want {
+		t.Fatalf("metadata property_id = %v, want %v", got, want)
+	}
+	gotPerms, ok := rec.Metadata["permissions"].([]string)
+	if !ok {
+		t.Fatalf("metadata permissions type = %T, want []string", rec.Metadata["permissions"])
+	}
+	if len(gotPerms) != len(perms) {
+		t.Fatalf("metadata permissions len = %d, want %d", len(gotPerms), len(perms))
+	}
+	want := map[string]bool{}
+	for _, p := range perms {
+		want[string(p)] = true
+	}
+	for _, p := range gotPerms {
+		if !want[p] {
+			t.Fatalf("unexpected permission in metadata: %q", p)
+		}
 	}
 }

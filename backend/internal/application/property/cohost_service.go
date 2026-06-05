@@ -6,11 +6,34 @@ import (
 	"strings"
 
 	"github.com/airhost/backend/internal/application/event"
+	"github.com/airhost/backend/internal/domain/audit"
 	"github.com/airhost/backend/internal/domain/property"
 	"github.com/airhost/backend/internal/domain/shared"
 	"github.com/airhost/backend/internal/domain/user"
 	"github.com/google/uuid"
 )
+
+// AuditRecord is the narrow input the cohost service hands to its
+// Auditor sink. Mirrors auditapp.RecordInput field-for-field but is
+// declared HERE so this package does not import the auditapp wrapper
+// — the main.go adapter translates one into the other. Keeping the
+// shape local follows the OfferMetrics pattern S113 used to wire
+// observability without cross-package coupling at the application
+// layer.
+type AuditRecord struct {
+	ActorID    uuid.UUID
+	Action     audit.Action
+	TargetType audit.TargetType
+	TargetID   uuid.UUID
+	Metadata   map[string]any
+}
+
+// Auditor is the narrow sink the cohost service uses to append a
+// compliance row for a role-mutating action (S120). The concrete
+// wiring in main.go adapts auditapp.Service into this shape.
+type Auditor interface {
+	Record(ctx context.Context, rec AuditRecord) error
+}
 
 // CohostService orchestrates the per-listing co-host grants: invite by email,
 // list, update permissions, revoke. Every mutation is gated on the caller
@@ -29,6 +52,12 @@ type CohostService struct {
 	// notification subscriber can ping the invitee (S99 — WF-GAP-016).
 	// Optional — older tests leave it nil and emit becomes a no-op.
 	pub event.Publisher
+	// auditor, when wired via WithAuditor, appends a "cohost.invited"
+	// row on every successful Invite so the compliance trail records
+	// who granted whom which permissions on which listing (S120).
+	// Optional — older tests / wiring leave it nil and the call site
+	// short-circuits without writing.
+	auditor Auditor
 }
 
 // NewCohostService wires the cohost application service.
@@ -40,6 +69,15 @@ func NewCohostService(cohosts property.CohostRepository, properties property.Rep
 // (S99 — WF-GAP-016). Fluent setter; pre-existing call-sites keep working.
 func (s *CohostService) WithPublisher(p event.Publisher) *CohostService {
 	s.pub = p
+	return s
+}
+
+// WithAuditor plugs an Auditor so a successful Invite appends a
+// "cohost.invited" audit row alongside the domain event publication
+// (S120). Fluent setter; pre-existing call-sites keep working and the
+// Invite path short-circuits when no auditor is wired.
+func (s *CohostService) WithAuditor(a Auditor) *CohostService {
+	s.auditor = a
 	return s
 }
 
@@ -87,11 +125,11 @@ func (s *CohostService) Invite(ctx context.Context, in InviteInput) (*property.C
 	if err := s.cohosts.Create(ctx, c); err != nil {
 		return nil, err
 	}
+	perms := make([]string, 0, len(in.Permissions))
+	for _, p := range in.Permissions {
+		perms = append(perms, string(p))
+	}
 	if s.pub != nil {
-		perms := make([]string, 0, len(in.Permissions))
-		for _, p := range in.Permissions {
-			perms = append(perms, string(p))
-		}
 		s.pub.Publish(ctx, event.CohostInvited{
 			CohostID:      c.ID,
 			PropertyID:    prop.ID,
@@ -100,6 +138,25 @@ func (s *CohostService) Invite(ctx context.Context, in InviteInput) (*property.C
 			UserID:        userID,
 			Permissions:   perms,
 		})
+	}
+	// S120 — append the compliance row. TargetID is the invitee (the
+	// subject of the role mutation); the property id + permission list
+	// ride in Metadata so the audit row is self-contained even if the
+	// cohost grant is later revoked or deleted. A nil auditor keeps
+	// older tests / wiring working with no audit side-effect.
+	if s.auditor != nil {
+		if err := s.auditor.Record(ctx, AuditRecord{
+			ActorID:    in.HostID,
+			Action:     audit.ActionCohostInvited,
+			TargetType: audit.TargetUser,
+			TargetID:   userID,
+			Metadata: map[string]any{
+				"property_id": prop.ID.String(),
+				"permissions": perms,
+			},
+		}); err != nil {
+			return nil, err
+		}
 	}
 	return c, nil
 }

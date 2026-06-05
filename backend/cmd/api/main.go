@@ -269,10 +269,22 @@ func run() error {
 		// booking aggregate directly.
 		WithPublisher(dispatcher)
 	analyticsSvc := analyticsapp.NewService(propertyRepo, bookingRepo, paymentRepo)
+	// auditSvc is wired here (earlier than its old position) so cohostSvc
+	// below can plug an Auditor adapter on construction (S120). The
+	// handler wiring further down still uses the same instance via
+	// .WithAudit(auditSvc).
+	auditSvc := auditapp.NewService(auditRepo)
 	cohostSvc := propertyapp.NewCohostService(cohostRepo, propertyRepo, userRepo).
 		// S99 / WF-GAP-016 — emit CohostInvited so the invitee gets a
 		// notification + SSE hint when a host grants them access.
-		WithPublisher(dispatcher)
+		WithPublisher(dispatcher).
+		// S120 — append a "cohost.invited" row on every successful
+		// invite so the compliance trail records who granted whom
+		// which permissions on which listing. The adapter translates
+		// the package-local AuditRecord into auditapp.RecordInput so
+		// the application/property package stays free of auditapp
+		// coupling (mirrors the OfferMetrics wiring pattern S113).
+		WithAuditor(cohostAuditor{svc: auditSvc})
 	blockSvc := blockapp.NewService(blockRepo, propertyRepo).WithCohosts(cohostSvc)
 	priceRuleSvc := priceruleapp.NewService(priceRuleRepo, propertyRepo).WithCohosts(cohostSvc)
 	messageSvc.WithCohosts(cohostSvc)
@@ -285,7 +297,6 @@ func run() error {
 	bookingSvc.WithSplitter(splitterAdapter{svc: splitPaymentSvc}, userEmailResolver{users: userRepo})
 	dispatcher.Subscribe(bookingSvc.EventHandler())
 	messageTemplateSvc := messagetemplateapp.NewService(messageTemplateRepo)
-	auditSvc := auditapp.NewService(auditRepo)
 	houseRulesSvc := houserulesapp.NewService(houseRulesRepo, propertyRepo)
 	taxSvc := taxapp.NewService(taxRepo, propertyRepo)
 	// S49 — plug the tax BC into the booking pricing flow so every
@@ -673,4 +684,26 @@ func (a disputeMetricsAdapter) IncDispute(eventName string) {
 		return
 	}
 	a.m.DisputeLifecycleTotal.WithLabelValues(eventName).Inc()
+}
+
+// cohostAuditor satisfies propertyapp.Auditor by translating the
+// package-local AuditRecord into the auditapp.RecordInput shape and
+// forwarding to the shared audit service. Kept at the composition
+// root so the application/property package does not import auditapp
+// (S120).
+type cohostAuditor struct {
+	svc *auditapp.Service
+}
+
+func (a cohostAuditor) Record(ctx context.Context, rec propertyapp.AuditRecord) error {
+	if a.svc == nil {
+		return nil
+	}
+	return a.svc.Record(ctx, auditapp.RecordInput{
+		ActorID:    rec.ActorID,
+		Action:     rec.Action,
+		TargetType: rec.TargetType,
+		TargetID:   rec.TargetID,
+		Metadata:   rec.Metadata,
+	})
 }
