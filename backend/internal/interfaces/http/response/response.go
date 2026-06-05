@@ -49,6 +49,12 @@ func classify(err error) (int, string) {
 		// we want the more specific code to win so the client can route to a
 		// verify-and-retry flow instead of treating it as a generic invariant.
 		return http.StatusUnprocessableEntity, "kyc_step_up_required"
+	case errors.Is(err, shared.ErrPayoutOnboardingIncomplete):
+		// S170 — checked BEFORE the generic ErrConflict branch so the client
+		// receives a distinct code and routes the host (not the guest) to
+		// resume Stripe Connect onboarding. The structured details payload
+		// carries the host id so admin tooling can deep-link.
+		return http.StatusConflict, "host_payout_onboarding_incomplete"
 	case errors.Is(err, shared.ErrNotFound):
 		return http.StatusNotFound, "not_found"
 	case errors.Is(err, shared.ErrConflict):
@@ -72,6 +78,19 @@ func extractDetails(err error) map[string]any {
 			"thresholdCents": stepUp.ThresholdCents,
 			"currency":       stepUp.Currency,
 		}
+	}
+	var payoutGate *shared.PayoutOnboardingIncompleteError
+	if errors.As(err, &payoutGate) {
+		// hostId always present; onboardingUrl is omitted when empty so
+		// the client renders a generic "ask the host to finish setup"
+		// nudge rather than a broken link.
+		details := map[string]any{
+			"hostId": payoutGate.HostID.String(),
+		}
+		if payoutGate.OnboardingURL != "" {
+			details["onboardingUrl"] = payoutGate.OnboardingURL
+		}
+		return details
 	}
 	return nil
 }

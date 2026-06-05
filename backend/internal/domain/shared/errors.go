@@ -5,6 +5,8 @@ package shared
 import (
 	"errors"
 	"fmt"
+
+	"github.com/google/uuid"
 )
 
 // Sentinel domain errors. Application and interface layers translate these
@@ -25,6 +27,14 @@ var (
 	// transport layer can detect this specific sentinel to surface a
 	// distinct error code and trigger a verification prompt.
 	ErrKYCStepUpRequired = errors.New("identity verification required")
+	// ErrPayoutOnboardingIncomplete signals that a booking cannot be
+	// confirmed because the host has not yet finished their payout
+	// (Stripe Connect) onboarding. It satisfies errors.Is for ErrConflict
+	// so the transport layer maps it to HTTP 409 by default — it is the
+	// host's fault, not a guest input validation failure. Surfaced
+	// concretely via PayoutOnboardingIncompleteError so the client can
+	// render a host-id-specific nudge.
+	ErrPayoutOnboardingIncomplete = errors.New("host payout onboarding incomplete")
 )
 
 // ValidationError carries a human-readable message while still matching
@@ -65,4 +75,41 @@ func (e *KYCStepUpError) Is(target error) bool {
 // NewKYCStepUpError builds a KYCStepUpError.
 func NewKYCStepUpError(thresholdCents int64, currency string) error {
 	return &KYCStepUpError{ThresholdCents: thresholdCents, Currency: currency}
+}
+
+// PayoutOnboardingIncompleteError indicates a booking cannot transition to
+// confirmed because the listing's host has not finished payout onboarding —
+// the platform would capture funds with no rail to disburse them. It
+// satisfies errors.Is for ErrPayoutOnboardingIncomplete and ErrConflict so
+// the transport layer maps it to HTTP 409 (it is the host's situation, not
+// a guest input validation problem).
+//
+// OnboardingURL is optional — when set, it is the host-facing dashboard or
+// hosted onboarding link the client can surface so the host can resume the
+// flow. Today the booking gate doesn't synthesise it (the gate decision and
+// the link-creation call live in different services), but the field is part
+// of the typed error so we can wire it through later without breaking the
+// HTTP contract.
+type PayoutOnboardingIncompleteError struct {
+	// HostID is the listing owner whose onboarding is incomplete. Surfaced
+	// in the HTTP details payload so admin tooling can deep-link.
+	HostID uuid.UUID
+	// OnboardingURL, when non-empty, is a host-facing link to resume
+	// onboarding. Optional.
+	OnboardingURL string
+}
+
+func (e *PayoutOnboardingIncompleteError) Error() string {
+	return fmt.Sprintf("host %s has not completed payout onboarding", e.HostID)
+}
+
+func (e *PayoutOnboardingIncompleteError) Is(target error) bool {
+	return target == ErrPayoutOnboardingIncomplete || target == ErrConflict
+}
+
+// NewPayoutOnboardingIncompleteError builds a PayoutOnboardingIncompleteError
+// with no onboarding URL set (the most common construction site — the
+// booking gate doesn't have one handy).
+func NewPayoutOnboardingIncompleteError(hostID uuid.UUID) error {
+	return &PayoutOnboardingIncompleteError{HostID: hostID}
 }

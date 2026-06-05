@@ -413,6 +413,14 @@ func run() error {
 		// fired but no payout subscriber listened, so experience hosts saw
 		// nothing in their HostEarnings ledger.
 		WithExperienceBookings(experienceBookingRepo)
+	// S170 — gate Booking.Confirm (manual + instant-book + post-async-auth)
+	// on the host having finished Stripe Connect onboarding. The adapter
+	// reads payoutapp.AccountStatus and returns Ready = HasAccount &&
+	// Enabled, so a half-onboarded host (account exists but Stripe hasn't
+	// flipped payouts_enabled yet) still fails the gate. Before this
+	// wiring the platform would capture funds with no rail to settle to
+	// the host — funds trapped, reconciliation broken.
+	bookingSvc.WithPayoutVerifier(payoutOnboardingVerifier{svc: payoutSvc})
 	// privacySvc orchestrates GDPR self-service (export + erase). The erase
 	// pipeline (S90 / WF-GAP-009) sweeps every PII-bearing table — adding a
 	// new table to the platform means extending NewService AND this call
@@ -959,4 +967,32 @@ func (a userCascadeAuditor) Record(ctx context.Context, in userapp.CascadeAuditI
 		TargetID:   in.TargetID,
 		Metadata:   in.Metadata,
 	})
+}
+
+// payoutOnboardingVerifier satisfies bookingapp.PayoutOnboardingVerifier
+// (S170) by forwarding to payoutapp.AccountStatus. A host is considered
+// payout-ready only when their Connect account exists AND Stripe has
+// signalled payouts_enabled — the half-onboarded state (account created,
+// hosted-onboarding link issued but not completed) deliberately fails the
+// gate so the platform never captures funds it cannot disburse.
+//
+// Errors propagate so an outage of the user repo or the payout service
+// surfaces as a 500 instead of silently letting the booking through.
+type payoutOnboardingVerifier struct {
+	svc *payoutapp.Service
+}
+
+func (p payoutOnboardingVerifier) IsHostReadyForPayout(ctx context.Context, hostID uuid.UUID) (bool, error) {
+	if p.svc == nil {
+		// Treated as "no gate wired" — matches the bookingapp.Service's
+		// own nil-verifier short-circuit. Defensive: NewService should
+		// never be passed a nil svc, but tests and a misconfigured
+		// composition root shouldn't crash the gate.
+		return true, nil
+	}
+	st, err := p.svc.AccountStatus(ctx, hostID)
+	if err != nil {
+		return false, err
+	}
+	return st.HasAccount && st.Enabled, nil
 }

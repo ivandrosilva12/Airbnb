@@ -897,3 +897,198 @@ func TestEnforceStepUp_NoAuditWhenGatePasses(t *testing.T) {
 		}
 	})
 }
+
+// stubPayoutVerifier captures IsHostReadyForPayout calls for the S170
+// payout-onboarding gate tests. The map keys the answer by host id so
+// a single fixture can model both "ready" and "not ready" hosts in
+// one test if needed.
+type stubPayoutVerifier struct {
+	ready map[uuid.UUID]bool
+	err   error
+	calls int
+}
+
+func (s *stubPayoutVerifier) IsHostReadyForPayout(_ context.Context, hostID uuid.UUID) (bool, error) {
+	s.calls++
+	if s.err != nil {
+		return false, s.err
+	}
+	return s.ready[hostID], nil
+}
+
+// TestConfirm_GatedByPayoutOnboarding_Refused verifies the S170 gate: a
+// manual host Confirm against a non-payable host returns the typed
+// PayoutOnboardingIncompleteError BEFORE any UoW write — the booking
+// stays pending and no BookingConfirmed event is emitted. The error
+// carries the host id so the HTTP layer can render a host-specific
+// "finish onboarding" nudge.
+func TestConfirm_GatedByPayoutOnboarding_Refused(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	// Capture BookingConfirmed emissions through the dispatcher so we can
+	// assert the gate short-circuits before the outbox is touched.
+	outbox := event.NewMemoryOutbox()
+	dispatcher := event.NewDispatcher()
+	var confirms int
+	dispatcher.Subscribe(func(_ context.Context, e event.Event) {
+		if _, ok := e.(event.BookingConfirmed); ok {
+			confirms++
+		}
+	})
+	relay := event.NewDurablePublisher(outbox, dispatcher)
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay)
+	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, stubVerifier{}, false, uow).
+		WithPayoutVerifier(&stubPayoutVerifier{ready: map[uuid.UUID]bool{f.hostID: false}})
+
+	// Seed a pending booking the host could otherwise approve.
+	b, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1})
+	if err != nil {
+		t.Fatalf("create pending booking: %v", err)
+	}
+	if b.Status != booking.StatusPending {
+		t.Fatalf("created booking status = %q, want pending (non-instant-book fixture)", b.Status)
+	}
+
+	_, err = gated.Confirm(ctx, f.hostID, b.ID)
+	if err == nil {
+		t.Fatal("expected the payout-onboarding gate to refuse Confirm")
+	}
+	var gate *shared.PayoutOnboardingIncompleteError
+	if !errors.As(err, &gate) {
+		t.Fatalf("expected *shared.PayoutOnboardingIncompleteError, got %T (%v)", err, err)
+	}
+	if gate.HostID != f.hostID {
+		t.Errorf("gate.HostID = %s, want %s", gate.HostID, f.hostID)
+	}
+	if !errors.Is(err, shared.ErrConflict) {
+		t.Error("PayoutOnboardingIncompleteError should satisfy errors.Is for ErrConflict (HTTP layer maps it to 409)")
+	}
+	// Booking stayed pending; no BookingConfirmed event was emitted.
+	stored, err := f.bookings.FindByID(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("reload booking: %v", err)
+	}
+	if stored.Status != booking.StatusPending {
+		t.Errorf("status after refused Confirm = %q, want pending", stored.Status)
+	}
+	if confirms != 0 {
+		t.Errorf("BookingConfirmed emissions = %d, want 0 (gate refused before emit)", confirms)
+	}
+}
+
+// TestConfirm_GatedByPayoutOnboarding_Passes verifies the happy path:
+// a ready host clears the gate and Confirm transitions the booking +
+// emits BookingConfirmed normally.
+func TestConfirm_GatedByPayoutOnboarding_Passes(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	outbox := event.NewMemoryOutbox()
+	dispatcher := event.NewDispatcher()
+	var confirms int
+	dispatcher.Subscribe(func(_ context.Context, e event.Event) {
+		if _, ok := e.(event.BookingConfirmed); ok {
+			confirms++
+		}
+	})
+	relay := event.NewDurablePublisher(outbox, dispatcher)
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay)
+	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, stubVerifier{}, false, uow).
+		WithPayoutVerifier(&stubPayoutVerifier{ready: map[uuid.UUID]bool{f.hostID: true}})
+
+	b, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	confirmed, err := gated.Confirm(ctx, f.hostID, b.ID)
+	if err != nil {
+		t.Fatalf("ready host should clear the gate: %v", err)
+	}
+	if confirmed.Status != booking.StatusConfirmed {
+		t.Errorf("status = %q, want confirmed", confirmed.Status)
+	}
+	if confirms != 1 {
+		t.Errorf("BookingConfirmed emissions = %d, want 1", confirms)
+	}
+}
+
+// TestConfirm_NilVerifier_NoGate verifies the legacy path: a service
+// constructed WITHOUT WithPayoutVerifier behaves exactly as before this
+// slice — every host can confirm regardless of their payout state. This
+// is what keeps existing fixtures, tests, and deployments without a
+// payout BC wired working unchanged.
+func TestConfirm_NilVerifier_NoGate(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	// f.svc is constructed by newFixture without a payout verifier.
+	b, err := f.svc.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	confirmed, err := f.svc.Confirm(ctx, f.hostID, b.ID)
+	if err != nil {
+		t.Fatalf("nil verifier should not gate: %v", err)
+	}
+	if confirmed.Status != booking.StatusConfirmed {
+		t.Errorf("status = %q, want confirmed", confirmed.Status)
+	}
+}
+
+// TestCreate_InstantBook_GatedByPayoutOnboarding verifies the gate also
+// fires on the instant-book auto-confirm path inside Create. A non-ready
+// host means the reservation cannot complete: the gate returns the typed
+// error AND nothing has been written (no booking row in the repo, no
+// BookingRequested / BookingConfirmed event on the outbox). The guest
+// retries after the host finishes onboarding and the same call succeeds.
+func TestCreate_InstantBook_GatedByPayoutOnboarding(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.prop.SetInstantBook(true)
+	if err := f.properties.Update(ctx, f.prop); err != nil {
+		t.Fatalf("enable instant book: %v", err)
+	}
+
+	outbox := event.NewMemoryOutbox()
+	dispatcher := event.NewDispatcher()
+	var emitted int
+	dispatcher.Subscribe(func(_ context.Context, _ event.Event) { emitted++ })
+	relay := event.NewDurablePublisher(outbox, dispatcher)
+	uow := memory.NewUnitOfWork(f.bookings, nil, nil, nil, nil, outbox, relay)
+	verifier := &stubPayoutVerifier{ready: map[uuid.UUID]bool{f.hostID: false}}
+	gated := bookingapp.NewService(f.bookings, f.properties, memory.NewBlockRepository(), f.coupons, memory.NewPriceRuleRepository(), 0, stubVerifier{}, false, uow).
+		WithPayoutVerifier(verifier)
+
+	_, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1})
+	if err == nil {
+		t.Fatal("expected instant-book Create to refuse on non-ready host")
+	}
+	var gate *shared.PayoutOnboardingIncompleteError
+	if !errors.As(err, &gate) {
+		t.Fatalf("expected *shared.PayoutOnboardingIncompleteError, got %T (%v)", err, err)
+	}
+	if gate.HostID != f.hostID {
+		t.Errorf("gate.HostID = %s, want %s", gate.HostID, f.hostID)
+	}
+	// No booking row was persisted — the bookings repo is empty for this guest.
+	page, err := f.bookings.ListByGuest(ctx, f.guestID, shared.Page{Limit: 10, Offset: 0})
+	if err != nil {
+		t.Fatalf("list guest bookings: %v", err)
+	}
+	if len(page.Items) != 0 {
+		t.Errorf("guest bookings = %d, want 0 (gate refused before UoW write)", len(page.Items))
+	}
+	// No outbox events fired.
+	if emitted != 0 {
+		t.Errorf("events emitted = %d, want 0", emitted)
+	}
+	// Now flip the host to ready and retry — should succeed.
+	verifier.ready[f.hostID] = true
+	b, err := gated.Create(ctx, bookingapp.CreateInput{GuestID: f.guestID, PropertyID: f.prop.ID, CheckIn: days(1), CheckOut: days(4), Guests: 1})
+	if err != nil {
+		t.Fatalf("ready host should succeed on retry: %v", err)
+	}
+	if b.Status != booking.StatusConfirmed {
+		t.Errorf("retry booking status = %q, want confirmed", b.Status)
+	}
+}

@@ -110,6 +110,20 @@ type BookingAuditor interface {
 	RecordKYCStepUpRequired(ctx context.Context, guestID, propertyID uuid.UUID, propertyTitle, currency string, totalCents int64)
 }
 
+// PayoutOnboardingVerifier reports whether the host can receive payouts for
+// a booking that completes on their listing (S170). When wired via
+// WithPayoutVerifier, the booking service consults it BEFORE transitioning
+// a booking to confirmed — manual host Confirm, instant-book auto-confirm
+// inside Create, and the post-async-auth subscriber path all run through
+// the same gate. A "not ready" answer short-circuits with
+// shared.PayoutOnboardingIncompleteError before any UoW write, so a guest
+// is never charged into a platform account that cannot disburse to the
+// host. main.go's payoutOnboardingVerifier adapter forwards to
+// payoutapp.AccountStatus; a nil port disables the gate (legacy + tests).
+type PayoutOnboardingVerifier interface {
+	IsHostReadyForPayout(ctx context.Context, hostID uuid.UUID) (bool, error)
+}
+
 // Service orchestrates booking use cases.
 type Service struct {
 	bookings       booking.Repository
@@ -150,6 +164,14 @@ type Service struct {
 	// nil leaves the audit side silent (tests + deployments without
 	// the audit BC keep working unchanged).
 	audit BookingAuditor
+	// payoutVerifier, when wired (S170), short-circuits every
+	// pending→confirmed transition with shared.PayoutOnboardingIncompleteError
+	// if the host has not finished Stripe Connect onboarding. The
+	// check covers the manual Confirm endpoint, the instant-book
+	// auto-confirm inside Create, and the post-async-auth subscriber
+	// path. nil disables the gate (preserves legacy/test behaviour
+	// for fixtures that don't wire a payout BC).
+	payoutVerifier PayoutOnboardingVerifier
 }
 
 // NewService wires the booking application service. serviceFeeRate is the
@@ -216,6 +238,20 @@ func (s *Service) WithStepUpEventTTL(ttl time.Duration) *Service {
 // affecting the gate. Returns the receiver for chaining.
 func (s *Service) WithAuditor(a BookingAuditor) *Service {
 	s.audit = a
+	return s
+}
+
+// WithPayoutVerifier wires the host-onboarding gate (S170). When set, every
+// pending→confirmed transition (manual Confirm, instant-book Create, and
+// the PaymentAuthorized-driven confirmAfterAsyncAuth path) first asks the
+// verifier whether the listing's host can receive a payout. A "not ready"
+// answer aborts the transition with shared.PayoutOnboardingIncompleteError
+// BEFORE the UoW touches any row, so the booking + outbox never reach a
+// half-confirmed state. A nil verifier disables the gate — matches legacy
+// behaviour for tests/fixtures and deployments that don't yet run a payout
+// BC. Returns the receiver for chaining.
+func (s *Service) WithPayoutVerifier(v PayoutOnboardingVerifier) *Service {
+	s.payoutVerifier = v
 	return s
 }
 
@@ -288,6 +324,14 @@ func (s *Service) confirmAfterAsyncAuth(ctx context.Context, bookingID uuid.UUID
 	if !prop.InstantBook {
 		return // host approves manually; auth completing doesn't bypass that
 	}
+	// S170 — host payout-onboarding gate. A booking whose host has not
+	// finished Connect onboarding cannot transition to confirmed here
+	// either; the subscriber is silent on failure (matches the rest of
+	// this function's defensive style — re-delivery of the upstream
+	// event after the host completes onboarding will retry).
+	if err := s.enforcePayoutOnboarding(ctx, prop.HostID); err != nil {
+		return
+	}
 	if err := b.Confirm(); err != nil {
 		return
 	}
@@ -315,6 +359,15 @@ func (s *Service) confirmAfterSplit(ctx context.Context, bookingID uuid.UUID) {
 	}
 	prop, err := s.properties.FindByID(ctx, b.PropertyID)
 	if err != nil {
+		return
+	}
+	// S170 — same payout-onboarding gate as the manual + async-auth paths.
+	// A host who never finished Connect onboarding shouldn't see a split
+	// booking flip to confirmed: the captured shares would have no payout
+	// rail. Silent return matches the other confirm-after-event flows;
+	// a SplitPaymentCompleted re-delivery after onboarding completes
+	// will retry.
+	if err := s.enforcePayoutOnboarding(ctx, prop.HostID); err != nil {
 		return
 	}
 	if err := b.Confirm(); err != nil {
@@ -392,6 +445,27 @@ func (s *Service) enforceStepUp(ctx context.Context, guestID, propertyID uuid.UU
 		})
 	}
 	return shared.NewKYCStepUpError(threshold, currency)
+}
+
+// enforcePayoutOnboarding short-circuits a pending→confirmed transition when
+// the host has not finished payout onboarding (S170). nil verifier or a
+// "ready" answer is a no-op; a "not ready" answer returns a typed
+// PayoutOnboardingIncompleteError so the transport layer can render a 409
+// with the host id and route the host to the resume-onboarding flow. The
+// check runs BEFORE any UoW write so the booking + outbox never reach a
+// half-confirmed state when the host's rail is missing.
+func (s *Service) enforcePayoutOnboarding(ctx context.Context, hostID uuid.UUID) error {
+	if s.payoutVerifier == nil {
+		return nil
+	}
+	ready, err := s.payoutVerifier.IsHostReadyForPayout(ctx, hostID)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		return shared.NewPayoutOnboardingIncompleteError(hostID)
+	}
+	return nil
 }
 
 // emit runs the booking write and records the event(s) in one transaction, so
@@ -622,6 +696,15 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*booking.Booking,
 		},
 	}
 	if prop.InstantBook && !useSplit {
+		// S170 — gate the auto-confirm on the host having a working
+		// payout rail. Refusing here (before the UoW.Run below) keeps
+		// the bookings table + outbox clean: no half-confirmed row,
+		// no BookingRequested-without-payout-recipient. The host
+		// completes onboarding, the guest re-tries, and the booking
+		// succeeds on attempt #2 unchanged.
+		if err := s.enforcePayoutOnboarding(ctx, prop.HostID); err != nil {
+			return nil, err
+		}
 		if err := b.Confirm(); err != nil {
 			return nil, err
 		}
@@ -1057,6 +1140,13 @@ func (s *Service) Confirm(ctx context.Context, actorID, bookingID uuid.UUID) (*b
 	}
 	if !prop.IsOwnedBy(actorID) {
 		return nil, shared.ErrForbidden
+	}
+	// S170 — host payout-onboarding gate. Refuse BEFORE we touch the
+	// aggregate state or the UoW so a non-payable host can never end up
+	// with a Confirmed row + a BookingConfirmed event the platform has
+	// no rail to settle.
+	if err := s.enforcePayoutOnboarding(ctx, prop.HostID); err != nil {
+		return nil, err
 	}
 	if err := b.Confirm(); err != nil {
 		return nil, err
