@@ -9,17 +9,51 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RateLimit returns a middleware that throttles requests per client IP using an
-// in-memory token bucket: each IP starts with `burst` tokens, refilled at `rps`
-// tokens/second, and a request that finds no token gets HTTP 429. onReject, when
-// non-nil, is called once per rejection (e.g. to bump a metric).
+// KeyFunc derives the bucket key from a request. The default prefers the
+// authenticated user's stable ID (subject) and falls back to ClientIP() when
+// no user is in scope (public endpoints, pre-auth, anonymous browsing). A
+// custom KeyFunc can be supplied to RateLimitWithKey for special cases (e.g.
+// the unauthenticated webhook route, which must stay IP-keyed even after
+// upstream auth changes).
+type KeyFunc func(c *gin.Context) string
+
+// defaultKeyFunc keys per authenticated user when one is on the context,
+// otherwise per client IP. The "u:" / "ip:" prefixes keep the two namespaces
+// disjoint so an attacker controlling a user-id-shaped IP string cannot
+// collide with someone else's bucket.
+func defaultKeyFunc(c *gin.Context) string {
+	if u, ok := CurrentUser(c); ok && u != nil {
+		return "u:" + u.ID.String()
+	}
+	return "ip:" + c.ClientIP()
+}
+
+// RateLimit returns a middleware that throttles requests using an in-memory
+// token bucket: each key starts with `burst` tokens, refilled at `rps`
+// tokens/second, and a request that finds no token gets HTTP 429. onReject,
+// when non-nil, is called once per rejection (e.g. to bump a metric).
 //
-// It suits a single instance (e.g. guarding the unauthenticated webhook route);
-// a multi-instance deployment would back the same limiter with a shared store.
+// Keys are derived by defaultKeyFunc: the authenticated user's ID when one
+// is on the context (so corporate NAT does not share a bucket and CGNAT
+// cannot evade limits by rotating IPs), falling back to ClientIP() for
+// anonymous traffic. Use RateLimitWithKey to override this (e.g. for routes
+// that must remain strictly IP-keyed).
+//
+// It suits a single instance (e.g. guarding the unauthenticated webhook
+// route); a multi-instance deployment would back the same limiter with a
+// shared store.
 func RateLimit(rps float64, burst int, onReject func()) gin.HandlerFunc {
+	return RateLimitWithKey(rps, burst, onReject, defaultKeyFunc)
+}
+
+// RateLimitWithKey is RateLimit with an explicit key derivation function.
+func RateLimitWithKey(rps float64, burst int, onReject func(), key KeyFunc) gin.HandlerFunc {
+	if key == nil {
+		key = defaultKeyFunc
+	}
 	lim := newRateLimiter(rps, float64(burst))
 	return func(c *gin.Context) {
-		if !lim.allow(c.ClientIP()) {
+		if !lim.allow(key(c)) {
 			if onReject != nil {
 				onReject()
 			}
