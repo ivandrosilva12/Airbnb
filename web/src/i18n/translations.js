@@ -363,6 +363,13 @@ export const translations = {
     'admin.outbox.clickToExpand': 'Click to expand',
     'admin.outbox.prev': 'Previous',
     'admin.outbox.next': 'Next',
+    // S142 — per-row Retry button on the DLQ. Distinct from the legacy
+    // admin.outbox.requeue key so the new flow (optimistic remove + inline
+    // feedback) can ship without disturbing any other call sites.
+    'admin.dlq.retry': 'Retry',
+    'admin.dlq.retrying': 'Retrying…',
+    'admin.dlq.retrySuccess': 'Row requeued.',
+    'admin.dlq.retryError': 'Could not requeue. Please try again.',
 
     // Audit log viewer (S130) — read-only window over the S45 audit BC.
     // The action / targetType labels are intentionally raw enum strings
@@ -1242,6 +1249,11 @@ export const translations = {
     'admin.outbox.clickToExpand': 'Clique para expandir',
     'admin.outbox.prev': 'Anterior',
     'admin.outbox.next': 'Próximo',
+    // S142 — botão Retry por linha na DLQ.
+    'admin.dlq.retry': 'Tentar novamente',
+    'admin.dlq.retrying': 'A tentar…',
+    'admin.dlq.retrySuccess': 'Registo reencaminhado.',
+    'admin.dlq.retryError': 'Não foi possível reencaminhar. Tente novamente.',
 
     // Audit log (S130) — strings de PT (pt-BR herda via I18nContext).
     'admin.audit.title': 'Registo de auditoria',
@@ -1995,6 +2007,11 @@ export const translations = {
     'admin.outbox.clickToExpand': 'Click para expandir',
     'admin.outbox.prev': 'Anterior',
     'admin.outbox.next': 'Siguiente',
+    // S142 — botón Reintentar por fila en la DLQ.
+    'admin.dlq.retry': 'Reintentar',
+    'admin.dlq.retrying': 'Reintentando…',
+    'admin.dlq.retrySuccess': 'Registro reencolado.',
+    'admin.dlq.retryError': 'No se pudo reencolar. Inténtelo de nuevo.',
     // Audit log (S130) — strings de ES.
     'admin.audit.title': 'Registro de auditoría',
     'admin.audit.filterAction': 'Acción',

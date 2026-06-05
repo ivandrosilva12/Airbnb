@@ -37,9 +37,9 @@ function truncate(s, n = 80) {
 // AdminOutbox is the operator-only view of the outbox dead-letter queue
 // shipped by S100. It surfaces two things the existing /admin console did
 // not: a live pending-count metric (so a stuck relay shows up before the
-// DLQ fills) and a per-row Requeue button that nudges a stuck record back
-// into the recovery cycle. The RequireAdmin gate is enforced at the route
-// level in App.jsx — we don't double-check here.
+// DLQ fills) and a per-row Retry button (S142) that nudges a stuck record
+// back into the recovery cycle. The RequireAdmin gate is enforced at the
+// route level in App.jsx — we don't double-check here.
 export default function AdminOutbox() {
   const { t } = useT();
   const [items, setItems] = useState([]);
@@ -51,10 +51,16 @@ export default function AdminOutbox() {
   // Keyed by record id so paging away forgets the expansion (deliberate —
   // an expanded row only makes sense on the page it lives on).
   const [expanded, setExpanded] = useState({});
-  // requeueing prevents a double-submit on the same row. Idempotent on the
-  // server, but the UI feedback is clearer if we mask the button while the
-  // round-trip is in flight.
-  const [requeueing, setRequeueing] = useState({});
+  // retrying is a Set of row ids currently in-flight (S142). A Set keeps
+  // per-row isolation cleanly: only the clicked row's button reflects the
+  // loading state, others stay idle even during a burst of clicks. The
+  // request is idempotent on the server, but masking the in-flight button
+  // prevents accidental double-submits.
+  const [retrying, setRetrying] = useState(new Set());
+  // retrySuccess is a transient, single-line confirmation shown after a
+  // successful row removal. Cleared on the next retry attempt so it never
+  // collides with a fresh error.
+  const [retrySuccess, setRetrySuccess] = useState(false);
 
   const load = useCallback(async (nextOffset = 0) => {
     setLoading(true);
@@ -74,21 +80,49 @@ export default function AdminOutbox() {
 
   useEffect(() => { load(0); }, [load]);
 
-  async function requeue(id) {
-    if (!confirm(t('admin.outbox.confirmRequeue'))) return;
-    setRequeueing((m) => ({ ...m, [id]: true }));
+  // retry (S142) optimistically removes the row on 2xx and restores it on
+  // failure. We snapshot index+row before the request so a failure can put
+  // it back in the same position rather than appending it to the tail.
+  async function retry(id) {
+    setRetrying((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
     setError(null);
+    setRetrySuccess(false);
+    // Snapshot the row + its index for rollback on failure.
+    let removed = null;
+    let removedIndex = -1;
+    setItems((prev) => {
+      const idx = prev.findIndex((r) => r.id === id);
+      if (idx >= 0) {
+        removed = prev[idx];
+        removedIndex = idx;
+        const next = prev.slice();
+        next.splice(idx, 1);
+        return next;
+      }
+      return prev;
+    });
     try {
       await api.requeueOutbox(id);
-      // Stay on the current page after refresh so the operator's place in
-      // the queue is preserved when working through a batch.
-      await load(offset);
-    } catch (e) {
-      setError(e.message);
+      setRetrySuccess(true);
+    } catch {
+      // Restore the row in its original slot so the operator can try again.
+      if (removed) {
+        setItems((prev) => {
+          const next = prev.slice();
+          const insertAt = Math.min(removedIndex, next.length);
+          next.splice(insertAt, 0, removed);
+          return next;
+        });
+      }
+      setError(t('admin.dlq.retryError'));
     } finally {
-      setRequeueing((m) => {
-        const next = { ...m };
-        delete next[id];
+      setRetrying((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
         return next;
       });
     }
@@ -122,6 +156,9 @@ export default function AdminOutbox() {
         </div>
       </div>
 
+      {retrySuccess && (
+        <p className="success" role="status">{t('admin.dlq.retrySuccess')}</p>
+      )}
       {error && <p className="error" role="alert">{error}</p>}
 
       {loading ? (
@@ -147,7 +184,7 @@ export default function AdminOutbox() {
             <tbody>
               {items.map((r) => {
                 const isExpanded = !!expanded[r.id];
-                const isRequeueing = !!requeueing[r.id];
+                const isRetrying = retrying.has(r.id);
                 // Short ID: first 8 chars of the UUID is enough to disambiguate
                 // a page of ~50 rows. Full id stays in the title attribute for
                 // copy-paste.
@@ -170,11 +207,12 @@ export default function AdminOutbox() {
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
-                        onClick={() => requeue(r.id)}
-                        disabled={isRequeueing}
-                        aria-label={`${t('admin.outbox.requeue')}: ${shortId}`}
+                        onClick={() => retry(r.id)}
+                        disabled={isRetrying}
+                        aria-busy={isRetrying || undefined}
+                        aria-label={`${t('admin.dlq.retry')}: ${shortId}`}
                       >
-                        {isRequeueing ? t('common.loading') : t('admin.outbox.requeue')}
+                        {isRetrying ? t('admin.dlq.retrying') : t('admin.dlq.retry')}
                       </button>
                     </td>
                   </tr>
